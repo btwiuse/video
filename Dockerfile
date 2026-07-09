@@ -14,5 +14,8 @@ COPY . .
 # Pre-install uv for running python commands
 RUN pip install --no-cache-dir uv
 
+# Copy environment if present
+COPY .env* ./
+
 EXPOSE 8080
 CMD ["server", "-v"]

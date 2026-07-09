@@ -169,11 +169,10 @@
         try {
           for (let s = 1; s <= 5; s++) {
             await api(`/pipelines/${pid}/steps/${s}`, { method: 'POST' });
-            // Wait for this step to complete (poll up to timeout)
             const start = Date.now();
-            // Steps 1-2: up to 10min; Steps 3-4: up to 30min; Step 5: up to 15min
             const timeouts = [0, 10, 10, 30, 30, 15];
             const timeout = (timeouts[s] || 15) * 60 * 1000;
+            let failed = false;
             while (true) {
               await new Promise(r => setTimeout(r, 3000));
               const res = await api(`/pipelines/${pid}`);
@@ -182,15 +181,18 @@
               const status = data.status;
               if (status === 'failed' || status === 'canceled') {
                 alert(`步骤 ${s} 失败: ${data.error || status}`);
+                failed = true;
                 break;
               }
               const currentStep = status?.startsWith('step_') ? parseInt(status.split('_')[1]) : (status === 'done' ? 5 : 0);
               if (currentStep > s || status === 'done') break;
               if (Date.now() - start > timeout) {
                 alert(`步骤 ${s} 超时（${timeouts[s]} 分钟）`);
+                failed = true;
                 break;
               }
             }
+            if (failed) break;
           }
           onRefresh();
         } finally { setActionLoading(false); }
