@@ -330,6 +330,14 @@ func handleDeletePipeline(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func serveHome(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	http.ServeFile(w, r, "cmd/server/static/index.html")
+}
+
 func handleArtifacts(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/pipelines/")
 	id = strings.TrimSuffix(id, "/")
@@ -417,6 +425,8 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 func main() {
 	mux := http.NewServeMux()
+	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("cmd/server/static"))))
+	mux.HandleFunc("/", serveHome)
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/pipelines", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
