@@ -46,6 +46,7 @@ const (
 
 type Pipeline struct {
 	ID        string
+	Name      string
 	Status    PipelineStatus
 	Step      int           // current step 0-5
 	Error     string
@@ -124,12 +125,34 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
+func generatePipelineName(scriptPath string) string {
+	data, err := os.ReadFile(scriptPath)
+	if err != nil {
+		return "Untitled Pipeline"
+	}
+	text := string(data)
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") || strings.HasPrefix(line, "场景") || strings.HasPrefix(line, "===") {
+			continue
+		}
+		if len(line) > 30 {
+			line = line[:30] + "..."
+		}
+		return line
+	}
+	return "Untitled Pipeline"
+}
+
 func detectStatus(id string) PipelineStatus {
 	dir := outputDir(id)
 	if fileExists(filepath.Join(dir, "final.mp4")) {
 		return StatusDone
 	}
-	// Check each step output in order
 	steps := []string{
 		"storyboard.json",
 		"manifest.json",
@@ -141,7 +164,6 @@ func detectStatus(id string) PipelineStatus {
 			return PipelineStatus(fmt.Sprintf("step_%d", i+1))
 		}
 	}
-	// All step files exist but final.mp4 is missing → step 5 not yet run
 	return StatusStep5
 }
 
@@ -238,6 +260,7 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 
 	p := &Pipeline{
 		ID:        id,
+		Name:      generatePipelineName(sp),
 		Status:    StatusPending,
 		Step:      0,
 		CreatedAt: time.Now(),
@@ -254,6 +277,7 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]any{
 		"pipeline_id": id,
+		"name":        p.Name,
 		"status":      string(StatusPending),
 	})
 }
@@ -295,6 +319,7 @@ func handleGetPipeline(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"pipeline_id": p.ID,
+		"name":        p.Name,
 		"status":      string(p.Status),
 		"step":        p.Step,
 		"error":       p.Error,
@@ -406,6 +431,7 @@ func handleListPipelines(w http.ResponseWriter, r *http.Request) {
 		}
 		list = append(list, map[string]any{
 			"pipeline_id": p.ID,
+			"name":        p.Name,
 			"status":      string(p.Status),
 			"step":        p.Step,
 			"error":       p.Error,
