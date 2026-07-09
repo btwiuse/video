@@ -151,6 +151,10 @@
         });
       };
 
+      const copyToClipboard = (text, name) => {
+        navigator.clipboard.writeText(text).then(() => alert('已复制: ' + name)).catch(() => alert('复制失败'));
+      };
+
       return (
         <div className="mt-8">
           <div className="flex items-center justify-between mb-3">
@@ -195,7 +199,10 @@
               </div>
               {expanded['_script_'] && (
                 <div className="bg-cinema-900 p-4 border-t border-cinema-700 relative">
-                  <button onClick={() => setExpanded(prev => { const next = {...prev}; delete next['_script_']; return next; })} className="absolute top-2 right-2 text-gray-400 hover:text-white">✕</button>
+                  <div className="absolute top-2 right-2 flex gap-2">
+                    <button onClick={() => copyToClipboard(expanded['_script_'], '剧本原文.txt')} className="text-gray-400 hover:text-white" title="复制">📋</button>
+                    <button onClick={() => setExpanded(prev => { const next = {...prev}; delete next['_script_']; return next; })} className="text-gray-400 hover:text-white">✕</button>
+                  </div>
                   <h4 className="text-sm font-semibold text-gray-300 mb-2">剧本原文.txt</h4>
                   <pre className="text-xs text-gray-300 overflow-auto max-h-96 whitespace-pre-wrap">{expanded['_script_']}</pre>
                 </div>
@@ -221,7 +228,10 @@
                 </div>
                 {expanded[f.name] && (
                   <div className="bg-cinema-900 p-4 border-t border-cinema-700 relative">
-                    <button onClick={() => toggleExpand(f.name)} className="absolute top-2 right-2 text-gray-400 hover:text-white">✕</button>
+                    <div className="absolute top-2 right-2 flex gap-2">
+                      <button onClick={() => copyToClipboard(expanded[f.name], f.name)} className="text-gray-400 hover:text-white" title="复制">📋</button>
+                      <button onClick={() => toggleExpand(f.name)} className="text-gray-400 hover:text-white">✕</button>
+                    </div>
                     <h4 className="text-sm font-semibold text-gray-300 mb-2">{f.name}</h4>
                     <pre className="text-xs text-gray-300 overflow-auto max-h-96 whitespace-pre-wrap">{expanded[f.name]}</pre>
                   </div>
