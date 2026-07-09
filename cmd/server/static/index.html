@@ -348,14 +348,22 @@
         try {
           const stored = JSON.parse(localStorage.getItem('pipeline_history') || '[]').filter(Boolean);
           const results = [];
+          const dead = [];
           for (const id of stored) {
             try {
               const res = await api(`/pipelines/${id}`);
               if (res.ok) {
                 const data = await res.json();
                 results.push(data);
+              } else if (res.status === 404) {
+                dead.push(id);
               }
             } catch (e) {}
+          }
+          // Clean up dead pipeline IDs from localStorage
+          if (dead.length > 0) {
+            const cleaned = stored.filter(id => !dead.includes(id));
+            localStorage.setItem('pipeline_history', JSON.stringify(cleaned));
           }
           setItems(results);
         } finally { setLoading(false); }
@@ -432,7 +440,12 @@
           const { view: v, id } = getHashView();
           if (v === 'detail' && id) {
             api(`/pipelines/${id}`).then(res => {
-              if (res.ok) res.json().then(data => setSelected(data));
+              if (res.ok) {
+                res.json().then(data => setSelected(data));
+              } else {
+                // Pipeline doesn't exist on server (e.g., Railway restart)
+                navigateTo('list');
+              }
             });
           }
         };

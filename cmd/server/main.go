@@ -60,7 +60,11 @@ var (
 // ============================================================================
 
 func outputDir(id string) string {
-	return filepath.Join("output", id)
+	base := os.Getenv("OUTPUT_DIR")
+	if base == "" {
+		base = "./output"
+	}
+	return filepath.Join(base, id)
 }
 
 func scriptPath(id string) string {
@@ -68,13 +72,29 @@ func scriptPath(id string) string {
 }
 
 func pipelineKey(id string) string {
-	return filepath.Join("output", id, "pipeline.json")
+	base := os.Getenv("OUTPUT_DIR")
+	if base == "" {
+		base = "./output"
+	}
+	return filepath.Join(base, id, "pipeline.json")
 }
 
 func savePipelineState(p *Pipeline) {
 	p.UpdatedAt = time.Now()
-	data, _ := json.Marshal(p)
-	os.WriteFile(pipelineKey(p.ID), data, 0644)
+	data, err := json.Marshal(p)
+	if err != nil {
+		vlog("pipeline %s marshal error: %v", p.ID, err)
+		return
+	}
+	key := pipelineKey(p.ID)
+	if err := os.MkdirAll(filepath.Dir(key), 0755); err != nil {
+		vlog("pipeline %s mkdir error: %v", p.ID, err)
+		return
+	}
+	if err := os.WriteFile(key, data, 0644); err != nil {
+		vlog("pipeline %s write error: %v", p.ID, err)
+		return
+	}
 }
 
 func loadPipelineState(id string) *Pipeline {
@@ -119,7 +139,8 @@ func runPythonAsync(p *Pipeline, args []string) {
 	p.Ctx, p.Cancel = context.WithCancel(context.Background())
 	cmd := exec.CommandContext(p.Ctx, "uv", append([]string{"run", "python"}, args...)...)
 	cmd.Dir = "."
-	cmd.Env = append(os.Environ(), fmt.Sprintf("OUTPUT_DIR=./output/%s", p.ID))
+	outDir := outputDir(p.ID)
+	cmd.Env = append(os.Environ(), fmt.Sprintf("OUTPUT_DIR=%s", outDir))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	p.Cmd = cmd
@@ -127,7 +148,7 @@ func runPythonAsync(p *Pipeline, args []string) {
 	p.Step++
 	savePipelineState(p)
 
-	vlog("pipeline %s step %d command: uv %s", p.ID, p.Step, strings.Join(args, " "))
+	vlog("pipeline %s step %d command: uv %s (output=%s)", p.ID, p.Step, strings.Join(args, " "), outDir)
 
 	go func() {
 		err := cmd.Run()
@@ -480,6 +501,17 @@ func main() {
 	if v := os.Getenv("PORT"); v != "" {
 		addr = ":" + v
 	}
-	log.Printf("server listening on %s (verbose=%v)", addr, *verbose)
+
+	// Verify output directory is writable
+	testPath := filepath.Join(".", "output", ".write_test")
+	if err := os.MkdirAll(filepath.Dir(testPath), 0755); err != nil {
+		log.Printf("WARNING: cannot create output dir: %v", err)
+	} else if err := os.WriteFile(testPath, []byte("test"), 0644); err != nil {
+		log.Printf("WARNING: output dir is not writable: %v", err)
+	} else {
+		os.Remove(testPath)
+	}
+
+	log.Printf("server listening on %s (verbose=%v, output=%s)", addr, *verbose, outputDir(""))
 	log.Fatal(http.ListenAndServe(addr, corsMiddleware(mux)))
 }
