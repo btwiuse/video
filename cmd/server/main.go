@@ -665,6 +665,23 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+func handleScript(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/pipelines/")
+	id = strings.TrimSuffix(id, "/script")
+	sp := scriptPath(id)
+	if !fileExists(sp) {
+		http.Error(w, "script not found", http.StatusNotFound)
+		return
+	}
+	data, err := os.ReadFile(sp)
+	if err != nil {
+		http.Error(w, "cannot read script", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Write(data)
+}
+
 func handleLogs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -744,8 +761,12 @@ func main() {
 			handleArtifacts(w, r)
 			return
 		}
-		if strings.HasSuffix(path, "/summarize") {
+	if strings.HasSuffix(path, "/summarize") {
 			handleSummarize(w, r)
+			return
+		}
+		if strings.HasSuffix(path, "/script") {
+			handleScript(w, r)
 			return
 		}
 		if r.Method == http.MethodGet {

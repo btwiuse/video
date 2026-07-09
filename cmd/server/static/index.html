@@ -335,6 +335,32 @@
         } finally { setActionLoading(false); }
       };
 
+      const [scriptExpanded, setScriptExpanded] = useState(false);
+      const [scriptText, setScriptText] = useState('');
+      const [scriptLoading, setScriptLoading] = useState(false);
+
+      const loadScript = async () => {
+        if (scriptExpanded && scriptText) {
+          setScriptExpanded(false);
+          return;
+        }
+        setScriptLoading(true);
+        try {
+          const res = await api(`/pipelines/${pipeline.pipeline_id}/script`);
+          if (res.ok) {
+            const text = await res.text();
+            setScriptText(text);
+            setScriptExpanded(true);
+          } else {
+            alert('无法加载剧本');
+          }
+        } catch (e) {
+          alert('加载失败: ' + e.message);
+        } finally {
+          setScriptLoading(false);
+        }
+      };
+
       const del = async () => {
         if (!confirm('确定删除此 pipeline 及其所有产物?')) return;
         try {
@@ -365,6 +391,9 @@
               </div>
             </div>
             <button onClick={del} className="text-red-400 hover:text-red-300 text-sm px-3 py-1 bg-cinema-700 rounded ml-4">删除</button>
+            <button onClick={loadScript} disabled={scriptLoading} className="text-indigo-400 hover:text-indigo-300 text-sm px-3 py-1 bg-cinema-700 rounded ml-2">
+              {scriptLoading ? '加载中...' : (scriptExpanded ? '收起剧本' : '查看剧本')}
+            </button>
           </div>
 
           <StepProgress currentStep={currentStep} />
@@ -411,6 +440,13 @@
           <LogViewer pipelineId={pid} isRunning={pipeline.status === 'running' || pipeline.status?.startsWith('step_')} />
 
           <ArtifactList pipelineId={pid} />
+
+          {scriptExpanded && (
+            <div className="mt-6 bg-cinema-900 p-4 rounded border border-cinema-700 relative">
+              <h4 className="text-sm font-semibold text-gray-300 mb-2">剧本原文</h4>
+              <pre className="text-xs text-gray-300 overflow-auto max-h-96 whitespace-pre-wrap">{scriptText}</pre>
+            </div>
+          )}
 
           <div className="mt-6 text-xs text-gray-500">
             创建时间: {new Date(pipeline.created_at).toLocaleString()}<br/>
