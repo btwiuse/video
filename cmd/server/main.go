@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -148,7 +149,7 @@ func runPythonAsync(p *Pipeline, args []string) {
 	if v := os.Getenv("DATA_DIR"); v != "" {
 		dataDir = v
 	}
-	cmd.Env = append(os.Environ(), fmt.Sprintf("DATA_DIR=%s", dataDir))
+	cmd.Env = append(os.Environ(), fmt.Sprintf("DATA_DIR=%s", dataDir), fmt.Sprintf("OUTPUT_DIR=%s", outDir))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	p.Cmd = cmd
@@ -319,6 +320,22 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate dependencies
+	dir := outputDir(id)
+	required := map[int][]string{}
+	required[2] = []string{"storyboard.json"}
+	required[3] = []string{"storyboard.json", "manifest.json"}
+	required[4] = []string{"storyboard.json", "clip_manifest.json"}
+	required[5] = []string{"clip_manifest.json", "audio_manifest.json"}
+	if deps, ok := required[step]; ok {
+		for _, f := range deps {
+			if !fileExists(filepath.Join(dir, f)) {
+				http.Error(w, fmt.Sprintf("missing dependency: %s (run previous steps first)", f), http.StatusConflict)
+				return
+			}
+		}
+	}
+
 	// Cancel previous if running
 	if p.Status == StatusRunning && p.Cancel != nil {
 		p.Cancel()
@@ -374,6 +391,11 @@ func handleListPipelines(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		id := e.Name()
+		// Only include directories that have a pipeline.json
+		key := pipelineKey(id)
+		if !fileExists(key) {
+			continue
+		}
 		p := loadPipelineState(id)
 		if p == nil {
 			// Fallback: detect from filesystem
@@ -395,6 +417,13 @@ func handleListPipelines(w http.ResponseWriter, r *http.Request) {
 			"updated_at":  p.UpdatedAt,
 		})
 	}
+
+	// Sort by updated_at descending (newest first)
+	sort.Slice(list, func(i, j int) bool {
+		ti := list[i]["updated_at"].(time.Time)
+		tj := list[j]["updated_at"].(time.Time)
+		return ti.After(tj)
+	})
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"pipelines": list})
@@ -495,6 +524,22 @@ func handleArtifacts(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "artifact not found", http.StatusNotFound)
 		return
 	}
+	// Set Content-Type based on extension
+	ext := strings.ToLower(filepath.Ext(name))
+	ct := "application/octet-stream"
+	switch ext {
+	case ".json":
+		ct = "application/json"
+	case ".png", ".jpg", ".jpeg", ".gif", ".webp":
+		ct = "image/" + strings.TrimPrefix(ext, ".")
+	case ".mp4", ".webm", ".mov":
+		ct = "video/" + strings.TrimPrefix(ext, ".")
+	case ".txt", ".md":
+		ct = "text/plain; charset=utf-8"
+	case ".wav", ".mp3", ".m4a":
+		ct = "audio/" + strings.TrimPrefix(ext, ".")
+	}
+	w.Header().Set("Content-Type", ct)
 	http.ServeFile(w, r, path)
 }
 

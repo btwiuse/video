@@ -66,8 +66,7 @@
       return <span className={`px-2 py-1 rounded text-xs font-semibold ${colors[status] || 'bg-gray-500 text-gray-100'}`}>{labels[status] || status}</span>;
     }
 
-    function StepProgress({ step, status }) {
-      const currentStep = status?.startsWith('step_') ? parseInt(status.split('_')[1]) : (status === 'done' ? 5 : 0);
+    function StepProgress({ currentStep }) {
       return (
         <div className="flex items-center gap-2 my-6">
           {[1,2,3,4,5].map(n => (
@@ -100,15 +99,28 @@
 
       useEffect(() => { load(); }, [load]);
 
-      const download = (name) => { window.open(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(name)}`, '_blank'); };
+      const download = async (name) => {
+        try {
+          const res = await api(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(name)}`);
+          if (!res.ok) throw new Error('Download failed');
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = name;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        } catch (e) { console.error(e); }
+      };
 
       const viewJson = async (name) => {
         try {
           const res = await api(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(name)}`);
-          if (res.ok) {
-            const text = await res.text();
-            setPreview({ name, text });
-          }
+          if (!res.ok) throw new Error('Fetch failed');
+          const text = await res.text();
+          setPreview({ name, text });
         } catch (e) { console.error(e); }
       };
 
@@ -154,7 +166,26 @@
 
     function PipelineDetail({ pipeline, onRefresh, onBack }) {
       const [actionLoading, setActionLoading] = useState(false);
+      const getCurrentStep = () => {
+        if (pipeline.status === 'done') return 5;
+        if (pipeline.status === 'running') return pipeline.step || 0;
+        if (pipeline.status?.startsWith('step_')) {
+          const n = parseInt(pipeline.status.split('_')[1]);
+          // step_N means step N is the next one to run, so N-1 are done
+          return Math.max(0, n - 1);
+        }
+        return pipeline.step || 0;
+      };
+      const currentStep = getCurrentStep();
+
       const pid = pipeline.pipeline_id;
+
+      const canRunStep = (n) => {
+        if (actionLoading) return false;
+        if (pipeline.status === 'done') return false;
+        if (n <= currentStep) return true;
+        return false;
+      };
 
       const runStep = async (step) => {
         setActionLoading(true);
@@ -167,7 +198,8 @@
       const runAll = async () => {
         setActionLoading(true);
         try {
-          for (let s = 1; s <= 5; s++) {
+          const startStep = currentStep === 5 ? 1 : currentStep + 1;
+          for (let s = startStep; s <= 5; s++) {
             await api(`/pipelines/${pid}/steps/${s}`, { method: 'POST' });
             const start = Date.now();
             const timeouts = [0, 10, 10, 30, 30, 15];
@@ -211,13 +243,13 @@
               <h2 className="text-xl font-bold text-white">Pipeline {pid.slice(-8)}</h2>
               <div className="flex items-center gap-3 mt-2">
                 <StatusBadge status={pipeline.status} />
-                <span className="text-gray-400 text-sm">步骤 {pipeline.step}/5</span>
+                <span className="text-gray-400 text-sm">步骤 {currentStep}/5</span>
               </div>
             </div>
             <button onClick={del} className="text-red-400 hover:text-red-300 text-sm px-3 py-1 bg-cinema-700 rounded">删除</button>
           </div>
 
-          <StepProgress step={pipeline.step} status={pipeline.status} />
+          <StepProgress currentStep={currentStep} />
 
           {pipeline.error && (
             <div className="bg-red-900/30 border border-red-700 text-red-200 p-3 rounded text-sm mb-4">
@@ -230,12 +262,12 @@
               <button
                 key={n}
                 onClick={() => runStep(n)}
-                disabled={actionLoading}
+                disabled={!canRunStep(n)}
                 className={`py-2 px-3 rounded text-sm font-medium transition ${
-                  n <= pipeline.step || pipeline.status === 'done'
+                  n <= currentStep || pipeline.status === 'done'
                     ? 'bg-indigo-600 hover:bg-indigo-500 text-white'
-                    : 'bg-cinema-700 text-gray-400 hover:bg-cinema-600'
-                } ${actionLoading ? 'opacity-50 cursor-wait' : ''}`}
+                    : 'bg-cinema-700 text-gray-400'
+                } ${!canRunStep(n) ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 {STEP_NAMES[n]}
               </button>
