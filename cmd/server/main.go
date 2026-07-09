@@ -34,9 +34,9 @@ type Pipeline struct {
 	Status    PipelineStatus
 	Step      int           // current step 0-5
 	Error     string
-	Cmd       *exec.Cmd
-	Ctx       context.Context
-	Cancel    context.CancelFunc
+	Cmd       *exec.Cmd     `json:"-"` // not serializable
+	Ctx       context.Context `json:"-"` // not serializable
+	Cancel    context.CancelFunc `json:"-"` // not serializable
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -98,16 +98,12 @@ func detectStatus(id string) PipelineStatus {
 		"audio_manifest.json",
 	}
 	for i, f := range steps {
-		if fileExists(filepath.Join(dir, f)) {
-			_ = i
-			continue
+		if !fileExists(filepath.Join(dir, f)) {
+			return PipelineStatus(fmt.Sprintf("step_%d", i+1))
 		}
-		return PipelineStatus(fmt.Sprintf("step_%d", i+1))
 	}
-	if fileExists(filepath.Join(dir, "final.mp4")) {
-		return StatusDone
-	}
-	return StatusPending
+	// All step files exist but final.mp4 is missing → step 5 not yet run
+	return "step_5"
 }
 
 func runPythonAsync(p *Pipeline, args []string) {
@@ -234,8 +230,10 @@ func handleGetPipeline(w http.ResponseWriter, r *http.Request) {
 		mu.Unlock()
 	}
 
-	// Refresh status from filesystem if not running/canceled
-	if p.Status != StatusRunning && p.Status != StatusCanceled {
+	// Refresh status from filesystem only if still pending
+	// Once running/failed/done/canceled, the background goroutine or terminal
+	// state owns the status.
+	if p.Status == StatusPending {
 		p.Status = detectStatus(id)
 		p.UpdatedAt = time.Now()
 		savePipelineState(p)

@@ -39,7 +39,7 @@ echo
 echo "→ Trigger Step 1 (storyboard)"
 curl -s -X POST "$BASE/pipelines/$PIPELINE_ID/steps/1" | python3 -m json.tool
 echo "Waiting for Step 1 to complete..."
-for i in $(seq 1 12); do
+for i in $(seq 1 120); do
     sleep 5
     STATUS=$(curl -s "$BASE/pipelines/$PIPELINE_ID" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
     echo "  [$i] status=$STATUS"
@@ -74,7 +74,7 @@ echo
 echo "→ Trigger Step 2 (assets)"
 curl -s -X POST "$BASE/pipelines/$PIPELINE_ID/steps/2" | python3 -m json.tool
 echo "Waiting for Step 2..."
-for i in $(seq 1 8); do
+for i in $(seq 1 120); do
     sleep 5
     STATUS=$(curl -s "$BASE/pipelines/$PIPELINE_ID" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
     echo "  [$i] status=$STATUS"
@@ -93,8 +93,8 @@ echo
 # ============================================================================
 echo "→ Trigger Step 3 (videos)"
 curl -s -X POST "$BASE/pipelines/$PIPELINE_ID/steps/3" | python3 -m json.tool
-echo "Waiting for Step 3 (this may take a while)..."
-for i in $(seq 1 12); do
+echo "Waiting for Step 3 (video generation is slow; this may take 10+ minutes)..."
+for i in $(seq 1 60); do
     sleep 10
     STATUS=$(curl -s "$BASE/pipelines/$PIPELINE_ID" | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
     echo "  [$i] status=$STATUS"
