@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,14 @@ import (
 	"sync"
 	"time"
 )
+
+var verbose *bool
+
+func vlog(format string, args ...any) {
+	if *verbose {
+		log.Printf(format, args...)
+	}
+}
 
 // ============================================================================
 // Pipeline state (in-memory, single instance)
@@ -118,22 +127,27 @@ func runPythonAsync(p *Pipeline, args []string) {
 	p.Step++
 	savePipelineState(p)
 
+	vlog("pipeline %s step %d command: uv %s", p.ID, p.Step, strings.Join(args, " "))
+
 	go func() {
 		err := cmd.Run()
 		mu.Lock()
 		defer mu.Unlock()
 		if p.Status == StatusCanceled {
+			vlog("pipeline %s step %d canceled", p.ID, p.Step)
 			return
 		}
 		if err != nil {
 			p.Status = StatusFailed
 			p.Error = err.Error()
+			vlog("pipeline %s step %d failed: %v", p.ID, p.Step, err)
 		} else {
 			// Verify actual output status
 			p.Status = detectStatus(p.ID)
 			if p.Status == StatusDone {
 				p.Step = 5
 			}
+			vlog("pipeline %s step %d done status=%s", p.ID, p.Step, p.Status)
 		}
 		p.UpdatedAt = time.Now()
 		savePipelineState(p)
@@ -199,6 +213,8 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 	mu.Unlock()
 	savePipelineState(p)
 
+	vlog("pipeline created id=%s script=%s", id, sp)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]any{
@@ -238,6 +254,8 @@ func handleGetPipeline(w http.ResponseWriter, r *http.Request) {
 		p.UpdatedAt = time.Now()
 		savePipelineState(p)
 	}
+
+	vlog("pipeline %s status=%s step=%d", id, p.Status, p.Step)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
@@ -279,6 +297,7 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 
 	sp := scriptPath(id)
 	args := []string{"main.py"}
+	stepNames := []string{"", "storyboard", "assets", "videos", "audio", "compose"}
 	switch step {
 	case 1:
 		args = append(args, "storyboard", sp)
@@ -292,6 +311,7 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "compose", filepath.Join(outputDir(id), "clip_manifest.json"), filepath.Join(outputDir(id), "audio_manifest.json"))
 	}
 
+	vlog("pipeline %s step %d (%s) starting", id, step, stepNames[step])
 	runPythonAsync(p, args)
 	savePipelineState(p)
 
@@ -327,6 +347,7 @@ func handleDeletePipeline(w http.ResponseWriter, r *http.Request) {
 	os.Remove(scriptPath(id))
 	os.Remove(pipelineKey(id))
 
+	vlog("pipeline deleted id=%s", id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -424,6 +445,9 @@ func corsMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
+	verbose = flag.Bool("v", false, "verbose logging")
+	flag.Parse()
+
 	mux := http.NewServeMux()
 	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("cmd/server/static"))))
 	mux.HandleFunc("/", serveHome)
@@ -456,6 +480,6 @@ func main() {
 	if v := os.Getenv("PORT"); v != "" {
 		addr = ":" + v
 	}
-	log.Printf("server listening on %s", addr)
+	log.Printf("server listening on %s (verbose=%v)", addr, *verbose)
 	log.Fatal(http.ListenAndServe(addr, corsMiddleware(mux)))
 }
