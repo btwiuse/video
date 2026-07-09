@@ -382,6 +382,8 @@
       const [pipelines, setPipelines] = useState([]);
       const [selected, setSelected] = useState(null);
       const [health, setHealth] = useState(null);
+      const [currentView, setCurrentView] = useState('list');
+      const [pipelineId, setPipelineId] = useState(null);
       const pollRef = useRef(null);
 
       const getHashView = () => {
@@ -402,16 +404,15 @@
       };
 
       const refreshSelected = useCallback(async () => {
-        const { id } = getHashView();
-        if (!id) return;
+        if (!pipelineId) return;
         try {
-          const res = await api(`/pipelines/${id}`);
+          const res = await api(`/pipelines/${pipelineId}`);
           if (res.ok) {
             const data = await res.json();
             setSelected(data);
           }
         } catch (e) { console.error(e); }
-      }, []);
+      }, [pipelineId]);
 
       // Sync state with hash
       useEffect(() => {
@@ -420,12 +421,24 @@
           if (v === 'detail' && id) {
             api(`/pipelines/${id}`).then(res => {
               if (res.ok) {
-                res.json().then(data => setSelected(data));
+                res.json().then(data => {
+                  setSelected(data);
+                  setCurrentView('detail');
+                  setPipelineId(id);
+                });
               } else {
                 // Pipeline doesn't exist on server (e.g., Railway restart)
                 navigateTo('list');
               }
             });
+          } else if (v === 'create') {
+            setCurrentView('create');
+            setPipelineId(null);
+            setSelected(null);
+          } else {
+            setCurrentView('list');
+            setPipelineId(null);
+            setSelected(null);
           }
         };
         window.addEventListener('hashchange', onHashChange);
@@ -436,15 +449,14 @@
 
       // Poll when running
       useEffect(() => {
-        const { view: v, id } = getHashView();
-        if (v === 'detail' && selected && (selected.status === 'running' || selected.status?.startsWith('step_'))) {
+        if (currentView === 'detail' && selected && (selected.status === 'running' || selected.status?.startsWith('step_'))) {
           pollRef.current = setInterval(refreshSelected, 3000);
         } else if (pollRef.current) {
           clearInterval(pollRef.current);
           pollRef.current = null;
         }
         return () => { if (pollRef.current) clearInterval(pollRef.current); };
-      }, [selected, refreshSelected]);
+      }, [currentView, selected, refreshSelected]);
 
       const selectPipeline = async (id) => {
         navigateTo('detail', id);
@@ -459,8 +471,6 @@
           } catch (e) { setHealth(false); }
         })();
       }, []);
-
-      const { view: currentView, id: pipelineId } = getHashView();
 
       return (
         <div className="min-h-screen flex flex-col">
