@@ -361,6 +361,7 @@
               <div className="flex items-center gap-3 mt-2">
                 <StatusBadge status={pipeline.status} />
                 <span className="text-gray-400 text-sm">步骤 {currentStep}/5</span>
+                {pipeline.duration && <span className="text-gray-400 text-xs">运行时长: {pipeline.duration}</span>}
               </div>
             </div>
             <button onClick={del} className="text-red-400 hover:text-red-300 text-sm px-3 py-1 bg-cinema-700 rounded ml-4">删除</button>
@@ -494,6 +495,7 @@
     function PipelineList({ onSelect, onCreateNew }) {
       const [items, setItems] = useState([]);
       const [loading, setLoading] = useState(true);
+      const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
 
       const load = useCallback(async () => {
         setLoading(true);
@@ -508,8 +510,57 @@
 
       useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, []);
 
+      const sorted = [...items].sort((a, b) => {
+        const ta = new Date(a.created_at).getTime();
+        const tb = new Date(b.created_at).getTime();
+        return viewMode === 'list' ? ta - tb : tb - ta; // list: oldest first, grid: newest first
+      });
+
+      const formatDuration = (d) => {
+        if (!d) return '';
+        return d;
+      };
+
+      if (viewMode === 'grid') {
+        return (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div />
+              <button onClick={() => setViewMode('list')} className="text-sm text-indigo-400 hover:text-indigo-300">列表视图</button>
+            </div>
+            {loading && items.length === 0 && <p className="text-gray-500">加载中...</p>}
+            {items.length === 0 && !loading && (
+              <div className="text-center py-16">
+                <p className="text-gray-500 mb-4">暂无 Pipeline</p>
+                <button onClick={onCreateNew} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded">创建 Pipeline</button>
+              </div>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {sorted.map(p => (
+                <div key={p.pipeline_id} onClick={() => onSelect(p.pipeline_id)} className="pipeline-card bg-cinema-800 p-5 rounded-lg border border-cinema-700 cursor-pointer">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-white text-sm font-medium truncate" title={p.name}>{p.name || p.pipeline_id.slice(-8)}</span>
+                    <StatusBadge status={p.status} />
+                  </div>
+                  <div className="text-gray-400 text-xs">步骤 {p.step}/5</div>
+                  <div className="mt-3 w-full bg-cinema-700 rounded-full h-1.5">
+                    <div className="bg-indigo-500 h-1.5 rounded-full" style={{ width: `${(p.step / 5) * 100}%` }} />
+                  </div>
+                  <div className="mt-3 text-xs text-gray-500">{new Date(p.updated_at).toLocaleString()}</div>
+                  {p.duration && <div className="mt-1 text-xs text-gray-500">运行时长: {formatDuration(p.duration)}</div>}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div>
+          <div className="flex items-center justify-between mb-3">
+            <div />
+            <button onClick={() => setViewMode('grid')} className="text-sm text-indigo-400 hover:text-indigo-300">卡片视图</button>
+          </div>
           {loading && items.length === 0 && <p className="text-gray-500">加载中...</p>}
           {items.length === 0 && !loading && (
             <div className="text-center py-16">
@@ -517,18 +568,21 @@
               <button onClick={onCreateNew} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded">创建 Pipeline</button>
             </div>
           )}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {items.map(p => (
-              <div key={p.pipeline_id} onClick={() => onSelect(p.pipeline_id)} className="pipeline-card bg-cinema-800 p-5 rounded-lg border border-cinema-700 cursor-pointer">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-white text-sm font-medium truncate" title={p.name}>{p.name || p.pipeline_id.slice(-8)}</span>
-                  <StatusBadge status={p.status} />
-                </div>
-                <div className="text-gray-400 text-xs">步骤 {p.step}/5</div>
-                <div className="mt-3 w-full bg-cinema-700 rounded-full h-1.5">
-                  <div className="bg-indigo-500 h-1.5 rounded-full" style={{ width: `${(p.step / 5) * 100}%` }} />
-                </div>
-                <div className="mt-3 text-xs text-gray-500">{new Date(p.updated_at).toLocaleString()}</div>
+          <div className="bg-cinema-800 rounded-lg border border-cinema-700 overflow-hidden">
+            <div className="grid grid-cols-12 gap-4 p-3 bg-cinema-700 text-xs text-gray-300 font-semibold">
+              <div className="col-span-4">名称</div>
+              <div className="col-span-2">状态</div>
+              <div className="col-span-1">步骤</div>
+              <div className="col-span-3">创建时间</div>
+              <div className="col-span-2">运行时长</div>
+            </div>
+            {sorted.map(p => (
+              <div key={p.pipeline_id} onClick={() => onSelect(p.pipeline_id)} className="grid grid-cols-12 gap-4 p-3 border-t border-cinema-700 cursor-pointer hover:bg-cinema-700/50">
+                <div className="col-span-4 text-white text-sm font-medium truncate" title={p.name}>{p.name || p.pipeline_id.slice(-8)}</div>
+                <div className="col-span-2"><StatusBadge status={p.status} /></div>
+                <div className="col-span-1 text-gray-400 text-xs">步骤 {p.step}/5</div>
+                <div className="col-span-3 text-gray-400 text-xs">{new Date(p.created_at).toLocaleString()}</div>
+                <div className="col-span-2 text-gray-400 text-xs">{formatDuration(p.duration) || '-'}</div>
               </div>
             ))}
           </div>

@@ -55,6 +55,8 @@ type Pipeline struct {
 	Cancel    context.CancelFunc `json:"-"` // not serializable
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	StartedAt time.Time
+	Duration  string
 }
 
 var (
@@ -195,6 +197,7 @@ func runPythonAsync(p *Pipeline, args []string) {
 	p.Cmd = cmd
 	p.Status = StatusRunning
 	p.Step++
+	p.StartedAt = time.Now()
 	savePipelineState(p)
 
 	vlog("pipeline %s step %d command: uv %s (output=%s)", p.ID, p.Step, strings.Join(args, " "), outDir)
@@ -210,6 +213,7 @@ func runPythonAsync(p *Pipeline, args []string) {
 			vlog("pipeline %s step %d canceled", p.ID, p.Step)
 			return
 		}
+		p.Duration = time.Since(p.StartedAt).String()
 		if err != nil {
 			p.Status = StatusFailed
 			p.Error = err.Error()
@@ -341,6 +345,7 @@ func handleGetPipeline(w http.ResponseWriter, r *http.Request) {
 		"error":       p.Error,
 		"created_at":  p.CreatedAt,
 		"updated_at":  p.UpdatedAt,
+		"duration":    p.Duration,
 	})
 }
 
@@ -519,6 +524,7 @@ func handleListPipelines(w http.ResponseWriter, r *http.Request) {
 			"error":       p.Error,
 			"created_at":  p.CreatedAt,
 			"updated_at":  p.UpdatedAt,
+			"duration":    p.Duration,
 		})
 	}
 
