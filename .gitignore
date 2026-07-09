@@ -45,3 +45,12 @@ temp-audio.m4a
 # Local AI config
 .claude
 .crush
+
+# Go
+server
+cmd/server/*.wasm
+*.wasm
+go.sum
+
+# Build output
+tmp/
