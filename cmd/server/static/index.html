@@ -120,7 +120,12 @@
           const res = await api(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(name)}`);
           if (!res.ok) throw new Error('Fetch failed');
           const text = await res.text();
-          setPreview({ name, text });
+          const MAX_PREVIEW = 50000;
+          if (text.length > MAX_PREVIEW) {
+            setPreview({ name, text: text.substring(0, MAX_PREVIEW) + '\n\n... (文件过大，仅显示前 50KB，请下载查看完整内容)' });
+          } else {
+            setPreview({ name, text });
+          }
         } catch (e) { console.error(e); }
       };
 
@@ -201,22 +206,25 @@
           const startStep = currentStep === 5 ? 1 : currentStep + 1;
           for (let s = startStep; s <= 5; s++) {
             await api(`/pipelines/${pid}/steps/${s}`, { method: 'POST' });
-            let failed = false;
+            const startTime = Date.now();
+            const timeout = 30 * 60 * 1000; // 30 minutes
             while (true) {
               await new Promise(r => setTimeout(r, 3000));
+              if (Date.now() - startTime > timeout) {
+                alert(`步骤 ${s} 超时 (30分钟)，请检查后端状态`);
+                break;
+              }
               const res = await api(`/pipelines/${pid}`);
               if (!res.ok) break;
               const data = await res.json();
               const status = data.status;
               if (status === 'failed' || status === 'canceled') {
                 alert(`步骤 ${s} 失败: ${data.error || status}`);
-                failed = true;
                 break;
               }
               const currentStep = status?.startsWith('step_') ? parseInt(status.split('_')[1]) : (status === 'done' ? 5 : 0);
               if (currentStep > s || status === 'done') break;
             }
-            if (failed) break;
           }
           onRefresh();
         } finally { setActionLoading(false); }
@@ -224,8 +232,16 @@
 
       const del = async () => {
         if (!confirm('确定删除此 pipeline 及其所有产物?')) return;
-        await api(`/pipelines/${pid}`, { method: 'DELETE' });
-        onBack();
+        try {
+          const res = await api(`/pipelines/${pid}`, { method: 'DELETE' });
+          if (!res.ok) {
+            alert(`删除失败: HTTP ${res.status}`);
+            return;
+          }
+          onBack();
+        } catch (e) {
+          alert(`删除失败: ${e.message}`);
+        }
       };
 
       return (

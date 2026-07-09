@@ -18,6 +18,7 @@ from moviepy import (
     AudioFileClip,
     concatenate_videoclips,
     CompositeAudioClip,
+    CompositeVideoClip,
     ColorClip,
     vfx,
 )
@@ -117,20 +118,21 @@ class PostProduction:
         if len(clips) == 1:
             return clips[0]
 
-        # Determine transition types between clips
         result = clips[0]
         for i in range(1, len(clips)):
-            transition = "hard_cut"  # default
+            transition = "hard_cut"
             if i < len(clip_manifest):
                 trans_type = clip_manifest[i].get("transition_type", "B")
-
                 if trans_type in ("C", "D"):
-                    transition = "crossfade"  # dissolve for time/location changes
-                elif trans_type == "B":
-                    # Check for J-cut: audio from next clip starts early
-                    transition = "hard_cut"
+                    transition = "crossfade"
 
-            result = concatenate_videoclips([result, clips[i]])
+            if transition == "crossfade":
+                fade_duration = 0.5
+                clip1 = result.crossfadeout(fade_duration)
+                clip2 = clips[i].crossfadein(fade_duration).with_start(result.duration - fade_duration)
+                result = CompositeVideoClip([clip1, clip2])
+            else:
+                result = concatenate_videoclips([result, clips[i]])
 
         return result
 
@@ -194,8 +196,15 @@ class PostProduction:
         self, video: VideoFileClip, srt_path: str
     ) -> VideoFileClip:
         """Overlay subtitles from SRT file."""
-        # Generate subtitle clips
-        generator = lambda txt: None  # Would use TextClip with SUBTITLE_STYLE
+        from moviepy import TextClip
+        generator = lambda txt: TextClip(
+            txt,
+            fontsize=48,
+            color='white',
+            font='Arial-Bold',
+            stroke_color='black',
+            stroke_width=2,
+        )
 
         subtitle_clips = SubtitlesClip(
             srt_path,

@@ -37,6 +37,11 @@ const (
 	StatusDone     PipelineStatus = "done"
 	StatusFailed   PipelineStatus = "failed"
 	StatusCanceled PipelineStatus = "canceled"
+	StatusStep1    PipelineStatus = "step_1"
+	StatusStep2    PipelineStatus = "step_2"
+	StatusStep3    PipelineStatus = "step_3"
+	StatusStep4    PipelineStatus = "step_4"
+	StatusStep5    PipelineStatus = "step_5"
 )
 
 type Pipeline struct {
@@ -137,7 +142,7 @@ func detectStatus(id string) PipelineStatus {
 		}
 	}
 	// All step files exist but final.mp4 is missing → step 5 not yet run
-	return "step_5"
+	return StatusStep5
 }
 
 func runPythonAsync(p *Pipeline, args []string) {
@@ -359,7 +364,6 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 
 	vlog("pipeline %s step %d (%s) starting", id, step, stepNames[step])
 	runPythonAsync(p, args)
-	savePipelineState(p)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -398,15 +402,7 @@ func handleListPipelines(w http.ResponseWriter, r *http.Request) {
 		}
 		p := loadPipelineState(id)
 		if p == nil {
-			// Fallback: detect from filesystem
-			status := detectStatus(id)
-			p = &Pipeline{
-				ID:        id,
-				Status:    status,
-				Step:      0,
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
-			}
+			continue
 		}
 		list = append(list, map[string]any{
 			"pipeline_id": p.ID,
@@ -448,9 +444,12 @@ func handleDeletePipeline(w http.ResponseWriter, r *http.Request) {
 	mu.Unlock()
 
 	// Best effort cleanup
-	os.RemoveAll(outputDir(id))
-	os.Remove(scriptPath(id))
-	os.Remove(pipelineKey(id))
+	errRemoveAll := os.RemoveAll(outputDir(id))
+	errRemove := os.Remove(scriptPath(id))
+	errRemoveKey := os.Remove(pipelineKey(id))
+	if errRemoveAll != nil || errRemove != nil || errRemoveKey != nil {
+		vlog("pipeline %s cleanup errors: rmAll=%v rm=%v rmKey=%v", id, errRemoveAll, errRemove, errRemoveKey)
+	}
 
 	vlog("pipeline deleted id=%s", id)
 	w.WriteHeader(http.StatusNoContent)
@@ -540,6 +539,10 @@ func handleArtifacts(w http.ResponseWriter, r *http.Request) {
 		ct = "audio/" + strings.TrimPrefix(ext, ".")
 	}
 	w.Header().Set("Content-Type", ct)
+	if !strings.HasPrefix(filepath.Clean(path), filepath.Clean(outputDir(pid))+string(filepath.Separator)) {
+		http.Error(w, "artifact not found", http.StatusNotFound)
+		return
+	}
 	http.ServeFile(w, r, path)
 }
 
@@ -554,7 +557,12 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := r.Header.Get("Origin")
+		allowedOrigin := "*"
+		if origin != "" {
+			allowedOrigin = origin
+		}
+		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {

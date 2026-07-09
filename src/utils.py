@@ -33,8 +33,14 @@ def save_json(data: dict | list, filepath: str) -> None:
 
 def load_json(filepath: str) -> dict | list:
     """Load JSON from file."""
-    with open(filepath, "r", encoding="utf-8") as f:
-        return json.load(f)
+    filepath = os.path.expanduser(filepath)
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"JSON file not found: {filepath}")
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid JSON in {filepath}: {e}")
 
 
 def parse_shot_id(shot_id: str) -> tuple[str, int]:
