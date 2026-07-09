@@ -399,6 +399,66 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func handleSummarize(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	id := strings.TrimPrefix(r.URL.Path, "/pipelines/")
+	id = strings.TrimSuffix(id, "/summarize/")
+	id = strings.TrimSuffix(id, "/summarize")
+	if id == "" {
+		http.Error(w, "missing pipeline id", http.StatusBadRequest)
+		return
+	}
+
+	sp := scriptPath(id)
+	if !fileExists(sp) {
+		http.Error(w, "script not found", http.StatusNotFound)
+		return
+	}
+
+	// Run summarize script via Python
+	cmd := exec.Command("uv", "run", "python", "main.py", "summarize", sp)
+	cmd.Dir = "."
+	outDir := outputDir(id)
+	dataDir := "."
+	if v := os.Getenv("DATA_DIR"); v != "" {
+		dataDir = v
+	}
+	cmd.Env = append(os.Environ(), fmt.Sprintf("DATA_DIR=%s", dataDir), fmt.Sprintf("OUTPUT_DIR=%s", outDir))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		vlog("pipeline %s summarize failed: %v output=%s", id, err, string(out))
+		http.Error(w, fmt.Sprintf("summarize failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Parse JSON output (last non-empty line)
+	var result map[string]string
+	lines := strings.Split(string(out), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		if err := json.Unmarshal([]byte(line), &result); err == nil {
+			break
+		}
+	}
+	if result == nil {
+		result = map[string]string{"title": "Untitled", "summary": ""}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"title":   result["title"],
+		"summary": result["summary"],
+		"cached":  false,
+	})
+}
+
 func handleListPipelines(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -620,6 +680,10 @@ func main() {
 		path := r.URL.Path
 		if strings.HasSuffix(path, "/artifacts") || strings.Contains(path, "/artifacts/") {
 			handleArtifacts(w, r)
+			return
+		}
+		if strings.HasSuffix(path, "/summarize") {
+			handleSummarize(w, r)
 			return
 		}
 		if r.Method == http.MethodGet {

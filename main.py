@@ -9,10 +9,12 @@ AI 剧本到电影系统 — CLI 入口
     python main.py videos <storyboard.json> <assets.json>   # 仅生成视频
     python main.py audio <storyboard.json> <clips.json>     # 仅生成音频
     python main.py compose <clips.json> <audio.json>        # 仅后期合成
+    python main.py summarize <script_file>        # 剧本摘要生成
     python main.py status                          # 查看输出目录状态
 """
 
 import asyncio
+import json
 import logging
 import sys
 import time
@@ -244,3 +246,17 @@ def status():
 
 if __name__ == "__main__":
     cli()
+
+@cli.command("summarize")
+@click.argument("script_file", type=click.Path(exists=True))
+@click.option("--reasoning/--no-reasoning", default=None,
+              help="Use DeepSeek reasoning model (R1)")
+def summarize(script_file, reasoning):
+    """Summarize a screenplay script into a short title/description."""
+    if reasoning is not None:
+        config.DEEPSEEK_USE_REASONING = reasoning
+
+    script_text = Path(script_file).read_text(encoding="utf-8")
+    from src.summarize import summarize_script
+    result = summarize_script(script_text)
+    print(json.dumps(result, ensure_ascii=False))

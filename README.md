@@ -49,6 +49,7 @@ Step 5: 后期合成 (MoviePy/FFmpeg) → final.mp4
 | `python main.py videos <storyboard.json> <manifest.json>` | 仅 Step 3：生成视频片段 |
 | `python main.py audio <storyboard.json> <clips.json>` | 仅 Step 4：生成音频 |
 | `python main.py compose <clips.json> [audio.json]` | 仅 Step 5：后期合成 |
+| `python main.py summarize <剧本>` | 生成剧本摘要（标题+简介） |
 | `python main.py status` | 查看输出目录状态 |
 
 ### 常用选项
