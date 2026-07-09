@@ -60,23 +60,27 @@ var (
 // ============================================================================
 
 func outputDir(id string) string {
-	base := os.Getenv("OUTPUT_DIR")
+	base := os.Getenv("DATA_DIR")
 	if base == "" {
-		base = "./output"
+		base = "."
 	}
-	return filepath.Join(base, id)
+	return filepath.Join(base, "output", id)
 }
 
 func scriptPath(id string) string {
-	return filepath.Join("tmp", fmt.Sprintf("script_%s.txt", id))
+	base := os.Getenv("DATA_DIR")
+	if base == "" {
+		base = "."
+	}
+	return filepath.Join(base, "tmp", fmt.Sprintf("script_%s.txt", id))
 }
 
 func pipelineKey(id string) string {
-	base := os.Getenv("OUTPUT_DIR")
+	base := os.Getenv("DATA_DIR")
 	if base == "" {
-		base = "./output"
+		base = "."
 	}
-	return filepath.Join(base, id, "pipeline.json")
+	return filepath.Join(base, "output", id, "pipeline.json")
 }
 
 func savePipelineState(p *Pipeline) {
@@ -140,7 +144,11 @@ func runPythonAsync(p *Pipeline, args []string) {
 	cmd := exec.CommandContext(p.Ctx, "uv", append([]string{"run", "python"}, args...)...)
 	cmd.Dir = "."
 	outDir := outputDir(p.ID)
-	cmd.Env = append(os.Environ(), fmt.Sprintf("OUTPUT_DIR=%s", outDir))
+	dataDir := "."
+	if v := os.Getenv("DATA_DIR"); v != "" {
+		dataDir = v
+	}
+	cmd.Env = append(os.Environ(), fmt.Sprintf("DATA_DIR=%s", dataDir))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	p.Cmd = cmd
@@ -345,6 +353,53 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func handleListPipelines(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	base := outputDir("")
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		vlog("list pipelines: read dir error: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"pipelines": []any{}})
+		return
+	}
+
+	var list []map[string]any
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		id := e.Name()
+		p := loadPipelineState(id)
+		if p == nil {
+			// Fallback: detect from filesystem
+			status := detectStatus(id)
+			p = &Pipeline{
+				ID:        id,
+				Status:    status,
+				Step:      0,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			}
+		}
+		list = append(list, map[string]any{
+			"pipeline_id": p.ID,
+			"status":      string(p.Status),
+			"step":        p.Step,
+			"error":       p.Error,
+			"created_at":  p.CreatedAt,
+			"updated_at":  p.UpdatedAt,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"pipelines": list})
+}
+
 func handleDeletePipeline(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/pipelines/")
 	id = strings.TrimSuffix(id, "/")
@@ -476,6 +531,8 @@ func main() {
 	mux.HandleFunc("/pipelines", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			handleCreatePipeline(w, r)
+		} else if r.Method == http.MethodGet {
+			handleListPipelines(w, r)
 		} else {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}

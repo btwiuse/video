@@ -337,35 +337,14 @@
       const [items, setItems] = useState([]);
       const [loading, setLoading] = useState(true);
 
-      const addToHistory = (id) => {
-        if (!id) return;
-        const stored = JSON.parse(localStorage.getItem('pipeline_history') || '[]');
-        if (!stored.includes(id)) { stored.unshift(id); localStorage.setItem('pipeline_history', JSON.stringify(stored.slice(0, 50))); }
-      };
-
       const load = useCallback(async () => {
         setLoading(true);
         try {
-          const stored = JSON.parse(localStorage.getItem('pipeline_history') || '[]').filter(Boolean);
-          const results = [];
-          const dead = [];
-          for (const id of stored) {
-            try {
-              const res = await api(`/pipelines/${id}`);
-              if (res.ok) {
-                const data = await res.json();
-                results.push(data);
-              } else if (res.status === 404) {
-                dead.push(id);
-              }
-            } catch (e) {}
+          const res = await api('/pipelines');
+          if (res.ok) {
+            const data = await res.json();
+            setItems(data.pipelines || []);
           }
-          // Clean up dead pipeline IDs from localStorage
-          if (dead.length > 0) {
-            const cleaned = stored.filter(id => !dead.includes(id));
-            localStorage.setItem('pipeline_history', JSON.stringify(cleaned));
-          }
-          setItems(results);
         } finally { setLoading(false); }
       }, []);
 
@@ -382,7 +361,7 @@
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {items.map(p => (
-              <div key={p.pipeline_id} onClick={() => { addToHistory(p.pipeline_id); onSelect(p.pipeline_id); }} className="pipeline-card bg-cinema-800 p-5 rounded-lg border border-cinema-700 cursor-pointer">
+              <div key={p.pipeline_id} onClick={() => onSelect(p.pipeline_id)} className="pipeline-card bg-cinema-800 p-5 rounded-lg border border-cinema-700 cursor-pointer">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-white font-mono text-sm">#{p.pipeline_id.slice(-8)}</span>
                   <StatusBadge status={p.status} />
