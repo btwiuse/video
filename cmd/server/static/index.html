@@ -395,43 +395,67 @@
       const [pipelines, setPipelines] = useState([]);
       const [selected, setSelected] = useState(null);
       const [health, setHealth] = useState(null);
-      const [view, setView] = useState('list');
       const pollRef = useRef(null);
 
+      const getHashView = () => {
+        const hash = window.location.hash.replace('#', '');
+        if (hash.startsWith('/pipelines/')) return { view: 'detail', id: hash.split('/')[2] };
+        if (hash === '/create') return { view: 'create', id: null };
+        return { view: 'list', id: null };
+      };
+
+      const navigateTo = (view, id = null) => {
+        if (view === 'detail' && id) {
+          window.location.hash = `#/pipelines/${id}`;
+        } else if (view === 'create') {
+          window.location.hash = '#/create';
+        } else {
+          window.location.hash = '#';
+        }
+      };
+
       const refreshSelected = useCallback(async () => {
-        if (!selected) return;
+        const { id } = getHashView();
+        if (!id) return;
         try {
-          const res = await api(`/pipelines/${selected.pipeline_id}`);
+          const res = await api(`/pipelines/${id}`);
           if (res.ok) {
             const data = await res.json();
             setSelected(data);
           }
         } catch (e) { console.error(e); }
-      }, [selected]);
+      }, []);
+
+      // Sync state with hash
+      useEffect(() => {
+        const onHashChange = () => {
+          const { view: v, id } = getHashView();
+          if (v === 'detail' && id) {
+            api(`/pipelines/${id}`).then(res => {
+              if (res.ok) res.json().then(data => setSelected(data));
+            });
+          }
+        };
+        window.addEventListener('hashchange', onHashChange);
+        // Initial load from hash
+        onHashChange();
+        return () => window.removeEventListener('hashchange', onHashChange);
+      }, []);
 
       // Poll when running
       useEffect(() => {
-        if (view === 'detail' && selected && (selected.status === 'running' || selected.status?.startsWith('step_'))) {
+        const { view: v, id } = getHashView();
+        if (v === 'detail' && selected && (selected.status === 'running' || selected.status?.startsWith('step_'))) {
           pollRef.current = setInterval(refreshSelected, 3000);
         } else if (pollRef.current) {
           clearInterval(pollRef.current);
           pollRef.current = null;
         }
         return () => { if (pollRef.current) clearInterval(pollRef.current); };
-      }, [view, selected, refreshSelected]);
+      }, [selected, refreshSelected]);
 
       const selectPipeline = async (id) => {
-        try {
-          const res = await api(`/pipelines/${id}`);
-          if (res.ok) {
-            const data = await res.json();
-            setSelected(data);
-            setView('detail');
-            // Add to history so it appears in the list
-            const stored = JSON.parse(localStorage.getItem('pipeline_history') || '[]');
-            if (!stored.includes(id)) { stored.unshift(id); localStorage.setItem('pipeline_history', JSON.stringify(stored.slice(0, 50))); }
-          }
-        } catch (e) { console.error(e); }
+        navigateTo('detail', id);
       };
 
       // Initial health check
@@ -444,10 +468,12 @@
         })();
       }, []);
 
+      const { view: currentView, id: pipelineId } = getHashView();
+
       return (
         <div className="min-h-screen flex flex-col">
           <header className="bg-cinema-800 border-b border-cinema-700 px-6 py-4 flex items-center justify-between">
-            <button onClick={() => setView('list')} className="flex items-center gap-3 hover:opacity-80 transition">
+            <button onClick={() => navigateTo('list')} className="flex items-center gap-3 hover:opacity-80 transition">
               <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center text-white font-bold text-lg">F</div>
               <h1 className="text-xl font-bold text-white">Film Pipeline Studio</h1>
             </button>
@@ -456,31 +482,31 @@
                 <div className={`w-2 h-2 rounded-full ${health ? 'bg-emerald-400' : 'bg-red-500'}`} />
                 <span className="text-sm text-gray-400">{health ? '服务正常' : '服务离线'}</span>
               </div>
-              <button onClick={() => setView('create')} className="text-sm px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded">新建 Pipeline</button>
+              <button onClick={() => navigateTo('create')} className="text-sm px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded">新建 Pipeline</button>
             </div>
           </header>
 
           <main className="flex-1 p-6 overflow-auto">
-            {view === 'create' && (
+            {currentView === 'create' && (
               <div className="max-w-2xl mx-auto">
-                <button onClick={() => setView('list')} className="text-sm text-gray-400 hover:text-white mb-4">← 返回列表</button>
-                <CreatePipeline onCreated={(id) => selectPipeline(id)} />
+                <button onClick={() => navigateTo('list')} className="text-sm text-gray-400 hover:text-white mb-4">← 返回列表</button>
+                <CreatePipeline onCreated={(id) => { selectPipeline(id); }} />
               </div>
             )}
 
-            {view === 'list' && (
+            {currentView === 'list' && (
               <div>
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-lg font-semibold text-white">Pipeline 列表</h2>
                 </div>
-                <PipelineList onSelect={selectPipeline} onCreateNew={() => setView('create')} />
+                <PipelineList onSelect={selectPipeline} onCreateNew={() => navigateTo('create')} />
               </div>
             )}
 
-            {view === 'detail' && selected && (
+            {currentView === 'detail' && selected && (
               <div className="max-w-4xl mx-auto">
-                <button onClick={() => { setSelected(null); setView('list'); }} className="text-sm text-gray-400 hover:text-white mb-4">← 返回列表</button>
-                <PipelineDetail pipeline={selected} onRefresh={refreshSelected} onBack={() => setView('list')} />
+                <button onClick={() => navigateTo('list')} className="text-sm text-gray-400 hover:text-white mb-4">← 返回列表</button>
+                <PipelineDetail pipeline={selected} onRefresh={refreshSelected} onBack={() => navigateTo('list')} />
               </div>
             )}
           </main>
