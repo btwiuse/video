@@ -84,7 +84,7 @@
     function ArtifactList({ pipelineId }) {
       const [artifacts, setArtifacts] = useState([]);
       const [loading, setLoading] = useState(false);
-      const [preview, setPreview] = useState(null);
+      const [expanded, setExpanded] = useState({});
 
       const load = useCallback(async () => {
         setLoading(true);
@@ -116,17 +116,33 @@
       };
 
       const viewJson = async (name) => {
+        setExpanded(prev => {
+          if (prev[name]) {
+            return { ...prev, [name]: null };
+          }
+          return prev;
+        });
         try {
           const res = await api(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(name)}`);
           if (!res.ok) throw new Error('Fetch failed');
           const text = await res.text();
           const MAX_PREVIEW = 50000;
           if (text.length > MAX_PREVIEW) {
-            setPreview({ name, text: text.substring(0, MAX_PREVIEW) + '\n\n... (文件过大，仅显示前 50KB，请下载查看完整内容)' });
+            setExpanded(prev => ({ ...prev, [name]: text.substring(0, MAX_PREVIEW) + '\n\n... (文件过大，仅显示前 50KB，请下载查看完整内容)' }));
           } else {
-            setPreview({ name, text });
+            setExpanded(prev => ({ ...prev, [name]: text }));
           }
         } catch (e) { console.error(e); }
+      };
+
+      const toggleExpand = (name) => {
+        setExpanded(prev => {
+          const next = { ...prev };
+          if (next[name]) {
+            delete next[name];
+          }
+          return next;
+        });
       };
 
       return (
@@ -140,31 +156,33 @@
           {artifacts.length === 0 && <p className="text-gray-500 text-sm">暂无产物文件</p>}
           <div className="space-y-2">
             {artifacts.map(f => (
-              <div key={f.name} className="flex items-center justify-between bg-cinema-800 p-3 rounded border border-cinema-700">
-                <div>
-                  <span className="text-white text-sm font-medium">{f.name}</span>
-                  <span className="text-gray-500 text-xs ml-2">{(f.size / 1024).toFixed(1)} KB</span>
-                </div>
-                <div className="flex gap-2">
-                  {f.name.endsWith('.json') && (
-                    <button onClick={() => viewJson(f.name)} className="text-xs px-2 py-1 bg-cinema-600 hover:bg-cinema-500 rounded text-gray-200">
-                      查看
+              <div key={f.name} className="bg-cinema-800 rounded border border-cinema-700 overflow-hidden">
+                <div className="flex items-center justify-between p-3">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-white text-sm font-medium">{f.name}</span>
+                    <span className="text-gray-500 text-xs ml-2">{(f.size / 1024).toFixed(1)} KB</span>
+                  </div>
+                  <div className="flex gap-2 ml-4">
+                    {f.name.endsWith('.json') && (
+                      <button onClick={() => toggleExpand(f.name)} className="text-xs px-2 py-1 bg-cinema-600 hover:bg-cinema-500 rounded text-gray-200">
+                        {expanded[f.name] ? '收起' : '查看'}
+                      </button>
+                    )}
+                    <button onClick={() => download(f.name)} className="text-xs px-2 py-1 bg-indigo-600 hover:bg-indigo-500 rounded text-white">
+                      下载
                     </button>
-                  )}
-                  <button onClick={() => download(f.name)} className="text-xs px-2 py-1 bg-indigo-600 hover:bg-indigo-500 rounded text-white">
-                    下载
-                  </button>
+                  </div>
                 </div>
+                {expanded[f.name] && (
+                  <div className="bg-cinema-900 p-4 border-t border-cinema-700 relative">
+                    <button onClick={() => toggleExpand(f.name)} className="absolute top-2 right-2 text-gray-400 hover:text-white">✕</button>
+                    <h4 className="text-sm font-semibold text-gray-300 mb-2">{f.name}</h4>
+                    <pre className="text-xs text-gray-300 overflow-auto max-h-96 whitespace-pre-wrap">{expanded[f.name]}</pre>
+                  </div>
+                )}
               </div>
             ))}
           </div>
-          {preview && (
-            <div className="mt-4 bg-cinema-900 p-4 rounded border border-cinema-700 relative">
-              <button onClick={() => setPreview(null)} className="absolute top-2 right-2 text-gray-400 hover:text-white">✕</button>
-              <h4 className="text-sm font-semibold text-gray-300 mb-2">{preview.name}</h4>
-              <pre className="text-xs text-gray-300 overflow-auto max-h-96 whitespace-pre-wrap">{preview.text}</pre>
-            </div>
-          )}
         </div>
       );
     }
