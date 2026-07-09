@@ -66,6 +66,14 @@ var (
 // Helpers
 // ============================================================================
 
+func logPath(id string) string {
+	base := os.Getenv("DATA_DIR")
+	if base == "" {
+		base = "."
+	}
+	return filepath.Join(base, "output", id, "pipeline.log")
+}
+
 func outputDir(id string) string {
 	base := os.Getenv("DATA_DIR")
 	if base == "" {
@@ -177,8 +185,13 @@ func runPythonAsync(p *Pipeline, args []string) {
 		dataDir = v
 	}
 	cmd.Env = append(os.Environ(), fmt.Sprintf("DATA_DIR=%s", dataDir), fmt.Sprintf("OUTPUT_DIR=%s", outDir))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	logFile, err := os.OpenFile(logPath(p.ID), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		vlog("pipeline %s cannot open log file: %v", p.ID, err)
+	} else {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+	}
 	p.Cmd = cmd
 	p.Status = StatusRunning
 	p.Step++
@@ -187,6 +200,9 @@ func runPythonAsync(p *Pipeline, args []string) {
 	vlog("pipeline %s step %d command: uv %s (output=%s)", p.ID, p.Step, strings.Join(args, " "), outDir)
 
 	go func() {
+		if logFile != nil {
+			defer logFile.Close()
+		}
 		err := cmd.Run()
 		mu.Lock()
 		defer mu.Unlock()
@@ -428,6 +444,12 @@ func handleSummarize(w http.ResponseWriter, r *http.Request) {
 		dataDir = v
 	}
 	cmd.Env = append(os.Environ(), fmt.Sprintf("DATA_DIR=%s", dataDir), fmt.Sprintf("OUTPUT_DIR=%s", outDir))
+	logFile, err := os.OpenFile(logPath(id), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err == nil {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+		defer logFile.Close()
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		vlog("pipeline %s summarize failed: %v output=%s", id, err, string(out))
@@ -637,6 +659,36 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+func handleLogs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	id := strings.TrimPrefix(r.URL.Path, "/pipelines/")
+	id = strings.TrimSuffix(id, "/logs")
+	id = strings.TrimSuffix(id, "/logs/")
+	if id == "" {
+		http.Error(w, "missing pipeline id", http.StatusBadRequest)
+		return
+	}
+
+	path := logPath(id)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.Write([]byte(""))
+			return
+		}
+		http.Error(w, fmt.Sprintf("cannot read logs: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Write(data)
+}
+
 // ============================================================================
 // CORS & main
 // ============================================================================
@@ -678,6 +730,10 @@ func main() {
 	})
 	mux.HandleFunc("/pipelines/", func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
+		if strings.HasSuffix(path, "/logs") || strings.Contains(path, "/logs/") {
+			handleLogs(w, r)
+			return
+		}
 		if strings.HasSuffix(path, "/artifacts") || strings.Contains(path, "/artifacts/") {
 			handleArtifacts(w, r)
 			return

@@ -187,6 +187,69 @@
       );
     }
 
+    function LogViewer({ pipelineId, isRunning }) {
+      const [logs, setLogs] = useState('');
+      const [loading, setLoading] = useState(false);
+      const [autoScroll, setAutoScroll] = useState(true);
+      const logContainerRef = useRef(null);
+
+      const loadLogs = useCallback(async () => {
+        setLoading(true);
+        try {
+          const res = await api(`/pipelines/${pipelineId}/logs`);
+          if (res.ok) {
+            const text = await res.text();
+            setLogs(text);
+          }
+        } finally { setLoading(false); }
+      }, [pipelineId]);
+
+      useEffect(() => { loadLogs(); }, [loadLogs]);
+
+      useEffect(() => {
+        if (!isRunning) return;
+        const t = setInterval(loadLogs, 1000);
+        return () => clearInterval(t);
+      }, [isRunning, loadLogs]);
+
+      useEffect(() => {
+        if (autoScroll && logContainerRef.current) {
+          logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+        }
+      }, [logs, autoScroll]);
+
+      const handleScroll = () => {
+        if (!logContainerRef.current) return;
+        const el = logContainerRef.current;
+        const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+        setAutoScroll(isAtBottom);
+      };
+
+      return (
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-semibold text-white">运行日志</h3>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-1 text-xs text-gray-400">
+                <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
+                自动滚动
+              </label>
+              <button onClick={loadLogs} disabled={loading} className="text-sm text-indigo-400 hover:text-indigo-300">
+                {loading ? '刷新中...' : '刷新'}
+              </button>
+            </div>
+          </div>
+          <div
+            ref={logContainerRef}
+            onScroll={handleScroll}
+            className="bg-cinema-900 border border-cinema-700 rounded p-4 h-96 overflow-auto font-mono text-xs text-gray-300 whitespace-pre-wrap"
+          >
+            {logs || <span className="text-gray-500">暂无日志</span>}
+          </div>
+        </div>
+      );
+    }
+
     function PipelineDetail({ pipeline, onRefresh, onBack }) {
       const [actionLoading, setActionLoading] = useState(false);
       const [summary, setSummary] = useState(null);
@@ -339,6 +402,8 @@
               刷新状态
             </button>
           </div>
+
+          <LogViewer pipelineId={pid} isRunning={pipeline.status === 'running' || pipeline.status?.startsWith('step_')} />
 
           <ArtifactList pipelineId={pid} />
 
