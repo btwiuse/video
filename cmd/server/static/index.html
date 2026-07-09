@@ -216,11 +216,9 @@
                     <span className="text-gray-500 text-xs ml-2">{(f.size / 1024).toFixed(1)} KB</span>
                   </div>
                   <div className="flex gap-2 ml-4">
-                    {f.name.endsWith('.json') && (
-                      <button onClick={() => viewJson(f.name)} className="text-xs px-2 py-1 bg-cinema-600 hover:bg-cinema-500 rounded text-gray-200">
-                        {expanded[f.name] ? '收起' : '查看'}
-                      </button>
-                    )}
+                    <button onClick={() => viewJson(f.name)} className="text-xs px-2 py-1 bg-cinema-600 hover:bg-cinema-500 rounded text-gray-200">
+                      {expanded[f.name] ? '收起' : '查看'}
+                    </button>
                     <button onClick={() => download(f.name)} className="text-xs px-2 py-1 bg-indigo-600 hover:bg-indigo-500 rounded text-white">
                       下载
                     </button>
