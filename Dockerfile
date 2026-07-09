@@ -15,4 +15,4 @@ COPY . .
 RUN pip install --no-cache-dir uv
 
 EXPOSE 8080
-CMD ["server"]
+CMD ["server", "-v"]
