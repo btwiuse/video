@@ -1,0 +1,47 @@
+# Environment
+.env
+*.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Output directories (generated artifacts)
+output/
+output1/
+*.mp4
+*.wav
+*.m4a
+*.png
+*.jpg
+*.jpeg
+*.webp
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temp
+temp-audio.m4a
+*.tmp
+*.log
+
+# Local AI config
+.claude
+.crush

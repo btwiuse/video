@@ -1,0 +1,16 @@
+# Core
+httpx>=0.27.0
+openai>=1.30.0          # DeepSeek API (OpenAI-compatible)
+python-dotenv>=1.0.0
+pydantic>=2.7.0
+
+# Video processing
+moviepy>=2.0.0
+ffmpeg-python>=0.2.0
+
+# Audio
+pydub>=0.25.0
+
+# Utilities
+rich>=13.0.0            # CLI progress display
+click>=8.1.0            # CLI framework
