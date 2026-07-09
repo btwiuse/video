@@ -85,6 +85,8 @@
       const [artifacts, setArtifacts] = useState([]);
       const [loading, setLoading] = useState(false);
       const [expanded, setExpanded] = useState({});
+      const expandedRef = useRef({});
+      useEffect(() => { expandedRef.current = expanded; }, [expanded]);
 
       const load = useCallback(async () => {
         setLoading(true);
@@ -116,12 +118,14 @@
       };
 
       const viewJson = async (name) => {
-        setExpanded(prev => {
-          if (prev[name]) {
-            return { ...prev, [name]: null };
-          }
-          return prev;
-        });
+        if (expandedRef.current[name]) {
+          setExpanded(prev => {
+            const next = { ...prev };
+            delete next[name];
+            return next;
+          });
+          return;
+        }
         try {
           const res = await api(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(name)}`);
           if (!res.ok) throw new Error('Fetch failed');
@@ -164,7 +168,7 @@
                   </div>
                   <div className="flex gap-2 ml-4">
                     {f.name.endsWith('.json') && (
-                      <button onClick={() => toggleExpand(f.name)} className="text-xs px-2 py-1 bg-cinema-600 hover:bg-cinema-500 rounded text-gray-200">
+                      <button onClick={() => viewJson(f.name)} className="text-xs px-2 py-1 bg-cinema-600 hover:bg-cinema-500 rounded text-gray-200">
                         {expanded[f.name] ? '收起' : '查看'}
                       </button>
                     )}
