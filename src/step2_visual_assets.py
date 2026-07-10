@@ -9,6 +9,7 @@ Architecture: Provider abstraction → easy swap between image models.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -25,6 +26,8 @@ from src.prompts import (
     SCENE_REFERENCE_DETAIL,
 )
 from src.utils import ensure_output_dir, save_json, load_json
+
+logger = logging.getLogger("step2")
 
 
 # ============================================================================
@@ -65,26 +68,12 @@ class ImageProvider(ABC):
     async def generate_batch(
         self, prompts_and_labels: list[tuple[str, str, str]]
     ) -> list[ImageResult]:
-        """Generate multiple images. Default: run concurrently.
-
-        Args:
-            prompts_and_labels: list of (prompt, label, aspect_ratio)
-        """
-        tasks = [
-            self.generate(prompt, ar) for prompt, _, ar in prompts_and_labels
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        """Generate multiple images sequentially."""
         out = []
-        for i, r in enumerate(results):
-            label = prompts_and_labels[i][1]
-            if isinstance(r, Exception):
-                out.append(ImageResult(
-                    label=label, path="", prompt=prompts_and_labels[i][0],
-                    status="failed", error=str(r),
-                ))
-            else:
-                r.label = label
-                out.append(r)
+        for prompt, label, ar in prompts_and_labels:
+            r = await self.generate(prompt, ar)
+            r.label = label
+            out.append(r)
         return out
 
 
@@ -374,10 +363,15 @@ class StepFunProvider(ImageProvider):
     Notes:
       - Prompt limited to 512 chars; longer prompts are silently truncated.
       - For step-image-edit-2, size format is "height x width" (not width x height).
+      - RPM limit: 10. Internal rate limiter ensures ~6s between requests.
     """
 
     endpoint: str = "https://api.stepfun.com/v1/images/generations"
     default_model: str = "step-image-edit-2"
+
+    # Global rate limiter: 1 request per 6s (10 RPM ceiling)
+    _rate_limit: asyncio.Semaphore = asyncio.Semaphore(1)
+    _last_request: float = 0
 
     # Size mapping for step-image-edit-2 (format: "height x width")
     _SIZE_MAP: dict[str, str] = {
@@ -406,6 +400,14 @@ class StepFunProvider(ImageProvider):
         aspect_ratio: str = "4:3",
         **kwargs: Any,
     ) -> ImageResult:
+        # Rate limit: ensure ~6s gap between requests (10 RPM ceiling)
+        async with self._rate_limit:
+            import time as _time
+            elapsed = _time.monotonic() - self._last_request
+            if elapsed < 6.0:
+                await asyncio.sleep(6.0 - elapsed)
+            self._last_request = _time.monotonic()
+
         truncated = prompt[:512]  # hard API limit
         size = self._SIZE_MAP.get(aspect_ratio, "1024x1024")
 
@@ -609,7 +611,7 @@ class Step2Pipeline:
 
     async def generate_all(self, storyboard: dict) -> dict:
         """Generate all visual assets from storyboard."""
-        self.logger.info("Image provider: %s", self.provider.name)
+        logger.info("Image provider: %s", self.provider.name)
 
         characters = storyboard.get("characters", [])
         scenes = storyboard.get("scenes", [])
@@ -619,7 +621,7 @@ class Step2Pipeline:
         ensure_output_dir("shots")  # ensure shots root exists
 
         # ---- Characters: 3 portraits each ----
-        self.logger.info("Generating %d characters x 3 angles...", len(characters))
+        logger.info("Generating %d characters x 3 angles...", len(characters))
         all_prompts: list[tuple[str, str, str]] = []
         for char in characters:
             ref_id = char.get("ref_id", char.get("id", "UNKNOWN"))
@@ -642,10 +644,10 @@ class Step2Pipeline:
             char_map.setdefault(ref_id, []).append(r)
         for name, results in char_map.items():
             done = sum(1 for r in results if r.status == "done")
-            self.logger.info("  %s: %d/%d done", name, done, len(results))
+            logger.info("  %s: %d/%d done", name, done, len(results))
 
         # ---- Scenes: 1-2 images each ----
-        self.logger.info("Generating %d scenes...", len(scenes))
+        logger.info("Generating %d scenes...", len(scenes))
         scene_prompts: list[tuple[str, str, str]] = []
         for scene in scenes:
             sid = scene.get("scene_id", scene.get("id", "UNKNOWN"))
@@ -667,13 +669,13 @@ class Step2Pipeline:
             scene_map.setdefault(sid, []).append(r)
         for name, results in scene_map.items():
             done = sum(1 for r in results if r.status == "done")
-            self.logger.info("  %s: %d/%d done", name, done, len(results))
+            logger.info("  %s: %d/%d done", name, done, len(results))
 
         # ---- Shots: start frame for each (with character + scene refs) ----
         shots = storyboard.get("shots", [])
         shot_map: dict[str, list[ImageResult]] = {}
         if shots:
-            self.logger.info("Generating start frames for %d shots...", len(shots))
+            logger.info("Generating start frames for %d shots...", len(shots))
 
             async def _gen_shot_start_frame(shot: dict) -> ImageResult | None:
                 shot_id = shot["full_shot_id"]
@@ -686,6 +688,9 @@ class Step2Pipeline:
                     sf_prompt = shot.get("start_frame_prompt", "")
                 if not sf_prompt:
                     return None
+                # Strip "see X for reference" — meant for video model, triggers StepFun censorship
+                import re as _re
+                sf_prompt = _re.sub(r'\s*see\s+\S+\s+for\s+reference\s*', '', sf_prompt, flags=_re.IGNORECASE).strip()
 
                 # Read deps.json to find character/scene dependencies
                 deps = load_json(str(ensure_output_dir("shots", shot_id) / "deps.json"))
@@ -708,11 +713,21 @@ class Step2Pipeline:
                             ref_paths.append(r.path)
                             break
 
-                r = await self.provider.generate(sf_prompt, "16:9", reference_images=ref_paths or None)
+                r = None
+                for attempt in range(3):
+                    r = await self.provider.generate(sf_prompt, "16:9", reference_images=ref_paths or None)
+                    if r.status == "done":
+                        break
+                    logger.warning("  %s start frame attempt %d failed: %s", shot_id, attempt + 1, r.error or "unknown")
+                    await asyncio.sleep(2 ** attempt)
+                if r is None or r.status != "done":
+                    return None
                 r.label = shot_id
-                return r
 
-            results = await asyncio.gather(*[_gen_shot_start_frame(s) for s in shots])
+            results: list[ImageResult | None] = []
+            for s in shots:
+                r = await _gen_shot_start_frame(s)
+                results.append(r)
             for r in results:
                 if r is None:
                     continue
@@ -727,12 +742,12 @@ class Step2Pipeline:
                 shot_map.setdefault(shot_id, []).append(r)
             total = sum(1 for r in results if r is not None)
             done_count = sum(1 for results in shot_map.values() for r in results if r.status == "done")
-            self.logger.info("  Shots: %d/%d start frames done", done_count, total)
+            logger.info("  Shots: %d/%d start frames done", done_count, total)
 
         # Build manifest
         manifest = self._build_manifest(char_map, scene_map, shot_map, characters, scenes, shots)
         save_json(manifest, str(ensure_output_dir() / "manifest.json"))
-        self.logger.info("Asset manifest saved: %d entries", len(manifest))
+        logger.info("Asset manifest saved: %d entries", len(manifest))
         return manifest
 
     # ---- Prompt builders: read from .md files (model data) ----

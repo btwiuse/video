@@ -177,7 +177,7 @@ SYSTEM_FILMMAKER = f"""你是一位资深电影导演和分镜师，精通视觉
 ### 视频 prompt（positive_prompt / negative_prompt）
 1. 动作描述是视频 prompt 的核心——视频是运动媒介，没有运动就没有视频。必须详细描述镜头内每一段时间内的动作：角色如何移动、做什么、肢体和表情如何变化
 2. 具体视觉细节，不要抽象情绪词
-3. 视频 prompt 中引用角色时用 "see {角色ref_id} for reference" 格式（ref_id 就是角色原名）
+3. 视频 prompt 中引用角色时用 "see {{角色ref_id}} for reference" 格式（ref_id 就是角色原名）
 4. 包含景别/运镜描述
 5. 光影/色彩/质感描述作为辅助，但不应占据超过 prompt 30% 的篇幅
 
@@ -251,6 +251,9 @@ class StoryboardGenerator:
                     self._save_character_file(char_detail, ensure_output_dir("characters"))
                     logger.info("Phase 2: %s (%s) done", char_info["name"], ref_id)
 
+        # Partial save: characters available
+        save_json(self._build_storyboard_index(characters, [], []), str(ensure_output_dir() / "storyboard.json"))
+
         scene_infos = overview.get("scenes", [])
         scenes: list[dict] = [None] * len(scene_infos)
         if scene_infos:
@@ -272,6 +275,9 @@ class StoryboardGenerator:
                     scenes[i] = scene_detail
                     self._save_scene_file(scene_detail, ensure_output_dir("scenes"))
                     logger.info("Phase 3: %s (%s) done", scene_info["name"], scene_info["scene_id"])
+
+        # Partial save: characters + scenes available
+        save_json(self._build_storyboard_index(characters, scenes, []), str(ensure_output_dir() / "storyboard.json"))
 
         all_shots: list[dict] = []
         scene_infos = overview.get("scenes", [])

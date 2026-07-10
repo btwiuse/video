@@ -146,58 +146,243 @@
       );
     }
 
-    function StepProgress({ currentStep }) {
+    function StepTabs({ currentStep, pipelineStatus, activeStep, onNavigate }) {
+      const isDone = pipelineStatus === 'done';
+      const current = isDone ? 5 : currentStep;
       return (
-        <div className="relative my-8">
-          <div className="absolute top-5 left-0 right-0 h-px bg-ink-700" />
-          <div className="relative flex justify-between">
-            {[1,2,3,4,5].map(n => {
-              const done = n <= currentStep;
-              const active = n === currentStep + 1;
-              return (
-                <div key={n} className="flex flex-col items-center">
-                  <div className={`relative z-10 w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300 ${
-                    done
-                      ? 'bg-brass-500 text-ink-950'
-                      : active
-                        ? 'bg-brass-500/20 text-brass-400 ring-1 ring-brass-500/50'
-                        : 'bg-ink-800 text-stone-400'
-                  }`}>
-                    {done ? '✓' : n}
-                  </div>
-                  <span className={`mt-2 text-xs font-medium ${done ? 'text-stone-200' : 'text-stone-400'}`}>
-                    {STEP_NAMES[n]}
-                  </span>
-                </div>
-              );
-            })}
+        <div className="flex gap-2 mb-6">
+          {[1,2,3,4,5].map(n => {
+            const completed = n <= current;
+            const isNext = n === current + 1;
+            const available = completed || isNext;
+            const isActive = n === activeStep;
+            return (
+              <button
+                key={n}
+                onClick={() => { if (available) onNavigate(n); }}
+                disabled={!available}
+                className={`step-btn flex-1 py-3 px-2 rounded text-sm font-medium transition-all ${
+                  isActive
+                    ? 'bg-brass-500 text-ink-950 ring-1 ring-brass-400 shadow-lg shadow-brass-500/10'
+                    : completed
+                      ? 'bg-brass-500/15 text-brass-400 hover:bg-brass-500/25'
+                      : isNext
+                        ? 'bg-ink-800 text-stone-300 ring-1 ring-ink-600 hover:bg-ink-700'
+                        : 'bg-ink-800/60 text-stone-600 cursor-not-allowed'
+                }`}
+              >
+                <div className="font-bold leading-tight">{completed ? '✓' : n}</div>
+                <div className="text-xs opacity-80 mt-0.5">{STEP_NAMES[n]}</div>
+              </button>
+            );
+          })}
+        </div>
+      );
+    }
+
+    function StepView({ step, pipeline, currentStep, onRun, actionLoading, pipelineId }) {
+      const isStepDone = step <= currentStep || pipeline.status === 'done';
+      const isStepRunning = pipeline.status === 'running' && pipeline.step === step;
+      const canGenerate = (step === currentStep + 1 || step <= currentStep) && !actionLoading;
+      const [artifacts, setArtifacts] = useState([]);
+      const [artLoading, setArtLoading] = useState(false);
+      const [previews, setPreviews] = useState({});
+
+      useEffect(() => {
+        if (!isStepDone && !isStepRunning) { setArtifacts([]); return; }
+        let cancelled = false;
+        const fetchArtifacts = async () => {
+          try {
+            const res = await api(`/pipelines/${pipelineId}/artifacts`);
+            if (res.ok && !cancelled) setArtifacts((await res.json()).files || []);
+          } catch (e) { /* ignore */ }
+        };
+        fetchArtifacts();
+        if (isStepRunning) {
+          const t = setInterval(fetchArtifacts, 3000);
+          return () => { cancelled = true; clearInterval(t); };
+        }
+        return () => { cancelled = true; };
+      }, [pipelineId, isStepDone, isStepRunning]);
+
+      const previewUrl = async (name) => {
+        if (previews[name]) { setPreviews(p => { const n = {...p}; delete n[name]; return n; }); return; }
+        try {
+          const res = await api(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(name)}`);
+          if (!res.ok) return;
+          const blob = await res.blob();
+          setPreviews(p => ({ ...p, [name]: URL.createObjectURL(blob) }));
+        } catch (e) { /* ignore */ }
+      };
+
+      const charImages = artifacts.filter(f => f.name.startsWith('characters/') && /\.(jpg|jpeg|png|webp)$/i.test(f.name));
+      const sceneImages = artifacts.filter(f => f.name.startsWith('scenes/') && /\.(jpg|jpeg|png|webp)$/i.test(f.name));
+      const videoFiles = artifacts.filter(f => f.name.startsWith('shots/') && /\.(mp4|webm|mov)$/i.test(f.name));
+      const audioFiles = artifacts.filter(f => (f.name.startsWith('audio/') || f.name.startsWith('sfx/') || f.name.startsWith('bgm/')) && /\.(wav|mp3|m4a|flac)$/i.test(f.name));
+      const finalVideo = artifacts.find(f => f.name === 'final.mp4');
+
+      return (
+        <div className="bg-ink-800/30 border border-ink-700 rounded p-6 mb-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h3 className="font-heading text-lg font-semibold text-stone-100">
+                步骤 {step}: {STEP_NAMES[step]}
+              </h3>
+              <p className="text-xs text-stone-500 mt-1">
+                {isStepDone ? '已完成' : isStepRunning ? '正在生成...' : canGenerate ? '准备就绪' : '前置步骤尚未完成'}
+              </p>
+            </div>
+            <button
+              onClick={() => onRun(step)}
+              disabled={!canGenerate || isStepRunning}
+              className={`px-5 py-2.5 rounded text-sm font-medium transition-all ${
+                isStepRunning
+                  ? 'bg-brass-500 text-ink-950 animate-pulse-brass'
+                  : canGenerate
+                    ? 'bg-brass-500 hover:bg-brass-400 text-ink-950 cursor-pointer'
+                    : 'bg-ink-700 text-stone-500 cursor-not-allowed'
+              }`}
+            >
+              {isStepRunning ? '⏳ 生成中...' : isStepDone ? '重新生成' : 'Generate'}
+            </button>
           </div>
+
+          {step === 1 && (isStepDone || isStepRunning) && <StoryboardViewer pipelineId={pipelineId} poll={isStepRunning} />}
+
+          {step === 2 && (isStepDone || isStepRunning) && (
+            <div className="space-y-6">
+              {charImages.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-stone-300 mb-3">角色肖像</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                    {charImages.map(f => (
+                      <div key={f.name} className="flex flex-col items-center gap-1.5">
+                        <img
+                          src={`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(f.name)}`}
+                          alt={f.name.split('/').pop()}
+                          className="w-full aspect-[3/4] object-cover rounded bg-ink-700"
+                          onError={e => { e.target.style.display = 'none'; }}
+                        />
+                        <span className="text-xs text-stone-500 truncate max-w-full">{f.name.split('/').pop()?.replace(/\.(jpg|jpeg|png)$/, '')}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {sceneImages.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-stone-300 mb-3">场景参考</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {sceneImages.map(f => (
+                      <div key={f.name}>
+                        <img
+                          src={`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(f.name)}`}
+                          alt={f.name.split('/').pop()}
+                          className="w-full aspect-video object-cover rounded bg-ink-700"
+                          onError={e => { e.target.style.display = 'none'; }}
+                        />
+                        <span className="text-xs text-stone-500 mt-1 block">{f.name.split('/').pop()?.replace(/\.(jpg|jpeg|png)$/, '')}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {charImages.length === 0 && sceneImages.length === 0 && <p className="text-stone-500 text-sm">暂无视觉素材</p>}
+            </div>
+          )}
+
+          {step === 3 && (isStepDone || isStepRunning) && (
+            <div>
+              {videoFiles.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {videoFiles.map(f => (
+                    <div key={f.name}>
+                      <p className="text-xs text-stone-400 mb-1.5 truncate">{f.name.split('/').slice(0,2).join('/')}</p>
+                      <video
+                        src={`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(f.name)}`}
+                        controls
+                        className="w-full rounded bg-ink-950"
+                        preload="metadata"
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-stone-500 text-sm">暂无视频片段</p>
+              )}
+            </div>
+          )}
+
+          {step === 4 && (isStepDone || isStepRunning) && (
+            <div>
+              {audioFiles.length > 0 ? (
+                <div className="space-y-3">
+                  {audioFiles.map(f => (
+                    <div key={f.name} className="flex items-center gap-3 bg-ink-900 rounded p-3 border border-ink-700">
+                      <span className="text-stone-400 text-xs font-mono flex-shrink-0">🔊</span>
+                      <span className="text-stone-200 text-sm flex-1 min-w-0 truncate">{f.name}</span>
+                      <audio
+                        src={`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(f.name)}`}
+                        controls
+                        className="h-8 max-w-[200px]"
+                        preload="none"
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-stone-500 text-sm">暂无音频文件</p>
+              )}
+            </div>
+          )}
+
+          {step === 5 && (isStepDone || isStepRunning) && (
+            <div>
+              {finalVideo ? (
+                <div>
+                  <video
+                    src={`/pipelines/${pipelineId}/artifacts/final.mp4`}
+                    controls
+                    className="w-full rounded bg-ink-950 max-h-[500px]"
+                  />
+                  <p className="text-xs text-stone-500 mt-2">{(finalVideo.size / 1024 / 1024).toFixed(1)} MB</p>
+                </div>
+              ) : (
+                <p className="text-stone-500 text-sm">暂无最终影片</p>
+              )}
+            </div>
+          )}
+
+          {!isStepDone && !isStepRunning && (
+            <div className="text-center py-8 text-stone-500 text-sm border border-dashed border-ink-700 rounded">
+              此步骤尚未执行
+            </div>
+          )}
         </div>
       );
     }
 
     function FileRow({ file, level, pipelineId, expanded, onView, onDownload, onCopy, onToggle }) {
         const paddingLeft = 16 + level * 20;
+        const isOpen = !!expanded[file.name];
         return (
           <div className="border-b border-ink-800 last:border-b-0">
-            <div className="flex items-center justify-between py-1.5 pr-3" style={{ paddingLeft }}>
+            <div
+              className="flex items-center justify-between py-1.5 pr-3 cursor-pointer hover:bg-ink-800/30 transition-colors select-none"
+              style={{ paddingLeft }}
+              onClick={() => onView(file.name)}
+            >
               <div className="flex items-center gap-2 min-w-0 flex-1">
+                <span className="text-stone-500 flex-shrink-0 text-xs w-3 text-center transition-transform" style={{ transform: isOpen ? 'rotate(90deg)' : 'none' }}>▶</span>
                 <span className="text-stone-500 flex-shrink-0 text-xs">📄</span>
                 <span className="text-stone-100 text-sm truncate">{file.name.split('/').pop()}</span>
                 <span className="text-stone-500 text-xs flex-shrink-0">{(file.size / 1024).toFixed(1)} KB</span>
               </div>
-              <div className="flex gap-1.5 ml-3 flex-shrink-0">
-                <button onClick={() => onView(file.name)} className="text-xs px-2 py-0.5 bg-ink-700 hover:bg-ink-600 rounded text-stone-200 transition-colors">
-                  {expanded[file.name] ? '收起' : '查看'}
-                </button>
-                <button onClick={() => onDownload(file.name)} className="text-xs px-2 py-0.5 bg-brass-500 hover:bg-brass-400 rounded text-ink-950 font-medium transition-colors">
-                  下载
-                </button>
-              </div>
             </div>
-            {expanded[file.name] && (
+            {isOpen && (
               <div className="bg-ink-950 p-3 border-t border-ink-700 relative" style={{ paddingLeft: paddingLeft + 8 }}>
                 <div className="absolute top-2 right-2 flex gap-2">
+                  <button onClick={() => onDownload(file.name)} className="text-stone-400 hover:text-stone-200 transition-colors text-xs" title="下载">⬇</button>
                   {(fileCategory(file.name) === 'text') && <button onClick={() => onCopy(expanded[file.name], file.name)} className="text-stone-400 hover:text-stone-200 transition-colors text-xs" title="复制">📋</button>}
                   <button onClick={() => onToggle(file.name)} className="text-stone-400 hover:text-stone-200 transition-colors text-xs">✕</button>
                 </div>
@@ -280,7 +465,11 @@
         } finally { setLoading(false); }
       }, [pipelineId]);
 
-      useEffect(() => { load(); }, [load]);
+      useEffect(() => {
+        load();
+        const t = setInterval(load, 5000);
+        return () => clearInterval(t);
+      }, [load]);
 
       const download = useCallback(async (name) => {
         try {
@@ -364,9 +553,6 @@
         <div className="mt-10">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-heading text-lg font-semibold text-stone-100">产物文件</h3>
-            <button onClick={load} disabled={loading} className="nav-btn text-sm text-stone-400 hover:text-brass-400 transition-colors">
-              {loading ? '刷新中...' : '刷新'}
-            </button>
           </div>
           {artifacts.length === 0 && <p className="text-stone-500 text-sm">暂无产物文件</p>}
           <div className="bg-ink-900 rounded border border-ink-700 overflow-hidden">
@@ -445,30 +631,27 @@
       );
     }
 
-    function LogViewer({ pipelineId, isRunning }) {
+    function LogViewer({ pipelineId }) {
       const [logs, setLogs] = useState('');
-      const [loading, setLoading] = useState(false);
       const [autoScroll, setAutoScroll] = useState(true);
       const logContainerRef = useRef(null);
 
-      const loadLogs = useCallback(async (userInitiated = false) => {
-        if (userInitiated) setLoading(true);
+      const loadLogs = useCallback(async () => {
         try {
           const res = await api(`/pipelines/${pipelineId}/logs`);
           if (res.ok) {
             const text = await res.text();
             setLogs(text);
           }
-        } finally { if (userInitiated) setLoading(false); }
+        } catch (e) { /* ignore */ }
       }, [pipelineId]);
 
       useEffect(() => { loadLogs(); }, [loadLogs]);
 
       useEffect(() => {
-        if (!isRunning) return;
-        const t = setInterval(loadLogs, 1000);
+        const t = setInterval(loadLogs, 3000);
         return () => clearInterval(t);
-      }, [isRunning, loadLogs]);
+      }, [loadLogs]);
 
       useEffect(() => {
         if (autoScroll && logContainerRef.current) {
@@ -487,15 +670,10 @@
         <div className="mt-10">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-heading text-lg font-semibold text-stone-100">运行日志</h3>
-            <div className="flex items-center gap-3">
-              <label className="flex items-center gap-1.5 text-xs text-stone-400 cursor-pointer">
-                <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} className="accent-brass-500" />
-                自动滚动
-              </label>
-              <button onClick={() => loadLogs(true)} disabled={loading} className="nav-btn text-sm text-stone-400 hover:text-brass-400 transition-colors">
-                {loading ? '刷新中...' : '刷新'}
-              </button>
-            </div>
+            <label className="flex items-center gap-1.5 text-xs text-stone-400 cursor-pointer">
+              <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} className="accent-brass-500" />
+              自动滚动
+            </label>
           </div>
           <div
             ref={logContainerRef}
@@ -508,7 +686,7 @@
       );
     }
 
-    function StoryboardViewer({ pipelineId }) {
+    function StoryboardViewer({ pipelineId, poll }) {
       const [data, setData] = useState(null);
       const [loading, setLoading] = useState(false);
       const [expandedScenes, setExpandedScenes] = useState({});
@@ -518,12 +696,24 @@
         setLoading(true);
         try {
           const res = await api(`/pipelines/${pipelineId}/artifacts/storyboard.json`);
-          if (res.ok) setData(await res.json());
+          if (res.ok) { const d = await res.json(); setData(d); return d; }
         } catch (e) { /* ignore */ }
         finally { setLoading(false); }
+        return null;
       }, [pipelineId]);
 
-      useEffect(() => { load(); }, [load]);
+      useEffect(() => {
+        let cancelled = false;
+        if (!data) load();
+        if (poll && !data) {
+          const t = setInterval(() => {
+            if (cancelled) return;
+            load();
+          }, 3000);
+          return () => { cancelled = true; clearInterval(t); };
+        }
+        return () => { cancelled = true; };
+      }, [poll, load, data]);
 
       const toggleScene = useCallback((sceneId) => {
         setExpandedScenes(prev => ({ ...prev, [sceneId]: !prev[sceneId] }));
@@ -541,7 +731,7 @@
       const shots = data.shots || [];
 
       return (
-        <div className="mt-10">
+        <div>
           <h3 className="font-heading text-lg font-semibold text-stone-100 mb-4">
             分镜概览
             <span className="text-stone-400 text-sm font-normal ml-2">
@@ -555,12 +745,21 @@
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                   {characters.map((c, idx) => (
                     <div key={c.ref_id + '_' + idx} className="flex flex-col items-center gap-2">
-                      <img
-                        src={`/pipelines/${pipelineId}/artifacts/characters/${encodeURIComponent(c.ref_id)}_front.jpg`}
-                        alt={c.ref_id}
-                        className="w-20 h-20 object-cover rounded-full bg-ink-700 ring-1 ring-ink-600"
-                        onError={e => { e.target.style.display = 'none'; e.target.src = ''; }}
-                      />
+                      <div className="relative w-20 h-20">
+                        <img
+                          src={`/pipelines/${pipelineId}/artifacts/characters/${encodeURIComponent(c.ref_id)}_front.jpg`}
+                          alt={c.ref_id}
+                          className="w-20 h-20 object-cover rounded-full bg-ink-700 ring-1 ring-ink-600"
+                          onError={e => {
+                            const el = e.target;
+                            if (el.src.endsWith('.jpg')) { el.src = el.src.replace('.jpg', '.png'); return; }
+                            el.style.display = 'none';
+                            const ph = el.parentElement?.querySelector('.char-placeholder');
+                            if (ph) ph.style.display = 'flex';
+                          }}
+                        />
+                        <div className="char-placeholder absolute inset-0 rounded-full bg-ink-700 ring-1 ring-ink-600 hidden items-center justify-center text-stone-500 text-xs">待生成</div>
+                      </div>
                       <span className="text-xs text-stone-400 truncate max-w-full">{c.name || c.ref_id}</span>
                     </div>
                   ))}
@@ -679,22 +878,37 @@
 
       const getCurrentStep = () => {
         if (pipeline.status === 'done') return 5;
-        if (pipeline.status === 'running') return pipeline.step || 0;
+        if (pipeline.status === 'running') return Math.max(0, (pipeline.step || 1) - 1);
         if (pipeline.status?.startsWith('step_')) {
           const n = parseInt(pipeline.status.split('_')[1]);
           return Math.max(0, n - 1);
         }
+        if (pipeline.status === 'failed') return Math.max(0, (pipeline.step || 1) - 1);
         return pipeline.step || 0;
       };
       const currentStep = getCurrentStep();
       const pid = pipeline.pipeline_id;
 
-      const canRunStep = (n) => {
-        if (actionLoading) return false;
-        if (pipeline.status === 'done') return false;
-        if (n <= currentStep) return true;
-        return false;
+      // Step tab routing via hash
+      const getDefaultStep = () => {
+        if (pipeline.status === 'done') return 5;
+        return Math.min(currentStep + 1, 5);
       };
+      const getStepFromHash = () => {
+        const m = window.location.hash.match(/\/step\/(\d)/);
+        if (m) { const s = parseInt(m[1]); if (s >= 1 && s <= 5) return s; }
+        return getDefaultStep();
+      };
+      const [activeStep, setActiveStep] = useState(getDefaultStep);
+      const navigateToStep = (n) => {
+        window.location.hash = `#/pipelines/${pid}/step/${n}`;
+        setActiveStep(n);
+      };
+      useEffect(() => {
+        const onHash = () => { const s = getStepFromHash(); if (s !== activeStep) setActiveStep(s); };
+        window.addEventListener('hashchange', onHash);
+        return () => window.removeEventListener('hashchange', onHash);
+      }, [pipeline, activeStep]);
 
       const runStep = async (step) => {
         setActionLoading(true);
@@ -709,6 +923,7 @@
         try {
           const startStep = currentStep === 5 ? 1 : currentStep + 1;
           for (let s = startStep; s <= 5; s++) {
+            navigateToStep(s);
             await api(`/pipelines/${pid}/steps/${s}`, { method: 'POST' });
             const startTime = Date.now();
             const timeout = 30 * 60 * 1000;
@@ -754,14 +969,14 @@
               )}
               <div className="flex items-center gap-3 mt-2">
                 <StatusBadge status={pipeline.status} />
-                <span className="text-stone-400 text-sm">步骤 {currentStep}/5</span>
+                <span className="text-stone-400 text-sm">{pipeline.status === 'running' ? `运行中 - 步骤 ${pipeline.step}/5` : currentStep > 0 ? `已完成 ${currentStep}/5` : '未开始'}</span>
                 {pipeline.duration && <span className="text-stone-500 text-xs">运行时长: {pipeline.duration}</span>}
               </div>
             </div>
             <button onClick={del} className="text-xs px-2.5 py-1.5 bg-ink-700 hover:bg-ink-600 text-clay-400 rounded transition-colors ml-4">删除</button>
           </div>
 
-          <StepProgress currentStep={currentStep} />
+          <StepTabs currentStep={currentStep} pipelineStatus={pipeline.status} activeStep={activeStep} onNavigate={navigateToStep} />
 
           {pipeline.error && (
             <div className="bg-clay-500/10 border border-clay-500/30 text-clay-400 p-3 rounded text-sm mb-6">
@@ -769,41 +984,15 @@
             </div>
           )}
 
-          <div className="grid grid-cols-5 gap-2 mb-6">
-            {[1,2,3,4,5].map(n => {
-              const isActive = pipeline.status === 'running' && pipeline.step === n;
-              const isDone = n <= currentStep || pipeline.status === 'done';
-              return (
-                <button
-                  key={n}
-                  onClick={() => runStep(n)}
-                  disabled={!canRunStep(n)}
-                  className={`step-btn py-3 px-2 rounded text-sm font-medium transition-all ${
-                    isActive
-                      ? 'bg-brass-500 text-ink-950 ring-1 ring-brass-400'
-                      : isDone
-                        ? 'bg-brass-500/15 text-brass-400 hover:bg-brass-500/25'
-                        : 'bg-ink-800 text-stone-400'
-                  } ${!canRunStep(n) ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
-                >
-                  <div className="font-bold">{n}</div>
-                  <div className="text-xs opacity-80">{STEP_NAMES[n]}</div>
-                </button>
-              );
-            })}
-          </div>
+          <StepView step={activeStep} pipeline={pipeline} currentStep={currentStep} onRun={runStep} actionLoading={actionLoading} pipelineId={pid} />
 
           <div className="flex gap-3 mb-6">
             <button onClick={runAll} disabled={actionLoading || pipeline.status === 'done'} className="nav-btn px-4 py-2 bg-brass-500 hover:bg-brass-400 disabled:bg-ink-700 text-ink-950 rounded text-sm font-medium transition-all disabled:text-stone-400">
               运行全部步骤
             </button>
-            <button onClick={onRefresh} disabled={actionLoading} className="nav-btn px-4 py-2 bg-ink-700 hover:bg-ink-600 text-stone-200 rounded text-sm transition-all">
-              刷新状态
-            </button>
           </div>
 
-          <StoryboardViewer pipelineId={pid} />
-          <LogViewer pipelineId={pid} isRunning={pipeline.status === 'running' || pipeline.status?.startsWith('step_')} />
+          <LogViewer pipelineId={pid} />
           <ArtifactList pipelineId={pid} />
 
           <div className="mt-8 text-xs text-stone-500 leading-relaxed">
@@ -1018,6 +1207,7 @@
         const onHashChange = () => {
           const { view: v, id } = getHashView();
           if (v === 'detail' && id) {
+            if (currentView === 'detail' && pipelineId === id) return; // step nav only, don't re-fetch
             api(`/pipelines/${id}`).then(res => {
               if (res.ok) {
                 res.json().then(data => { setSelected(data); setCurrentView('detail'); setPipelineId(id); });
@@ -1029,7 +1219,7 @@
         window.addEventListener('hashchange', onHashChange);
         onHashChange();
         return () => window.removeEventListener('hashchange', onHashChange);
-      }, []);
+      }, [currentView, pipelineId]);
 
       useEffect(() => {
         if (currentView === 'detail' && selected) {

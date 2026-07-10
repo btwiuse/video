@@ -226,6 +226,7 @@ func runPythonAsync(p *Pipeline, args []string) {
 	}
 	p.Cmd = cmd
 	p.Status = StatusRunning
+	p.Error = ""
 	p.Step++
 	p.StartedAt = time.Now()
 	savePipelineState(p)
@@ -609,7 +610,7 @@ func serveHome(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	http.ServeFile(w, r, "cmd/server/static/index.html")
+	http.ServeFile(w, r, "index.html")
 }
 
 func handleArtifacts(w http.ResponseWriter, r *http.Request) {
@@ -755,7 +756,6 @@ func main() {
 	flag.Parse()
 
 	mux := http.NewServeMux()
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("cmd/server/static"))))
 	mux.HandleFunc("/", serveHome)
 	mux.HandleFunc("/health", handleHealth)
 	mux.HandleFunc("/pipelines", func(w http.ResponseWriter, r *http.Request) {
