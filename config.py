@@ -22,11 +22,14 @@ class Config:
     COMFYUI_URL: str = os.getenv("COMFYUI_URL", "http://localhost:8188")
 
     # Video generation — see src/step3_video_generation.py for all providers
-    VIDEO_PROVIDER: str = os.getenv("VIDEO_PROVIDER", "seedance")
+    VIDEO_PROVIDER: str = os.getenv("VIDEO_PROVIDER", "tokenvoke")
     VIDEO_API_KEY: str = os.getenv("VIDEO_API_KEY", "") or os.getenv("IMAGE_API_KEY", "")
 
-    # Seedance 2.0 (Volcengine Ark)
-    SEEDANCE_MODEL: str = os.getenv("SEEDANCE_MODEL", "doubao-seedance-2-0-fast-260128")
+    # TokenVoke Seedance (https://tokenvoke.com/docs/seedance-video)
+    TOKENVOKE_BASE_URL: str = os.getenv("TOKENVOKE_BASE_URL", "https://overseas.tokenvoke.com")
+    VIDEO_MODEL: str = os.getenv("VIDEO_MODEL", "doubao-seedance-2-0-fast-260128")
+    TOKENVOKE_MAX_DURATION_SEC: int = int(os.getenv("TOKENVOKE_MAX_DURATION_SEC", "15"))
+    TOKENVOKE_MAX_IMAGES: int = int(os.getenv("TOKENVOKE_MAX_IMAGES", "9"))
 
     # Audio generation — see src/step4_audio.py for all providers
     AUDIO_PROVIDER: str = os.getenv("AUDIO_PROVIDER", "null")
@@ -37,8 +40,6 @@ class Config:
 
     # Limits
     MAX_SCENE_DURATION_SEC: int = 600  # 10 min per scene
-    SEEDANCE_MAX_DURATION_SEC: int = 15
-    SEEDANCE_MAX_IMAGES: int = 9
 
     # StepFun image generation
     STEPFUN_MODEL: str = os.getenv("STEPFUN_MODEL", "step-image-edit-2")

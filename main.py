@@ -102,7 +102,7 @@ def run(script_file, output, skip_step):
     if "3" not in skip_step:
         print()
         print("=" * 60)
-        print("STEP 3: Video Generation (Seedance 2.0)")
+        print("STEP 3: Video Generation (TokenVoke Seedance)")
         print("=" * 60)
         from src.step3_video_generation import generate_videos
         clip_manifest = asyncio.run(

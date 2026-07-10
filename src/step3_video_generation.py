@@ -4,7 +4,7 @@ Step 3: Video generation via pluggable video providers.
 Architecture: Provider abstraction → easy swap between video models.
 
 Current providers:
-  - Seedance 2.0 (Volcengine Ark) — multimodal content with reference images
+  - TokenVoke Seedance — async video task API (OpenAI-compatible)
   - Null — saves prompt, no API call (for testing)
 """
 
@@ -54,7 +54,7 @@ class VideoProvider(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Human-readable provider name, e.g. 'Seedance 2.0 (Volcengine Ark)'."""
+        """Human-readable provider name, e.g. 'TokenVoke Seedance (doubao-seedance-2-0-...)'."""
 
     @abstractmethod
     async def generate(
@@ -70,19 +70,23 @@ class VideoProvider(ABC):
 
 
 # ============================================================================
-# Seedance 2.0 (Volcengine Ark)
+# TokenVoke Seedance (OpenAI-compatible async video task API)
 # ============================================================================
 
-class SeedanceProvider(VideoProvider):
-    """Seedance 2.0 video generation via Volcano Ark REST API.
+class TokenVokeProvider(VideoProvider):
+    """TokenVoke relay for Seedance 2.0 video generation.
 
-    API docs: https://www.volcengine.com/docs/82379/1520757
+    API docs: https://tokenvoke.com/docs/seedance-video
+
+    Async task flow:
+      1. POST /v1/video/generations -> {task_id, ...}
+      2. GET  /v1/video/generations/{task_id} -> poll until SUCCESS/FAILURE
+      3. Download video from data.result_url
     """
 
-    ARK_BASE = "https://ark.cn-beijing.volces.com/api/v3"
-
     def __init__(self):
-        self._model = config.SEEDANCE_MODEL
+        self._model = config.VIDEO_MODEL
+        self._base_url = config.TOKENVOKE_BASE_URL.rstrip("/")
         self._headers = {
             "Authorization": f"Bearer {config.VIDEO_API_KEY}",
             "Content-Type": "application/json",
@@ -90,7 +94,180 @@ class SeedanceProvider(VideoProvider):
 
     @property
     def name(self) -> str:
-        return f"Seedance 2.0 ({self._model})"
+        return f"TokenVoke Seedance ({self._model})"
+
+    async def generate(
+        self,
+        shot_id: str,
+        prompt: str,
+        start_frame_path: str,
+        ref_image_paths: list[str],
+        duration: float,
+        output_path: str,
+    ) -> VideoResult:
+        """Single video generation via TokenVoke async task API."""
+        # Collect all images as data URLs
+        images: list[str] = []
+        for path in ([start_frame_path] if start_frame_path else []) + ref_image_paths:
+            url = self._file_to_data_url(path)
+            if url:
+                images.append(url)
+
+        body: dict[str, Any] = {
+            "model": self._model,
+            "prompt": prompt,
+            "duration": self._normalize_duration(int(duration)),
+            "metadata": {
+                "ratio": "16:9",
+                "resolution": "720p",
+            },
+        }
+        if images:
+            body["images"] = images
+
+        async with httpx.AsyncClient(timeout=900) as client:
+            # 1. Create task (retry on 403 and 400 content moderation errors)
+            task_id = None
+            last_error = ""
+            for attempt in range(10):
+                resp = await client.post(
+                    f"{self._base_url}/v1/video/generations",
+                    headers=self._headers,
+                    json=body,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    task_id = data.get("task_id") or data.get("id")
+                    break
+                if resp.status_code in (403, 400):
+                    last_error = resp.text[:500]
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                return VideoResult(
+                    shot_id=shot_id, path=output_path, status="failed",
+                    error=f"Create task HTTP {resp.status_code}: {resp.text[:500]}",
+                )
+            if task_id is None:
+                return VideoResult(
+                    shot_id=shot_id, path=output_path, status="failed",
+                    error=f"Create task failed after 10 retries: {last_error}",
+                )
+
+            # 2. Poll until complete (retry 403 on poll)
+            poll_failures = 0
+            poll_elapsed = 0
+            while True:
+                await asyncio.sleep(5)
+                poll_elapsed += 5
+                logger.info("  poll %s: waiting %ds...", shot_id, poll_elapsed)
+                poll = await client.get(
+                    f"{self._base_url}/v1/video/generations/{task_id}",
+                    headers=self._headers,
+                )
+                if poll.status_code == 403:
+                    poll_failures += 1
+                    if poll_failures >= 10:
+                        return VideoResult(
+                            shot_id=shot_id, path=output_path, status="failed",
+                            error="Poll failed after 10 retries (403)",
+                        )
+                    continue
+                poll_failures = 0
+                if poll.status_code != 200:
+                    return VideoResult(
+                        shot_id=shot_id, path=output_path, status="failed",
+                        error=f"Poll HTTP {poll.status_code}",
+                    )
+
+                result = poll.json()
+                # TokenVoke poll response: {code:"success", data:{status, progress, result_url?, ...}}
+                data = result.get("data", result) if result.get("code") == "success" else result
+                status = (data.get("status") or "").upper()
+
+                if status in ("SUCCESS", "COMPLETED"):
+                    video_url = data.get("result_url", "")
+                    # Some responses nest result_url deeper or use video_url
+                    if not video_url:
+                        video_url = data.get("video_url", "")
+                    # Download with retry on 403
+                    dl = None
+                    for dl_attempt in range(3):
+                        dl = await client.get(video_url)
+                        if dl.status_code == 403:
+                            await asyncio.sleep(2 ** dl_attempt)
+                            continue
+                        break
+                    if dl is None or dl.status_code == 403:
+                        return VideoResult(
+                            shot_id=shot_id, path=output_path, status="failed",
+                            error="Download failed after 3 retries (403)",
+                        )
+                    if dl.status_code != 200:
+                        return VideoResult(
+                            shot_id=shot_id, path=output_path, status="failed",
+                            error=f"Download HTTP {dl.status_code}",
+                        )
+                    with open(output_path, "wb") as f:
+                        f.write(dl.content)
+                    return VideoResult(
+                        shot_id=shot_id, path=output_path,
+                        status="done", url=video_url,
+                    )
+                if status in ("FAILURE", "FAILED", "EXPIRED", "CANCELLED"):
+                    fail_reason = data.get("fail_reason", data.get("error",
+                        data.get("message", str(data))))
+                    return VideoResult(
+                        shot_id=shot_id, path=output_path,
+                        status="failed",
+                        error=fail_reason,
+                    )
+                # status in ("NOT_START", "IN_PROGRESS", "PROCESSING", "QUEUED", "PENDING", "RUNNING")
+                # — keep polling
+
+    @staticmethod
+    def _file_to_data_url(path: str) -> str | None:
+        """Convert local image to base64 data URL for the API."""
+        if not path or not os.path.isfile(path):
+            return None
+        try:
+            ext = os.path.splitext(path)[1].lower().lstrip(".")
+            mime = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "webp": "webp"}.get(ext, "png")
+            with open(path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode()
+            return f"data:image/{mime};base64,{b64}"
+        except Exception:
+            return None
+
+    @staticmethod
+    def _normalize_duration(duration_sec: int) -> int:
+        """Clamp duration to API valid range [4, 10] for r2v/i2v."""
+        return max(4, min(10, duration_sec))
+
+
+# ============================================================================
+# Seedance 2.0 (Volcengine Ark) — direct API fallback
+# ============================================================================
+
+class SeedanceProvider(VideoProvider):
+    """Seedance 2.0 video generation via Volcano Ark REST API (direct, no relay).
+
+    API docs: https://www.volcengine.com/docs/82379/1520757
+
+    Used when VIDEO_PROVIDER=seedance in .env.
+    """
+
+    ARK_BASE = "https://ark.cn-beijing.volces.com/api/v3"
+
+    def __init__(self):
+        self._model = config.VIDEO_MODEL
+        self._headers = {
+            "Authorization": f"Bearer {config.VIDEO_API_KEY}",
+            "Content-Type": "application/json",
+        }
+
+    @property
+    def name(self) -> str:
+        return f"Seedance 2.0 Ark ({self._model})"
 
     async def generate(
         self,
@@ -211,25 +388,6 @@ class SeedanceProvider(VideoProvider):
                         error=str(result.get("error", result.get("message", ""))),
                     )
 
-    @staticmethod
-    def _file_to_data_url(path: str) -> str | None:
-        """Convert local image to base64 data URL for the API."""
-        if not path or not os.path.isfile(path):
-            return None
-        try:
-            ext = os.path.splitext(path)[1].lower().lstrip(".")
-            mime = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "webp": "webp"}.get(ext, "png")
-            with open(path, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode()
-            return f"data:image/{mime};base64,{b64}"
-        except Exception:
-            return None
-
-    @staticmethod
-    def _normalize_duration(duration_sec: int) -> int:
-        """Clamp duration to API valid range [4, 10] for r2v/i2v."""
-        return max(4, min(10, duration_sec))
-
 
 # ============================================================================
 # Null Provider (testing)
@@ -266,6 +424,7 @@ class NullVideoProvider(VideoProvider):
 # ============================================================================
 
 _PROVIDER_REGISTRY: dict[str, type[VideoProvider]] = {
+    "tokenvoke": TokenVokeProvider,
     "seedance": SeedanceProvider,
     "null": NullVideoProvider,
 }
@@ -274,7 +433,7 @@ _PROVIDER_REGISTRY: dict[str, type[VideoProvider]] = {
 def create_video_provider(provider_name: str | None = None) -> VideoProvider:
     """Create a video provider from config or explicit name.
 
-    Set VIDEO_PROVIDER in .env to one of: seedance, null
+    Set VIDEO_PROVIDER in .env to one of: tokenvoke, seedance, null
     """
     name = provider_name or config.VIDEO_PROVIDER
     cls = _PROVIDER_REGISTRY.get(name)
@@ -299,7 +458,7 @@ class VideoPipeline:
 
     def __init__(self, provider: VideoProvider | None = None):
         self.provider = provider or create_video_provider()
-        self.max_images = config.SEEDANCE_MAX_IMAGES
+        self.max_images = config.TOKENVOKE_MAX_IMAGES
 
     async def generate_all_shots(
         self, storyboard: dict, asset_manifest: dict
