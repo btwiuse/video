@@ -119,6 +119,14 @@
         } catch (e) { console.error(e); }
       };
 
+      const fileCategory = (name) => {
+        const ext = name.split('.').pop()?.toLowerCase();
+        if (['png','jpg','jpeg','gif','webp'].includes(ext)) return 'image';
+        if (['mp4','webm','mov'].includes(ext)) return 'video';
+        if (['wav','mp3','m4a','flac'].includes(ext)) return 'audio';
+        return 'text';
+      };
+
       const viewJson = async (name) => {
         if (expandedRef.current[name]) {
           setExpanded(prev => {
@@ -128,17 +136,28 @@
           });
           return;
         }
-        try {
-          const res = await api(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(name)}`);
-          if (!res.ok) throw new Error('Fetch failed');
-          const text = await res.text();
-          const MAX_PREVIEW = 50000;
-          if (text.length > MAX_PREVIEW) {
-            setExpanded(prev => ({ ...prev, [name]: text.substring(0, MAX_PREVIEW) + '\n\n... (文件过大，仅显示前 50KB，请下载查看完整内容)' }));
-          } else {
-            setExpanded(prev => ({ ...prev, [name]: text }));
-          }
-        } catch (e) { console.error(e); }
+        const cat = fileCategory(name);
+        if (cat === 'text') {
+          try {
+            const res = await api(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(name)}`);
+            if (!res.ok) throw new Error('Fetch failed');
+            const text = await res.text();
+            const MAX_PREVIEW = 50000;
+            if (text.length > MAX_PREVIEW) {
+              setExpanded(prev => ({ ...prev, [name]: text.substring(0, MAX_PREVIEW) + '\n\n... (文件过大，仅显示前 50KB，请下载查看完整内容)' }));
+            } else {
+              setExpanded(prev => ({ ...prev, [name]: text }));
+            }
+          } catch (e) { console.error(e); }
+        } else {
+          try {
+            const res = await api(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(name)}`);
+            if (!res.ok) throw new Error('Fetch failed');
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            setExpanded(prev => ({ ...prev, [name]: url }));
+          } catch (e) { console.error(e); }
+        }
       };
 
       const toggleExpand = (name) => {
@@ -195,6 +214,23 @@
                   }} className="text-xs px-2 py-1 bg-cinema-600 hover:bg-cinema-500 rounded text-gray-200">
                     {expanded['_script_'] ? '收起' : '查看'}
                   </button>
+                  <button onClick={async () => {
+                    try {
+                      const res = await api(`/pipelines/${pipelineId}/script`);
+                      if (!res.ok) throw new Error('Download failed');
+                      const blob = await res.blob();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = '剧本原文.txt';
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                    } catch (e) { console.error(e); }
+                  }} className="text-xs px-2 py-1 bg-indigo-600 hover:bg-indigo-500 rounded text-white">
+                    下载
+                  </button>
                 </div>
               </div>
               {expanded['_script_'] && (
@@ -227,11 +263,19 @@
                 {expanded[f.name] && (
                   <div className="bg-cinema-900 p-4 border-t border-cinema-700 relative">
                     <div className="absolute top-2 right-2 flex gap-2">
-                      <button onClick={() => copyToClipboard(expanded[f.name], f.name)} className="text-gray-400 hover:text-white" title="复制">📋</button>
+                      {fileCategory(f.name) === 'text' && <button onClick={() => copyToClipboard(expanded[f.name], f.name)} className="text-gray-400 hover:text-white" title="复制">📋</button>}
                       <button onClick={() => toggleExpand(f.name)} className="text-gray-400 hover:text-white">✕</button>
                     </div>
                     <h4 className="text-sm font-semibold text-gray-300 mb-2">{f.name}</h4>
-                    <pre className="text-xs text-gray-300 overflow-auto max-h-96 whitespace-pre-wrap">{expanded[f.name]}</pre>
+                    {fileCategory(f.name) === 'image' ? (
+                      <img src={expanded[f.name]} alt={f.name} className="max-w-full rounded" />
+                    ) : fileCategory(f.name) === 'video' ? (
+                      <video src={expanded[f.name]} controls className="max-w-full rounded" />
+                    ) : fileCategory(f.name) === 'audio' ? (
+                      <audio src={expanded[f.name]} controls className="w-full" />
+                    ) : (
+                      <pre className="text-xs text-gray-300 overflow-auto max-h-96 whitespace-pre-wrap">{expanded[f.name]}</pre>
+                    )}
                   </div>
                 )}
               </div>
@@ -299,6 +343,87 @@
             className="bg-cinema-900 border border-cinema-700 rounded p-4 h-96 overflow-auto font-mono text-xs text-gray-300 whitespace-pre-wrap"
           >
             {logs || <span className="text-gray-500">暂无日志</span>}
+          </div>
+        </div>
+      );
+    }
+
+    function StoryboardViewer({ pipelineId }) {
+      const [data, setData] = useState(null);
+      const [loading, setLoading] = useState(false);
+      const [expandedScenes, setExpandedScenes] = useState({});
+
+      const load = useCallback(async () => {
+        setLoading(true);
+        try {
+          const res = await api(`/pipelines/${pipelineId}/artifacts/storyboard.json`);
+          if (res.ok) setData(await res.json());
+        } catch (e) { /* ignore */ }
+        finally { setLoading(false); }
+      }, [pipelineId]);
+
+      useEffect(() => { load(); }, [load]);
+
+      if (!data && loading) return <div className="mt-6 text-gray-500 text-sm">加载分镜中...</div>;
+      if (!data) return null;
+
+      const scenes = data.scenes || [];
+      const characters = data.characters || [];
+      const shots = data.shots || [];
+
+      return (
+        <div className="mt-8">
+          <h3 className="text-lg font-semibold text-white mb-3">
+            分镜概览
+            <span className="text-gray-400 text-sm font-normal ml-2">
+              {characters.length} 角色 · {scenes.length} 场景 · {shots.length} 镜头
+            </span>
+          </h3>
+          <div className="space-y-3">
+            {characters.length > 0 && (
+              <div className="bg-cinema-800 rounded border border-cinema-700 p-3">
+                <h4 className="text-sm font-semibold text-gray-300 mb-2">角色</h4>
+                <div className="flex flex-wrap gap-2">
+                  {characters.map(c => (
+                    <span key={c.ref_id} className="text-xs px-2 py-1 bg-cinema-700 rounded text-gray-300">{c.ref_id}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {scenes.map((scene, si) => {
+              const sceneShots = shots.filter(s => s.full_shot_id?.startsWith(scene.scene_id));
+              const isExpanded = expandedScenes[scene.scene_id];
+              return (
+                <div key={scene.scene_id} className="bg-cinema-800 rounded border border-cinema-700 overflow-hidden">
+                  <div
+                    className="flex items-center justify-between p-3 cursor-pointer hover:bg-cinema-750"
+                    onClick={() => setExpandedScenes(prev => ({ ...prev, [scene.scene_id]: !prev[scene.scene_id] }))}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <span className="text-white text-sm font-medium">{scene.scene_id}</span>
+                      <span className="text-gray-500 text-xs ml-2">{sceneShots.length} 镜</span>
+                    </div>
+                    <span className="text-gray-400 text-xs">{isExpanded ? '收起' : '展开'}</span>
+                  </div>
+                  {isExpanded && (
+                    <div className="border-t border-cinema-700 divide-y divide-cinema-700">
+                      {sceneShots.map((shot, i) => (
+                        <div key={shot.full_shot_id} className="p-3 bg-cinema-900/50">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-bold text-indigo-400">{shot.full_shot_id}</span>
+                            <span className="text-xs text-gray-400 bg-cinema-700 px-1.5 py-0.5 rounded">{shot.transition_type || '-'}</span>
+                            <span className="text-xs text-gray-500">{shot.duration_sec != null ? (Number.isInteger(shot.duration_sec) ? shot.duration_sec : shot.duration_sec.toFixed(1)) + '秒' : '-'}</span>
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            {`Scene ${si+1} 第${i+1}镜`}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       );
@@ -458,6 +583,7 @@
             </button>
           </div>
 
+          <StoryboardViewer pipelineId={pid} />
           <LogViewer pipelineId={pid} isRunning={pipeline.status === 'running' || pipeline.status?.startsWith('step_')} />
 
           <ArtifactList pipelineId={pid} />

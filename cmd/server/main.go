@@ -84,6 +84,35 @@ func outputDir(id string) string {
 	return filepath.Join(base, "output", id)
 }
 
+func listArtifactsRecursive(dir string) ([]map[string]any, error) {
+	var files []map[string]any
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		info, _ := d.Info()
+		files = append(files, map[string]any{
+			"name": rel,
+			"size": info.Size(),
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if files == nil {
+		files = []map[string]any{}
+	}
+	return files, nil
+}
+
 func scriptPath(id string) string {
 	base := os.Getenv("DATA_DIR")
 	if base == "" {
@@ -102,7 +131,7 @@ func pipelineKey(id string) string {
 
 func savePipelineState(p *Pipeline) {
 	p.UpdatedAt = time.Now()
-	data, err := json.Marshal(p)
+	data, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
 		vlog("pipeline %s marshal error: %v", p.ID, err)
 		return
@@ -584,24 +613,13 @@ func handleArtifacts(w http.ResponseWriter, r *http.Request) {
 	if len(parts) < 2 {
 		// List mode
 		dir := outputDir(parts[0])
-		entries, err := os.ReadDir(dir)
+		entries, err := listArtifactsRecursive(dir)
 		if err != nil {
 			http.Error(w, "cannot read artifacts", http.StatusInternalServerError)
 			return
 		}
-		files := []map[string]any{}
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			info, _ := e.Info()
-			files = append(files, map[string]any{
-				"name": e.Name(),
-				"size": info.Size(),
-			})
-		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"files": files})
+		json.NewEncoder(w).Encode(map[string]any{"files": entries})
 		return
 	}
 
@@ -611,24 +629,13 @@ func handleArtifacts(w http.ResponseWriter, r *http.Request) {
 	if name == "artifacts" {
 		// /pipelines/{id}/artifacts
 		dir := outputDir(pid)
-		entries, err := os.ReadDir(dir)
+		entries, err := listArtifactsRecursive(dir)
 		if err != nil {
 			http.Error(w, "cannot read artifacts", http.StatusInternalServerError)
 			return
 		}
-		files := []map[string]any{}
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			info, _ := e.Info()
-			files = append(files, map[string]any{
-				"name": e.Name(),
-				"size": info.Size(),
-			})
-		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"files": files})
+		json.NewEncoder(w).Encode(map[string]any{"files": entries})
 		return
 	}
 

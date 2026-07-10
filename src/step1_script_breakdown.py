@@ -16,6 +16,7 @@ import logging
 import re
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from openai import OpenAI
@@ -226,30 +227,51 @@ class StoryboardGenerator:
         # ================================================================
         # Phase 2-4: Tool calling for structured output
         # ================================================================
-        characters: list[dict] = []
-        for char_info in overview.get("characters", []):
-            ref_id = char_info["ref_id"]
-            logger.info("Phase 2: defining %s (%s)...", char_info["name"], ref_id)
-            char_detail = self._call_tool(
-                SYSTEM_FILMMAKER,
-                self._build_character_prompt(script_text, char_info, overview),
-                TOOL_DEFINE_CHARACTER,
-            )
-            char_detail["scene_appearances"] = char_info.get("scenes", [])
-            characters.append(char_detail)
-            self._save_character_file(char_detail, ensure_output_dir("characters"))
+        char_infos = overview.get("characters", [])
+        characters: list[dict] = [None] * len(char_infos)
+        if char_infos:
+            logger.info("Phase 2: defining %d characters (parallel)...", len(char_infos))
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = {}
+                for i, char_info in enumerate(char_infos):
+                    future = executor.submit(
+                        self._call_tool,
+                        SYSTEM_FILMMAKER,
+                        self._build_character_prompt(script_text, char_info, overview),
+                        TOOL_DEFINE_CHARACTER,
+                        char_info["ref_id"],
+                    )
+                    futures[future] = (i, char_info)
+                for future in as_completed(futures):
+                    i, char_info = futures[future]
+                    ref_id = char_info["ref_id"]
+                    char_detail = future.result()
+                    char_detail["scene_appearances"] = char_info.get("scenes", [])
+                    characters[i] = char_detail
+                    self._save_character_file(char_detail, ensure_output_dir("characters"))
+                    logger.info("Phase 2: %s (%s) done", char_info["name"], ref_id)
 
-        scenes: list[dict] = []
-        for scene_info in overview.get("scenes", []):
-            scene_id = scene_info["scene_id"]
-            logger.info("Phase 3: defining %s (%s)...", scene_info["name"], scene_id)
-            scene_detail = self._call_tool(
-                SYSTEM_FILMMAKER,
-                self._build_scene_prompt(script_text, scene_info, overview),
-                TOOL_DEFINE_SCENE,
-            )
-            scenes.append(scene_detail)
-            self._save_scene_file(scene_detail, ensure_output_dir("scenes"))
+        scene_infos = overview.get("scenes", [])
+        scenes: list[dict] = [None] * len(scene_infos)
+        if scene_infos:
+            logger.info("Phase 3: defining %d scenes (parallel)...", len(scene_infos))
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = {}
+                for i, scene_info in enumerate(scene_infos):
+                    future = executor.submit(
+                        self._call_tool,
+                        SYSTEM_FILMMAKER,
+                        self._build_scene_prompt(script_text, scene_info, overview),
+                        TOOL_DEFINE_SCENE,
+                        scene_info["scene_id"],
+                    )
+                    futures[future] = (i, scene_info)
+                for future in as_completed(futures):
+                    i, scene_info = futures[future]
+                    scene_detail = future.result()
+                    scenes[i] = scene_detail
+                    self._save_scene_file(scene_detail, ensure_output_dir("scenes"))
+                    logger.info("Phase 3: %s (%s) done", scene_info["name"], scene_info["scene_id"])
 
         all_shots: list[dict] = []
         for scene_info in overview.get("scenes", []):
@@ -535,7 +557,7 @@ class StoryboardGenerator:
     # Core tool-calling method
     # ========================================================================
 
-    def _call_tool(self, system_prompt: str, user_prompt: str, tool_def: dict) -> dict:
+    def _call_tool(self, system_prompt: str, user_prompt: str, tool_def: dict, debug_tag: str = "") -> dict:
         """Make a tool-calling API request with streaming feedback, return parsed JSON."""
         logger.info("  -> Calling tool: %s", tool_def["function"]["name"])
         logger.debug("  System: %d chars, User: %d chars", len(system_prompt), len(user_prompt))
@@ -614,7 +636,8 @@ class StoryboardGenerator:
         # Save raw args for debugging
         from pathlib import Path
         debug_dir = ensure_output_dir("_debug")
-        debug_file = debug_dir / f"{tool_def['function']['name']}_raw_args.json"
+        tag = f"_{debug_tag}" if debug_tag else ""
+        debug_file = debug_dir / f"{tool_def['function']['name']}{tag}_raw_args.json"
         debug_file.write_text(tool_args, encoding="utf-8")
         logger.debug("  Raw args saved to %s", debug_file)
 
