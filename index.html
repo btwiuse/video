@@ -182,16 +182,14 @@
       );
     }
 
-    function StepView({ step, pipeline, currentStep, onRun, actionLoading, pipelineId, onCancel }) {
+    function StepView({ step, pipeline, currentStep, onRun, actionLoading, pipelineId, onCancel,
+                        maxShotsPerScene, setMaxShotsPerScene, totalShots, setTotalShots, totalDuration, setTotalDuration }) {
       const isStepDone = step <= currentStep || pipeline.status === 'done';
       const isStepRunning = pipeline.status === 'running' && pipeline.step === step;
       const canGenerate = (step === currentStep + 1 || step <= currentStep) && !actionLoading;
       const [artifacts, setArtifacts] = useState([]);
       const [artLoading, setArtLoading] = useState(false);
       const [previews, setPreviews] = useState({});
-      const [maxShotsPerScene, setMaxShotsPerScene] = useState(5);
-      const [totalShots, setTotalShots] = useState(20);
-      const [totalDuration, setTotalDuration] = useState(15);
 
       useEffect(() => {
         if (!isStepDone && !isStepRunning) { setArtifacts([]); return; }
@@ -936,6 +934,9 @@
       const [actionLoading, setActionLoading] = useState(false);
       const [summary, setSummary] = useState(null);
       const [summaryLoading, setSummaryLoading] = useState(false);
+      const [maxShotsPerScene, setMaxShotsPerScene] = useState(5);
+      const [totalShots, setTotalShots] = useState(20);
+      const [totalDuration, setTotalDuration] = useState(15);
 
       useEffect(() => {
         let cancelled = false;
@@ -1074,7 +1075,10 @@
             </div>
           )}
 
-          <StepView step={activeStep} pipeline={pipeline} currentStep={currentStep} onRun={runStep} onCancel={cancelStep} actionLoading={actionLoading} pipelineId={pid} />
+          <StepView step={activeStep} pipeline={pipeline} currentStep={currentStep} onRun={runStep} onCancel={cancelStep} actionLoading={actionLoading} pipelineId={pid}
+  maxShotsPerScene={maxShotsPerScene} setMaxShotsPerScene={setMaxShotsPerScene}
+  totalShots={totalShots} setTotalShots={setTotalShots}
+  totalDuration={totalDuration} setTotalDuration={setTotalDuration} />
 
           <div className="flex gap-3 mb-6">
             <button onClick={runAll} disabled={actionLoading || pipeline.status === 'done'} className="nav-btn px-4 py-2 bg-brass-500 hover:bg-brass-400 disabled:bg-ink-700 text-ink-950 rounded text-sm font-medium transition-all disabled:text-stone-400">
@@ -1274,7 +1278,6 @@
       const [currentView, setCurrentView] = useState('list');
       const [pipelineId, setPipelineId] = useState(null);
       const pollRef = useRef(null);
-      const selectedRef = useRef(null);
 
       const getHashView = () => {
         const hash = window.location.hash.replace('#', '');
@@ -1293,7 +1296,7 @@
         if (!pipelineId) return;
         try {
           const res = await api(`/pipelines/${pipelineId}`);
-          if (res.ok) { const data = await res.json(); setSelected(data); selectedRef.current = data; }
+          if (res.ok) { const data = await res.json(); setSelected(data); }
         } catch (e) { console.error(e); }
       }, [pipelineId]);
 
@@ -1316,16 +1319,14 @@
       }, [currentView, pipelineId]);
 
       useEffect(() => {
-        const s = selectedRef.current;
-        if (currentView === 'detail' && s) {
-          const shouldPoll = s.status === 'running' || s.status?.startsWith('step_');
-          if (shouldPoll) {
-            const poll = () => { if (!document.hidden) refreshSelected(); };
-            pollRef.current = setInterval(poll, 10000);
-          }
+        if (currentView !== 'detail' || !selected) return;
+        const shouldPoll = selected.status === 'running' || selected.status?.startsWith('step_');
+        if (shouldPoll) {
+          const poll = () => { if (!document.hidden) refreshSelected(); };
+          pollRef.current = setInterval(poll, 10000);
         }
         return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
-      }, [currentView, refreshSelected]);
+      }, [currentView, selected, refreshSelected]);
 
       const selectPipeline = async (id) => { navigateTo('detail', id); };
 
