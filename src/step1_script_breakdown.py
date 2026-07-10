@@ -177,7 +177,7 @@ SYSTEM_FILMMAKER = f"""你是一位资深电影导演和分镜师，精通视觉
 ### 视频 prompt（positive_prompt / negative_prompt）
 1. 动作描述是视频 prompt 的核心——视频是运动媒介，没有运动就没有视频。必须详细描述镜头内每一段时间内的动作：角色如何移动、做什么、肢体和表情如何变化
 2. 具体视觉细节，不要抽象情绪词
-3. 角色用 "see ImageN for reference" 引用（N 从 1 开始）
+3. 视频 prompt 中引用角色时用 "see ImageN for reference" 格式（N 为角色 ref_id），注意 ref_id 本身不含 "see " 前缀
 4. 包含景别/运镜描述
 5. 光影/色彩/质感描述作为辅助，但不应占据超过 prompt 30% 的篇幅
 
@@ -343,7 +343,7 @@ class StoryboardGenerator:
 ## 要求
 
 1. brief_appearance 必须包含：发型发色、体型、明显标志特征（痣/伤疤/眼镜等）、主要服装 — 这些都是后续生成定妆照的关键信息
-2. 每个角色按出场顺序，用 Image1, Image2... 编号
+2. 每个角色按出场顺序，ref_id 固定为 Image1, Image2...（就是 "Image" + 数字，不含 "see " 或其他前缀）
 3. 每个场景按顺序，用 SC_01, SC_02... 编号
 4. scenes 字段列出该角色出场的所有场景编号
 5. characters_present 列出该场景出场的所有角色 ref_id
@@ -367,6 +367,12 @@ class StoryboardGenerator:
         for char in result.get("characters", []):
             if "ref_id" not in char:
                 char["ref_id"] = f"Image{result['characters'].index(char)+1}"
+            # Sanitize: strip "see " prefix and replace spaces with underscores
+            rid = str(char["ref_id"]).strip()
+            if rid.lower().startswith("see "):
+                rid = rid[4:]
+            rid = rid.replace(" ", "_")
+            char["ref_id"] = rid
             char.setdefault("scenes", [])
 
         for i, scene in enumerate(result.get("scenes", [])):
