@@ -689,9 +689,6 @@ class Step2Pipeline:
                     sf_prompt = shot.get("start_frame_prompt", "")
                 if not sf_prompt:
                     return None
-                # Strip "see X for reference" — meant for video model, triggers StepFun censorship
-                import re as _re
-                sf_prompt = _re.sub(r'\s*see\s+\S+\s+for\s+reference\s*', '', sf_prompt, flags=_re.IGNORECASE).strip()
 
                 # Read deps.json to find character/scene dependencies
                 deps = load_json(str(ensure_output_dir("shots", shot_id) / "deps.json"))
