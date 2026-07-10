@@ -295,6 +295,7 @@ class StoryboardGenerator:
                 for future in as_completed(futures):
                     scene_shots = future.result()
                     all_shots.extend(scene_shots)
+                    save_json(self._build_storyboard_index(characters, scenes, all_shots), str(ensure_output_dir() / "storyboard.json"))
                     logger.info("Phase 4: %s done (%d shots)", futures[future], len(scene_shots))
             # Restore original scene order
             scene_order = {s["scene_id"]: i for i, s in enumerate(scene_infos)}
