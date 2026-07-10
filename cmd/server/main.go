@@ -610,8 +610,9 @@ func handleArtifacts(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/pipelines/")
 	id = strings.TrimSuffix(id, "/")
 	parts := strings.Split(id, "/")
-	if len(parts) < 2 {
-		// List mode
+
+	// /pipelines/{id} — list output dir (legacy fallback)
+	if len(parts) == 1 {
 		dir := outputDir(parts[0])
 		entries, err := listArtifactsRecursive(dir)
 		if err != nil {
@@ -623,11 +624,10 @@ func handleArtifacts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Download single file
 	pid := parts[0]
-	name := parts[len(parts)-1]
-	if name == "artifacts" {
-		// /pipelines/{id}/artifacts
+
+	// /pipelines/{id}/artifacts — list
+	if len(parts) == 2 {
 		dir := outputDir(pid)
 		entries, err := listArtifactsRecursive(dir)
 		if err != nil {
@@ -638,6 +638,9 @@ func handleArtifacts(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"files": entries})
 		return
 	}
+
+	// /pipelines/{id}/artifacts/{name} — download single file (may contain subdirs)
+	name := strings.Join(parts[2:], "/")
 
 	path := filepath.Join(outputDir(pid), name)
 	if !fileExists(path) {
