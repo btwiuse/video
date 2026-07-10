@@ -109,6 +109,14 @@
     const API_BASE = window.location.origin;
     const STEP_NAMES = ["", "分镜生成", "视觉素材", "视频生成", "音频生成", "后期合成"];
 
+    const fileCategory = (name) => {
+      const ext = name.split('.').pop()?.toLowerCase();
+      if (['png','jpg','jpeg','gif','webp'].includes(ext)) return 'image';
+      if (['mp4','webm','mov'].includes(ext)) return 'video';
+      if (['wav','mp3','m4a','flac'].includes(ext)) return 'audio';
+      return 'text';
+    };
+
     function api(url, opts = {}) {
       return fetch(`${API_BASE}${url}`, { ...opts, headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) } });
     }
@@ -209,7 +217,7 @@
         );
     }
 
-    function DirNode({ name, node, level, path, treeOpen, onToggleDir, expanded, onView, onDownload, onCopy, onToggle }) {
+    function DirNode({ name, node, level, path, pipelineId, treeOpen, onToggleDir, expanded, onView, onDownload, onCopy, onToggle }) {
         const fullPath = path ? `${path}/${name}` : name;
         const isOpen = treeOpen[fullPath] !== undefined ? treeOpen[fullPath] : level < 2;
         const paddingLeft = 16 + level * 20;
@@ -238,7 +246,7 @@
                 {childDirs.map(d => (
                   <DirNode key={d} name={d} node={node.__children[d]} level={level + 1} path={fullPath}
                     treeOpen={treeOpen} onToggleDir={onToggleDir}
-                    expanded={expanded} onView={onView} onDownload={onDownload} onCopy={onCopy} onToggle={onToggle} />
+                    expanded={expanded} onView={onView} onDownload={onDownload} onCopy={onCopy} onToggle={onToggle} pipelineId={pipelineId} />
                 ))}
                 {childFiles.map(f => (
                   <FileRow key={f.name} file={f} level={level + 1}
@@ -289,14 +297,6 @@
           URL.revokeObjectURL(url);
         } catch (e) { console.error(e); }
       }, [pipelineId]);
-
-      const fileCategory = (name) => {
-        const ext = name.split('.').pop()?.toLowerCase();
-        if (['png','jpg','jpeg','gif','webp'].includes(ext)) return 'image';
-        if (['mp4','webm','mov'].includes(ext)) return 'video';
-        if (['wav','mp3','m4a','flac'].includes(ext)) return 'audio';
-        return 'text';
-      };
 
       const viewJson = useCallback(async (name) => {
         if (expandedRef.current[name]) {
@@ -438,7 +438,7 @@
             {topDirs.map(d => (
               <DirNode key={d} name={d} node={tree.__children[d]} level={0} path=""
                 treeOpen={treeOpen} onToggleDir={toggleDir}
-                expanded={expanded} onView={viewJson} onDownload={download} onCopy={copyToClipboard} onToggle={toggleExpand} />
+                expanded={expanded} onView={viewJson} onDownload={download} onCopy={copyToClipboard} onToggle={toggleExpand} pipelineId={pipelineId} />
             ))}
           </div>
         </div>
