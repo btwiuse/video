@@ -177,7 +177,7 @@ SYSTEM_FILMMAKER = f"""你是一位资深电影导演和分镜师，精通视觉
 ### 视频 prompt（positive_prompt / negative_prompt）
 1. 动作描述是视频 prompt 的核心——视频是运动媒介，没有运动就没有视频。必须详细描述镜头内每一段时间内的动作：角色如何移动、做什么、肢体和表情如何变化
 2. 具体视觉细节，不要抽象情绪词
-3. 视频 prompt 中引用角色时用 "see ImageN for reference" 格式（N 为角色 ref_id），注意 ref_id 本身不含 "see " 前缀
+3. 视频 prompt 中引用角色时用 "see {角色ref_id} for reference" 格式（ref_id 就是角色原名）
 4. 包含景别/运镜描述
 5. 光影/色彩/质感描述作为辅助，但不应占据超过 prompt 30% 的篇幅
 
@@ -317,8 +317,8 @@ class StoryboardGenerator:
 {
   "characters": [
     {
-      "ref_id": "Image1",
-      "name": "角色名",
+      "ref_id": "安娜",
+      "name": "安娜",
       "gender": "男/女",
       "age_range": "年龄段",
       "brief_appearance": "外貌一句话概述，包含关键特征（发型、体型、标志性特征、主要服装风格）。这些特征将在后续环节中用于生成定妆照，所以务必准确具体。",
@@ -333,7 +333,7 @@ class StoryboardGenerator:
       "location": "内景/外景",
       "time": "时间（日/夜/具体时段）",
       "brief_summary": "场景一句话概述",
-      "characters_present": ["Image1", "Image2"],
+      "characters_present": ["安娜"],
       "emotion_tone": "场景情绪基调"
     }
   ]
@@ -343,7 +343,7 @@ class StoryboardGenerator:
 ## 要求
 
 1. brief_appearance 必须包含：发型发色、体型、明显标志特征（痣/伤疤/眼镜等）、主要服装 — 这些都是后续生成定妆照的关键信息
-2. 每个角色按出场顺序，ref_id 固定为 Image1, Image2...（就是 "Image" + 数字，不含 "see " 或其他前缀）
+2. 每个角色 ref_id 直接用角色原名（如 "安娜"、"Bob"），不要用 Image1/Image2 之类的编号
 3. 每个场景按顺序，用 SC_01, SC_02... 编号
 4. scenes 字段列出该角色出场的所有场景编号
 5. characters_present 列出该场景出场的所有角色 ref_id
@@ -367,13 +367,16 @@ class StoryboardGenerator:
         for char in result.get("characters", []):
             if "ref_id" not in char:
                 char["ref_id"] = f"Image{result['characters'].index(char)+1}"
-            # Sanitize ref_id: strip "see " prefix, replace spaces, ensure non-numeric
+            # Sanitize ref_id: use character name when LLM falls back to ImageN/numbers
             rid = str(char["ref_id"]).strip()
             if rid.lower().startswith("see "):
                 rid = rid[4:]
-            rid = rid.replace(" ", "_")
-            if rid.isdigit():
-                rid = f"Image{rid}"
+            if not rid or rid.isdigit() or (rid.startswith("Image") and rid[5:].isdigit()):
+                name = str(char.get("name", "")).strip()
+                if name:
+                    rid = name.replace(" ", "_").replace("/", "_")
+                else:
+                    rid = f"Character{result['characters'].index(char)+1}"
             char["ref_id"] = rid
             char.setdefault("scenes", [])
 
