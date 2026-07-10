@@ -13,6 +13,7 @@ Each tool call's output is saved directly as an individual file.
 import asyncio
 import json
 import logging
+import os
 import re
 import sys
 import time
@@ -128,7 +129,7 @@ TOOL_CREATE_SHOT = {
                 "scene_id": {"type": "string", "description": "所属场景ID"},
                 "shot_num": {"type": "integer", "description": "本镜头在场景中的序号，从1开始"},
                 "is_scene_end": {"type": "boolean", "description": "true 表示这是该场景的最后一个镜头，本场景后续不再有镜头"},
-                "duration_sec": {"type": "number", "description": "时长（秒）"},
+                "duration_sec": {"type": "number", "description": "单镜头时长（秒），总时长 = 所有镜头 duration_sec 之和。注意：4-10 秒为佳，对话/独白镜头建议 8-10 秒，动作/过渡镜头 4-6 秒"},
                 "transition_type": {"type": "string", "enum": ["A", "B", "C", "D", "起始镜"], "description": "衔接类型"},
                 "shot_size": {"type": "string", "description": "景别"},
                 "camera_position": {"type": "string", "description": "机位描述"},
@@ -284,9 +285,21 @@ class StoryboardGenerator:
         scene_infos = overview.get("scenes", [])
         if scene_infos:
             logger.info("Phase 4: generating shots for %d scenes (parallel per-scene)...", len(scene_infos))
+            # Compute per-scene shot budget from env
+            total_shots_env = os.environ.get("TOTAL_SHOTS", "")
+            max_per_scene_env = os.environ.get("MAX_SHOTS_PER_SCENE", "")
             with ThreadPoolExecutor(max_workers=5) as executor:
                 futures = {}
-                for scene_info in scene_infos:
+                for i, scene_info in enumerate(scene_infos):
+                    scene_info = dict(scene_info)  # copy so we don't mutate original
+                    # Distribute total shots budget evenly across scenes
+                    if total_shots_env:
+                        remaining_scenes = len(scene_infos) - i
+                        budget = max(1, (int(total_shots_env) - len(all_shots)) // remaining_scenes)
+                        scene_info["_shot_budget"] = budget
+                    if max_per_scene_env:
+                        existing = scene_info.get("_shot_budget", 999)
+                        scene_info["_shot_budget"] = min(existing, int(max_per_scene_env))
                     future = executor.submit(
                         self._generate_scene_shots,
                         script_text, scene_info, characters, scenes,
@@ -526,7 +539,16 @@ class StoryboardGenerator:
         else:
             prev_context = "这是该场景的第 1 个镜头（起始镜）。"
 
-        return f"""场景"{name}"（{sid}）的第 {shot_num} 镜。
+        # User constraints from env vars
+        max_per_scene = os.environ.get("MAX_SHOTS_PER_SCENE", "")
+        total_shots_limit = os.environ.get("TOTAL_SHOTS", "")
+        constraints = ""
+        if max_per_scene:
+            constraints += f"\n注意：本场景最多 {max_per_scene} 个镜头，已生成 {shot_num - 1} 镜。"
+        if total_shots_limit:
+            constraints += f"\n注意：全片总镜头数上限 {total_shots_limit} 镜。"
+
+        return f"""场景"{name}"（{sid}）的第 {shot_num} 镜。{constraints}
 
 场景空间与光线：
 {scene_detail}
@@ -544,7 +566,7 @@ class StoryboardGenerator:
 请调用 create_scene_shot 工具，只生成第 {shot_num} 镜。
 判断 is_scene_end：如果这是本场景最后一个镜头（叙事/情绪/动作已完成），设为 true；否则设为 false。
 严格遵守 180 度规则和相邻镜头空间/光线连续性。
-注意：start_frame_prompt 与 positive_prompt 的唯一区别——去掉运镜描述、16:9 画幅。"""
+注意：duration_sec 是单镜头时长，不能超过 10 秒；总时长 = 所有镜头 duration_sec 之和。不要被剧本中的"总长度"描述误导——那是整部影片的时长，不是单个镜头的时长。"""
 
     def _describe_scenes_brief(self, scene_labels: list[str], overview: dict) -> str:
         """Build a brief description of scenes a character appears in."""
@@ -719,7 +741,14 @@ class StoryboardGenerator:
         scene_shots: list[dict] = []
         shot_num = 1
         prev_shot: dict | None = None
+        shot_budget = scene_info.get("_shot_budget", 0)
         while True:
+            # Stop if we've hit the per-scene budget
+            if shot_budget > 0 and shot_num > shot_budget:
+                logger.info("Scene %s: hit shot budget (%d), forcing end", scene_id, shot_budget)
+                if scene_shots:
+                    scene_shots[-1]["is_scene_end"] = True
+                break
             shot_detail = self._call_tool(
                 SYSTEM_FILMMAKER,
                 self._build_shot_prompt(script_text, scene_info, chars_in_scene,

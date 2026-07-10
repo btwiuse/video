@@ -187,6 +187,8 @@
       const [artifacts, setArtifacts] = useState([]);
       const [artLoading, setArtLoading] = useState(false);
       const [previews, setPreviews] = useState({});
+      const [maxShotsPerScene, setMaxShotsPerScene] = useState(5);
+      const [totalShots, setTotalShots] = useState(20);
 
       useEffect(() => {
         if (!isStepDone && !isStepRunning) { setArtifacts([]); return; }
@@ -257,6 +259,26 @@
               </button>
             </div>
           </div>
+
+          {step === 1 && canGenerate && !isStepRunning && (
+            <div className="mb-6 p-4 bg-ink-900/50 rounded border border-ink-700 space-y-3">
+              <p className="text-xs text-stone-400 font-medium">分镜参数</p>
+              <div className="flex items-center gap-4">
+                <label className="text-xs text-stone-400 w-28 flex-shrink-0">每场景最多镜头</label>
+                <input type="range" min="1" max="20" value={maxShotsPerScene}
+                  onChange={e => setMaxShotsPerScene(parseInt(e.target.value))}
+                  className="flex-1 accent-brass-500 h-1.5" />
+                <span className="text-xs text-stone-200 w-6 text-right">{maxShotsPerScene}</span>
+              </div>
+              <div className="flex items-center gap-4">
+                <label className="text-xs text-stone-400 w-28 flex-shrink-0">总镜头数上限</label>
+                <input type="range" min="5" max="60" value={totalShots}
+                  onChange={e => setTotalShots(parseInt(e.target.value))}
+                  className="flex-1 accent-brass-500 h-1.5" />
+                <span className="text-xs text-stone-200 w-6 text-right">{totalShots}</span>
+              </div>
+            </div>
+          )}
 
           {step === 1 && (isStepDone || isStepRunning) && <StoryboardViewer pipelineId={pipelineId} poll={isStepRunning} />}
 
@@ -947,7 +969,8 @@
       const runStep = async (step) => {
         setActionLoading(true);
         try {
-          await api(`/pipelines/${pid}/steps/${step}`, { method: 'POST' });
+          const body = step === 1 ? { max_shots_per_scene: maxShotsPerScene, total_shots: totalShots } : {};
+          await api(`/pipelines/${pid}/steps/${step}`, { method: 'POST', body: JSON.stringify(body) });
           setTimeout(onRefresh, 1000);
         } finally { setActionLoading(false); }
       };
@@ -965,7 +988,8 @@
           const startStep = currentStep === 5 ? 1 : currentStep + 1;
           for (let s = startStep; s <= 5; s++) {
             navigateToStep(s);
-            await api(`/pipelines/${pid}/steps/${s}`, { method: 'POST' });
+            const body = s === 1 ? { max_shots_per_scene: maxShotsPerScene, total_shots: totalShots } : {};
+            await api(`/pipelines/${pid}/steps/${s}`, { method: 'POST', body: JSON.stringify(body) });
             const startTime = Date.now();
             const timeout = 30 * 60 * 1000;
             while (true) {
@@ -1015,7 +1039,7 @@
               <div className="flex items-center gap-3 mt-2">
                 <StatusBadge status={pipeline.status} />
                 <span className="text-stone-400 text-sm">{pipeline.status === 'running' ? `运行中 - 步骤 ${pipeline.step}/5` : currentStep > 0 ? `已完成 ${currentStep}/5` : '未开始'}</span>
-                {pipeline.duration && <span className="text-stone-500 text-xs">运行时长: {pipeline.duration}</span>}
+                {pipeline.duration && <span className="text-stone-500 text-xs">运行时长: {formatDuration(pipeline.duration)}</span>}
               </div>
             </div>
             <button onClick={del} className="text-xs px-2.5 py-1.5 bg-ink-700 hover:bg-ink-600 text-clay-400 rounded transition-colors ml-4">删除</button>

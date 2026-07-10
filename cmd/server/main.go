@@ -203,7 +203,7 @@ func detectStatus(id string) PipelineStatus {
 	return StatusStep5
 }
 
-func runPythonAsync(p *Pipeline, args []string, stepNum int) {
+func runPythonAsync(p *Pipeline, args []string, stepNum int, maxShotsPerScene, totalShots int) {
 	p.Ctx, p.Cancel = context.WithCancel(context.Background())
 	cmd := exec.CommandContext(p.Ctx, "uv", append([]string{"run", "python"}, args...)...)
 	cmd.Dir = "."
@@ -212,7 +212,17 @@ func runPythonAsync(p *Pipeline, args []string, stepNum int) {
 	if v := os.Getenv("DATA_DIR"); v != "" {
 		dataDir = v
 	}
-	cmd.Env = append(os.Environ(), fmt.Sprintf("DATA_DIR=%s", dataDir), fmt.Sprintf("OUTPUT_DIR=%s", outDir))
+	env := append(os.Environ(),
+		fmt.Sprintf("DATA_DIR=%s", dataDir),
+		fmt.Sprintf("OUTPUT_DIR=%s", outDir),
+	)
+	if maxShotsPerScene > 0 {
+		env = append(env, fmt.Sprintf("MAX_SHOTS_PER_SCENE=%d", maxShotsPerScene))
+	}
+	if totalShots > 0 {
+		env = append(env, fmt.Sprintf("TOTAL_SHOTS=%d", totalShots))
+	}
+	cmd.Env = env
 	logFile, err := os.OpenFile(logPath(p.ID), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		vlog("pipeline %s cannot open log file: %v", p.ID, err)
@@ -441,7 +451,21 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vlog("pipeline %s step %d (%s) starting", id, step, stepNames[step])
-	runPythonAsync(p, args, step)
+
+	// Parse optional step params from request body
+	var maxShotsPerScene, totalShots int
+	if r.Body != nil {
+		var params struct {
+			MaxShotsPerScene int `json:"max_shots_per_scene"`
+			TotalShots       int `json:"total_shots"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&params); err == nil {
+			maxShotsPerScene = params.MaxShotsPerScene
+			totalShots = params.TotalShots
+		}
+	}
+
+	runPythonAsync(p, args, step, maxShotsPerScene, totalShots)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
