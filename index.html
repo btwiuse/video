@@ -1036,8 +1036,12 @@
               const data = await res.json();
               const status = data.status;
               if (status === 'failed' || status === 'canceled') {
-                alert(`步骤 ${s} 失败: ${data.error || status}`);
-                break;
+                if (status === 'canceled') {
+                  alert(`步骤 ${s} 已取消`);
+                } else {
+                  alert(`步骤 ${s} 失败: ${data.error || status}`);
+                }
+                return; // 停止全部流程
               }
               const currentStep = status?.startsWith('step_') ? parseInt(status.split('_')[1]) : (status === 'done' ? 5 : 0);
               if (currentStep > s || status === 'done') break;

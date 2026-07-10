@@ -402,6 +402,12 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Reject if pipeline was canceled
+	if p.Status == StatusCanceled {
+		http.Error(w, "pipeline has been canceled", http.StatusConflict)
+		return
+	}
+
 	// Validate dependencies
 	dir := outputDir(id)
 	required := map[int][]string{}
