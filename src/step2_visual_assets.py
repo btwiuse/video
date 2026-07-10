@@ -745,6 +745,19 @@ class Step2Pipeline:
             done_count = sum(1 for results in shot_map.values() for r in results if r.status == "done")
             logger.info("  Shots: %d/%d start frames done", done_count, total)
 
+            # Update storyboard.json with actual startframe file paths (fix extension mismatch)
+            storyboard_path = ensure_output_dir() / "storyboard.json"
+            if storyboard_path.is_file():
+                storyboard = load_json(str(storyboard_path))
+                for shot in storyboard.get("shots", []):
+                    sid = shot.get("full_shot_id", "")
+                    if sid in shot_map:
+                        for r in shot_map[sid]:
+                            if r.status == "done" and r.path:
+                                shot["startframe_file"] = os.path.relpath(r.path, str(ensure_output_dir()))
+                                break
+                save_json(storyboard, str(storyboard_path))
+
         # Build manifest
         manifest = self._build_manifest(char_map, scene_map, shot_map, characters, scenes, shots)
         save_json(manifest, str(ensure_output_dir() / "manifest.json"))
