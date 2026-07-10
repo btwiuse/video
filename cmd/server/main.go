@@ -605,6 +605,27 @@ func handleDeletePipeline(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func handleCancelStep(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/pipelines/")
+	id = strings.TrimSuffix(id, "/cancel")
+	id = strings.TrimSuffix(id, "/")
+
+	mu.Lock()
+	p, exists := pipelines[id]
+	if exists && p.Cancel != nil {
+		p.Cancel()
+		p.Status = StatusCanceled
+		p.Error = "canceled by user"
+		p.UpdatedAt = time.Now()
+		savePipelineState(p)
+	}
+	mu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]any{"status": "canceled"})
+}
+
 func serveHome(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -779,6 +800,10 @@ func main() {
 		}
 	if strings.HasSuffix(path, "/summarize") {
 			handleSummarize(w, r)
+			return
+		}
+		if strings.HasSuffix(path, "/cancel") && r.Method == http.MethodPost {
+			handleCancelStep(w, r)
 			return
 		}
 		if strings.HasSuffix(path, "/script") {

@@ -180,7 +180,7 @@
       );
     }
 
-    function StepView({ step, pipeline, currentStep, onRun, actionLoading, pipelineId }) {
+    function StepView({ step, pipeline, currentStep, onRun, actionLoading, pipelineId, onCancel }) {
       const isStepDone = step <= currentStep || pipeline.status === 'done';
       const isStepRunning = pipeline.status === 'running' && pipeline.step === step;
       const canGenerate = (step === currentStep + 1 || step <= currentStep) && !actionLoading;
@@ -233,19 +233,29 @@
                 {isStepDone ? '已完成' : isStepRunning ? '正在生成...' : canGenerate ? '准备就绪' : '前置步骤尚未完成'}
               </p>
             </div>
-            <button
-              onClick={() => onRun(step)}
-              disabled={!canGenerate || isStepRunning}
-              className={`px-5 py-2.5 rounded text-sm font-medium transition-all ${
-                isStepRunning
-                  ? 'bg-brass-500 text-ink-950 animate-pulse-brass'
-                  : canGenerate
-                    ? 'bg-brass-500 hover:bg-brass-400 text-ink-950 cursor-pointer'
-                    : 'bg-ink-700 text-stone-500 cursor-not-allowed'
-              }`}
-            >
-              {isStepRunning ? '⏳ 生成中...' : isStepDone ? '重新生成' : 'Generate'}
-            </button>
+            <div className="flex items-center gap-2">
+              {isStepRunning && (
+                <button
+                  onClick={() => onCancel && onCancel()}
+                  className="px-4 py-2.5 rounded text-sm font-medium bg-clay-500/20 text-clay-400 hover:bg-clay-500/30 transition-all"
+                >
+                  停止
+                </button>
+              )}
+              <button
+                onClick={() => onRun(step)}
+                disabled={!canGenerate || isStepRunning}
+                className={`px-5 py-2.5 rounded text-sm font-medium transition-all ${
+                  isStepRunning
+                    ? 'bg-brass-500 text-ink-950 animate-pulse-brass'
+                    : canGenerate
+                      ? 'bg-brass-500 hover:bg-brass-400 text-ink-950 cursor-pointer'
+                      : 'bg-ink-700 text-stone-500 cursor-not-allowed'
+                }`}
+              >
+                {isStepRunning ? '⏳ 生成中...' : isStepDone ? '重新生成' : 'Generate'}
+              </button>
+            </div>
           </div>
 
           {step === 1 && (isStepDone || isStepRunning) && <StoryboardViewer pipelineId={pipelineId} poll={isStepRunning} />}
@@ -999,6 +1009,13 @@
         } finally { setActionLoading(false); }
       };
 
+      const cancelStep = async () => {
+        try {
+          await api(`/pipelines/${pid}/cancel`, { method: 'POST' });
+          setTimeout(onRefresh, 1000);
+        } catch (_) {}
+      };
+
       const runAll = async () => {
         setActionLoading(true);
         try {
@@ -1065,7 +1082,7 @@
             </div>
           )}
 
-          <StepView step={activeStep} pipeline={pipeline} currentStep={currentStep} onRun={runStep} actionLoading={actionLoading} pipelineId={pid} />
+          <StepView step={activeStep} pipeline={pipeline} currentStep={currentStep} onRun={runStep} onCancel={cancelStep} actionLoading={actionLoading} pipelineId={pid} />
 
           <div className="flex gap-3 mb-6">
             <button onClick={runAll} disabled={actionLoading || pipeline.status === 'done'} className="nav-btn px-4 py-2 bg-brass-500 hover:bg-brass-400 disabled:bg-ink-700 text-ink-950 rounded text-sm font-medium transition-all disabled:text-stone-400">
