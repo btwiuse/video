@@ -801,7 +801,7 @@
                             >
                               <span className="text-stone-500 text-xs w-3 text-center transition-transform flex-shrink-0" style={{ transform: shotOpen ? 'rotate(90deg)' : 'none' }}>▶</span>
                               <img
-                                src={`/pipelines/${pipelineId}/artifacts/shots/${shot.full_shot_id}/${shot.full_shot_id}_startframe.png`}
+                                src={`/pipelines/${pipelineId}/artifacts/${shot.startframe_file || `shots/${shot.full_shot_id}/${shot.full_shot_id}_startframe.jpg`}`}
                                 alt={shot.full_shot_id}
                                 className="w-28 h-16 object-cover rounded flex-shrink-0 bg-ink-700"
                                 onError={e => {

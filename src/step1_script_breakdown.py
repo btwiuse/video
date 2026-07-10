@@ -769,6 +769,7 @@ class StoryboardGenerator:
                     "action_description": s.get("action_description", ""),
                     "positive_prompt": s.get("positive_prompt", ""),
                     "dialogue_line": s.get("dialogue_line", ""),
+                    "startframe_file": s.get("startframe_file", ""),
                 }
                 for s in all_shots
             ],
