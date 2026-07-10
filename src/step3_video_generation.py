@@ -87,6 +87,8 @@ class TokenVokeProvider(VideoProvider):
     def __init__(self):
         self._model = config.VIDEO_MODEL
         self._base_url = config.TOKENVOKE_BASE_URL.rstrip("/")
+        self._public_url = config.PUBLIC_URL.rstrip("/") if config.PUBLIC_URL else ""
+        self._pipeline_id = os.environ.get("PIPELINE_ID", "")
         self._headers = {
             "Authorization": f"Bearer {config.VIDEO_API_KEY}",
             "Content-Type": "application/json",
@@ -106,10 +108,10 @@ class TokenVokeProvider(VideoProvider):
         output_path: str,
     ) -> VideoResult:
         """Single video generation via TokenVoke async task API."""
-        # Collect all images as data URLs (upload via asset:// or public URL instead)
+        # Build public image URLs — images must be publicly accessible http(s)
         images: list[str] = []
         for path in ([start_frame_path] if start_frame_path else []) + ref_image_paths:
-            url = self._file_to_data_url(path)
+            url = self._local_to_public_url(path)
             if url:
                 images.append(url)
 
@@ -122,8 +124,8 @@ class TokenVokeProvider(VideoProvider):
                 "resolution": "720p",
             },
         }
-        # TODO: upload images to public URL or use asset:// protocol
-        # Currently TokenVoke upstream rejects data URLs; skip images for now
+        if images:
+            body["images"] = images
 
         async with httpx.AsyncClient(timeout=900) as client:
             # 1. Create task (retry on 403; 400 only if content moderation)
@@ -245,6 +247,24 @@ class TokenVokeProvider(VideoProvider):
             with open(path, "rb") as f:
                 b64 = base64.b64encode(f.read()).decode()
             return f"data:image/{mime};base64,{b64}"
+        except Exception:
+            return None
+
+    def _local_to_public_url(self, path: str) -> str | None:
+        """Convert a local file path to public URL via artifact endpoint.
+
+        Requires PUBLIC_URL env var (the server's public base, e.g. https://example.com).
+        The Go server serves artifacts at /pipelines/{pid}/artifacts/{relative_path}.
+        """
+        if not self._public_url or not self._pipeline_id or not path or not os.path.isfile(path):
+            return None
+        # Compute relative path from output dir
+        out_dir = ensure_output_dir()
+        try:
+            rel = os.path.relpath(path, str(out_dir))
+            if rel.startswith(".."):
+                return None
+            return f"{self._public_url}/pipelines/{self._pipeline_id}/artifacts/{rel}"
         except Exception:
             return None
 
