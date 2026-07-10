@@ -819,8 +819,10 @@
                                   const el = e.target;
                                   if (el.src.endsWith('.jpg')) { el.src = el.src.replace('.jpg', '.png'); return; }
                                   el.style.display = 'none';
+                                  el.nextElementSibling?.classList.remove('hidden');
                                 }}
                               />
+                              <div className="w-10 h-10 rounded-full bg-ink-700 ring-1 ring-ink-600 flex items-center justify-center text-stone-500 text-xs hidden absolute inset-0">待生成</div>
                             </div>
                             <span className="text-sm text-stone-200 font-medium">{c.name || c.ref_id}</span>
                           </div>
