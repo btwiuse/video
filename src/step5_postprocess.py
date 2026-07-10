@@ -9,9 +9,12 @@ Operations:
   - Duration micro-adjustment (speed change ±10%)
 """
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger("step5")
 
 from moviepy import (
     VideoFileClip,
@@ -53,30 +56,30 @@ class PostProduction:
         Returns:
             Path to final output video
         """
-        print("  Loading video clips...")
+        logger.info("Loading video clips...")
         video_clips = self._load_and_prepare_clips(clip_manifest)
 
-        print("  Applying transitions...")
+        logger.info("Applying transitions...")
         final_video = self._concatenate_with_transitions(video_clips, clip_manifest)
 
-        print("  Applying color grade...")
+        logger.info("Applying color grade...")
         if lut_path and os.path.exists(lut_path):
             # Apply 3D LUT via FFmpeg — MoviePy delegates this
             # For now, mark as pending
             pass
 
-        print("  Mixing audio...")
+        logger.info("Mixing audio...")
         final_audio = self._mix_audio(audio_manifest, final_video.duration)
         if final_audio:
             final_video = final_video.with_audio(final_audio)
 
-        print("  Adding subtitles...")
+        logger.info("Adding subtitles...")
         if subtitles_path and os.path.exists(subtitles_path):
             final_video = self._add_subtitles(final_video, subtitles_path)
 
         # Export
         output_path = str(self.out_dir / "final.mp4")
-        print(f"  Exporting to {output_path}...")
+        logger.info("Exporting to %s...", output_path)
         final_video.write_videofile(
             output_path,
             fps=24,
@@ -87,7 +90,7 @@ class PostProduction:
             bitrate="8000k",
         )
 
-        print(f"  Done: {output_path}")
+        logger.info("Done: %s", output_path)
         return output_path
 
     def _load_and_prepare_clips(self, clip_manifest: list[dict]) -> list[VideoFileClip]:

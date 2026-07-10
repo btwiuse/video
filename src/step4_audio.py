@@ -13,10 +13,13 @@ Output: individual audio files and a mixing manifest for Step 5.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger("step4")
 
 import httpx
 
@@ -211,20 +214,20 @@ class AudioPipeline:
         }
 
         # 1. Dialogue (TTS per line)
-        print(f"  TTS provider: {self.tts.name}")
-        print("  Generating dialogue...")
+        logger.info("TTS provider: %s", self.tts.name)
+        logger.info("Generating dialogue...")
         audio_manifest["dialogue"] = await self._generate_dialogue(storyboard)
 
         # 2. Ambience (per scene)
-        print("  Generating ambience...")
+        logger.info("Generating ambience...")
         audio_manifest["ambience"] = await self._generate_ambience(storyboard, clip_manifest)
 
         # 3. SFX (per shot sfx mark)
-        print("  Generating sound effects...")
+        logger.info("Generating sound effects...")
         audio_manifest["sfx"] = await self._generate_sfx(storyboard, clip_manifest)
 
         # 4. BGM (per emotional arc)
-        print("  Generating background music...")
+        logger.info("Generating background music...")
         audio_manifest["bgm"] = await self._generate_bgm(storyboard, clip_manifest)
 
         save_json(audio_manifest, str(self.out_dir / "audio_manifest.json"))

@@ -609,9 +609,7 @@ class Step2Pipeline:
 
     async def generate_all(self, storyboard: dict) -> dict:
         """Generate all visual assets from storyboard."""
-        logger = __import__("logging").getLogger("step2")
-
-        print(f"  Image provider: {self.provider.name}")
+        self.logger.info("Image provider: %s", self.provider.name)
 
         characters = storyboard.get("characters", [])
         scenes = storyboard.get("scenes", [])
@@ -621,7 +619,7 @@ class Step2Pipeline:
         ensure_output_dir("shots")  # ensure shots root exists
 
         # ---- Characters: 3 portraits each ----
-        print(f"  Generating {len(characters)} characters × 3 angles...")
+        self.logger.info("Generating %d characters x 3 angles...", len(characters))
         all_prompts: list[tuple[str, str, str]] = []
         for char in characters:
             ref_id = char.get("ref_id", char.get("id", "UNKNOWN"))
@@ -644,10 +642,10 @@ class Step2Pipeline:
             char_map.setdefault(ref_id, []).append(r)
         for name, results in char_map.items():
             done = sum(1 for r in results if r.status == "done")
-            print(f"    {name}: {done}/{len(results)} done")
+            self.logger.info("  %s: %d/%d done", name, done, len(results))
 
         # ---- Scenes: 1-2 images each ----
-        print(f"  Generating {len(scenes)} scenes...")
+        self.logger.info("Generating %d scenes...", len(scenes))
         scene_prompts: list[tuple[str, str, str]] = []
         for scene in scenes:
             sid = scene.get("scene_id", scene.get("id", "UNKNOWN"))
@@ -669,13 +667,13 @@ class Step2Pipeline:
             scene_map.setdefault(sid, []).append(r)
         for name, results in scene_map.items():
             done = sum(1 for r in results if r.status == "done")
-            print(f"    {name}: {done}/{len(results)} done")
+            self.logger.info("  %s: %d/%d done", name, done, len(results))
 
         # ---- Shots: start frame for each (with character + scene refs) ----
         shots = storyboard.get("shots", [])
         shot_map: dict[str, list[ImageResult]] = {}
         if shots:
-            print(f"  Generating start frames for {len(shots)} shots...")
+            self.logger.info("Generating start frames for %d shots...", len(shots))
 
             async def _gen_shot_start_frame(shot: dict) -> ImageResult | None:
                 shot_id = shot["full_shot_id"]
@@ -729,12 +727,12 @@ class Step2Pipeline:
                 shot_map.setdefault(shot_id, []).append(r)
             total = sum(1 for r in results if r is not None)
             done_count = sum(1 for results in shot_map.values() for r in results if r.status == "done")
-            print(f"    Shots: {done_count}/{total} start frames done")
+            self.logger.info("  Shots: %d/%d start frames done", done_count, total)
 
         # Build manifest
         manifest = self._build_manifest(char_map, scene_map, shot_map, characters, scenes, shots)
         save_json(manifest, str(ensure_output_dir() / "manifest.json"))
-        print(f"  Asset manifest saved: {len(manifest)} entries")
+        self.logger.info("Asset manifest saved: %d entries", len(manifest))
         return manifest
 
     # ---- Prompt builders: read from .md files (model data) ----

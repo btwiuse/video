@@ -305,7 +305,7 @@ class VideoPipeline:
         self, storyboard: dict, asset_manifest: dict
     ) -> list[dict]:
         """Generate video clips for all shots."""
-        print(f"  Video provider: {self.provider.name}")
+        logger.info("Video provider: %s", self.provider.name)
 
         shots = storyboard.get("shots", [])
         timeline = self._build_timeline(shots)
@@ -315,7 +315,7 @@ class VideoPipeline:
             shot_id = shot["full_shot_id"]
             transition = shot.get("transition_type", "B")
 
-            print(f"  Shot {shot_id} ({i+1}/{len(shots)}) [{transition}]")
+            logger.info("Shot %s (%d/%d) [%s]", shot_id, i+1, len(shots), transition)
 
             # Read deps.json for character/scene references
             deps = load_json(str(ensure_output_dir("shots", shot_id) / "deps.json"))
