@@ -561,7 +561,7 @@
                         className="w-20 h-20 object-cover rounded-full bg-ink-700 ring-1 ring-ink-600"
                         onError={e => { e.target.style.display = 'none'; e.target.src = ''; }}
                       />
-                      <span className="text-xs text-stone-400 truncate max-w-full">{c.ref_id}</span>
+                      <span className="text-xs text-stone-400 truncate max-w-full">{c.name || c.ref_id}</span>
                     </div>
                   ))}
                 </div>

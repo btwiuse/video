@@ -367,11 +367,13 @@ class StoryboardGenerator:
         for char in result.get("characters", []):
             if "ref_id" not in char:
                 char["ref_id"] = f"Image{result['characters'].index(char)+1}"
-            # Sanitize: strip "see " prefix and replace spaces with underscores
+            # Sanitize ref_id: strip "see " prefix, replace spaces, ensure non-numeric
             rid = str(char["ref_id"]).strip()
             if rid.lower().startswith("see "):
                 rid = rid[4:]
             rid = rid.replace(" ", "_")
+            if rid.isdigit():
+                rid = f"Image{rid}"
             char["ref_id"] = rid
             char.setdefault("scenes", [])
 
@@ -745,7 +747,7 @@ class StoryboardGenerator:
         shot_num) is in .md or deps.json or derivable by parsing the ID.
         """
         return {
-            "characters": [{"ref_id": c["ref_id"]} for c in characters],
+            "characters": [{"ref_id": c["ref_id"], "name": c.get("name", c["ref_id"])} for c in characters],
             "scenes": [{"scene_id": s["scene_id"]} for s in scenes],
             "shots": [
                 {
