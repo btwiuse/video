@@ -803,12 +803,15 @@
                     onClick={() => toggleScene(scene.scene_id)}
                   >
                     <span className="text-stone-500 text-xs w-3 text-center transition-transform flex-shrink-0" style={{ transform: isExpanded ? 'rotate(90deg)' : 'none' }}>▶</span>
-                    <img
-                      src={`/pipelines/${pipelineId}/artifacts/scenes/${scene.scene_id}_detail.jpg`}
-                      alt={scene.scene_id}
-                      className="w-14 h-9 object-cover rounded flex-shrink-0 bg-ink-700"
-                      onError={e => { e.target.style.display = 'none'; e.target.src = ''; }}
-                    />
+                    <div className="relative w-14 h-9 flex-shrink-0">
+                      <img
+                        src={`/pipelines/${pipelineId}/artifacts/scenes/${scene.scene_id}_detail.jpg`}
+                        alt={scene.scene_id}
+                        className="w-14 h-9 object-cover rounded flex-shrink-0 bg-ink-700"
+                        onError={e => { e.target.style.display = 'none'; e.target.nextElementSibling?.classList.remove('hidden'); }}
+                      />
+                      <div className="w-14 h-9 rounded bg-ink-700 flex items-center justify-center text-stone-500 text-xs hidden absolute inset-0">待生成</div>
+                    </div>
                     <div className="flex-1 min-w-0">
                       <span className="text-stone-100 text-sm font-medium">{scene.scene_id}</span>
                       <span className="text-stone-500 text-xs ml-2">{sceneShots.length} 镜</span>
