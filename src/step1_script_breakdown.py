@@ -625,7 +625,10 @@ class StoryboardGenerator:
         debug_dir = ensure_output_dir("_debug")
         tag = f"_{debug_tag}" if debug_tag else ""
         debug_file = debug_dir / f"{tool_def['function']['name']}{tag}_raw_args.json"
-        debug_file.write_text(tool_args, encoding="utf-8")
+        try:
+            debug_file.write_text(json.dumps(json.loads(tool_args), indent=2, ensure_ascii=False), encoding="utf-8")
+        except json.JSONDecodeError:
+            debug_file.write_text(tool_args, encoding="utf-8")
         logger.debug("  Raw args saved to %s", debug_file)
 
         result = self._safe_json_parse(tool_args, tool_def["function"]["name"])
