@@ -335,6 +335,8 @@ class VideoPipeline:
                 shot_id, prompt, start_frame, ref_images,
                 shot.get("duration_sec", 5),
             )
+            if result.get("status") != "done":
+                logger.warning("  %s generation failed: %s", shot_id, result.get("error", "unknown"))
             result["start_sec"] = timeline[i]["start_sec"]
             result["end_sec"] = timeline[i]["end_sec"]
             result["transition_type"] = transition
