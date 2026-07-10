@@ -207,7 +207,7 @@ func detectStatus(id string) PipelineStatus {
 	return StatusStep5
 }
 
-func runPythonAsync(p *Pipeline, args []string) {
+func runPythonAsync(p *Pipeline, args []string, stepNum int) {
 	p.Ctx, p.Cancel = context.WithCancel(context.Background())
 	cmd := exec.CommandContext(p.Ctx, "uv", append([]string{"run", "python"}, args...)...)
 	cmd.Dir = "."
@@ -227,7 +227,7 @@ func runPythonAsync(p *Pipeline, args []string) {
 	p.Cmd = cmd
 	p.Status = StatusRunning
 	p.Error = ""
-	p.Step++
+	p.Step = stepNum
 	p.StartedAt = time.Now()
 	savePipelineState(p)
 
@@ -440,7 +440,7 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vlog("pipeline %s step %d (%s) starting", id, step, stepNames[step])
-	runPythonAsync(p, args)
+	runPythonAsync(p, args, step)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
