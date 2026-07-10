@@ -17,7 +17,8 @@ class Config:
 
     # Image generation — see src/step2_visual_assets.py for all providers
     IMAGE_PROVIDER: str = os.getenv("IMAGE_PROVIDER", "null")
-    IMAGE_API_KEY: str = os.getenv("IMAGE_API_KEY", "")       # Shared image API key (Replicate, Ark, etc.)
+    IMAGE_API_KEY: str = os.getenv("IMAGE_API_KEY", "")       # Shared image API key (Replicate, Ark, StepFun, etc.)
+    STEPFUN_API_KEY: str = os.getenv("STEPFUN_API_KEY", "") or os.getenv("IMAGE_API_KEY", "")
     COMFYUI_URL: str = os.getenv("COMFYUI_URL", "http://localhost:8188")
 
     # Video generation — see src/step3_video_generation.py for all providers
@@ -38,6 +39,9 @@ class Config:
     MAX_SCENE_DURATION_SEC: int = 600  # 10 min per scene
     SEEDANCE_MAX_DURATION_SEC: int = 15
     SEEDANCE_MAX_IMAGES: int = 9
+
+    # StepFun image generation
+    STEPFUN_MODEL: str = os.getenv("STEPFUN_MODEL", "step-image-edit-2")
 
 
 config = Config()

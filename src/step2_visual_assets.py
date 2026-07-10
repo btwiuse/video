@@ -358,6 +358,128 @@ class SeedreamProvider(ImageProvider):
         return aspect_ratio
 
 
+# ---- StepFun (阶跃星辰) ----
+
+class StepFunProvider(ImageProvider):
+    """StepFun (阶跃星辰) image generation via OpenAI-compatible API.
+
+    Endpoint: POST https://api.stepfun.com/v1/images/generations
+    Docs: https://platform.stepfun.com/docs/zh/api-reference/images/image
+
+    Models:
+      - step-image-edit-2 (recommended) — 6B, 1-2s fast, supports text_mode
+      - step-2x-large — high quality, good text rendering
+      - step-1x-medium — lightweight / faster
+
+    Notes:
+      - Prompt limited to 512 chars; longer prompts are silently truncated.
+      - For step-image-edit-2, size format is "height x width" (not width x height).
+    """
+
+    endpoint: str = "https://api.stepfun.com/v1/images/generations"
+    default_model: str = "step-image-edit-2"
+
+    # Size mapping for step-image-edit-2 (format: "height x width")
+    _SIZE_MAP: dict[str, str] = {
+        "1:1":  "1024x1024",
+        "4:3":  "896x1184",    # landscape 4:3
+        "3:4":  "1184x896",    # portrait 3:4
+        "16:9": "768x1360",    # landscape 16:9
+        "9:16": "1360x768",    # portrait 9:16
+    }
+
+    def __init__(self):
+        self._api_key = config.STEPFUN_API_KEY
+        self._model = config.STEPFUN_MODEL
+        self._headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self._api_key}",
+        }
+
+    @property
+    def name(self) -> str:
+        return f"StepFun ({self._model})"
+
+    async def generate(
+        self,
+        prompt: str,
+        aspect_ratio: str = "4:3",
+        **kwargs: Any,
+    ) -> ImageResult:
+        truncated = prompt[:512]  # hard API limit
+        size = self._SIZE_MAP.get(aspect_ratio, "1024x1024")
+
+        body: dict[str, Any] = {
+            "model": self._model,
+            "prompt": truncated,
+            "size": size,
+            "response_format": "url",
+        }
+
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(self.endpoint, headers=self._headers, json=body)
+
+            if resp.status_code != 200:
+                return ImageResult(
+                    label="", path="", prompt=prompt, status="failed",
+                    error=f"HTTP {resp.status_code}: {resp.text[:500]}",
+                )
+
+            data = resp.json()
+            images_data = data.get("data", [])
+            if not images_data:
+                return ImageResult(
+                    label="", path="", prompt=prompt, status="failed",
+                    error=f"No image data in response: {data}",
+                )
+
+            image_obj = images_data[0]
+            finish_reason = image_obj.get("finish_reason", "")
+            if finish_reason == "content_filtered":
+                return ImageResult(
+                    label="", path="", prompt=prompt, status="failed",
+                    error="Content filtered by StepFun moderation",
+                )
+
+            image_url = image_obj.get("url", "")
+            if not image_url:
+                return ImageResult(
+                    label="", path="", prompt=prompt, status="failed",
+                    error="No URL in response data",
+                )
+
+            # Download the image
+            import hashlib
+            import tempfile
+
+            name_hash = hashlib.md5(prompt.encode()).hexdigest()[:12]
+            fd, filepath = tempfile.mkstemp(
+                suffix=".jpg", prefix=f"stepfun_{name_hash}_",
+            )
+            os.close(fd)
+
+            dl_resp = await client.get(image_url)
+            if dl_resp.status_code != 200:
+                os.unlink(filepath)
+                return ImageResult(
+                    label="", path="", prompt=prompt, status="failed",
+                    error=f"Download failed: HTTP {dl_resp.status_code}",
+                )
+
+            with open(filepath, "wb") as f:
+                f.write(dl_resp.content)
+
+            return ImageResult(
+                label="", path=filepath, prompt=prompt, status="done",
+                url=image_url,
+                metadata={
+                    "model": self._model,
+                    "size": size,
+                    "seed": image_obj.get("seed"),
+                },
+            )
+
+
 # ---- ComfyUI (local) ----
 
 class ComfyUIProvider(ImageProvider):
@@ -448,6 +570,7 @@ _PROVIDER_REGISTRY: dict[str, type[ImageProvider]] = {
     "flux-ultra":   Flux11ProUltraProvider,
     "sdxl":         SDXLProvider,
     "seedream":     SeedreamProvider,
+    "stepfun":      StepFunProvider,
     "comfyui":      ComfyUIProvider,
     "null":         NullImageProvider,
 }
@@ -456,7 +579,7 @@ _PROVIDER_REGISTRY: dict[str, type[ImageProvider]] = {
 def create_image_provider(provider_name: str | None = None) -> ImageProvider:
     """Create an image provider from config or explicit name.
 
-    Set IMAGE_PROVIDER in .env to one of: flux, flux-ultra, sdxl, seedream, comfyui, null
+    Set IMAGE_PROVIDER in .env to one of: flux, flux-ultra, sdxl, seedream, stepfun, comfyui, null
     """
     name = provider_name or config.IMAGE_PROVIDER
     cls = _PROVIDER_REGISTRY.get(name)
