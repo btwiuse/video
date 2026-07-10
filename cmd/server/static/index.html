@@ -341,8 +341,10 @@
           const parts = f.name.split('/');
           let node = root;
           for (let i = 0; i < parts.length - 1; i++) {
-            if (!node[parts[i]]) node[parts[i]] = { __children: {} };
-            node = node[parts[i]].__children;
+            const dir = parts[i];
+            if (!node.__children) node.__children = {};
+            if (!node.__children[dir]) node.__children[dir] = {};
+            node = node.__children[dir];
           }
           if (!node.__files) node.__files = [];
           node.__files.push(f);
@@ -351,7 +353,7 @@
       }
 
       const tree = React.useMemo(() => buildTree(artifacts), [artifacts]);
-      const topDirs = React.useMemo(() => Object.keys(tree).filter(k => k !== '__files').sort(), [tree]);
+      const topDirs = React.useMemo(() => Object.keys(tree.__children || {}).sort(), [tree]);
       const rootFiles = React.useMemo(() => (tree.__files || []).sort((a, b) => a.name.localeCompare(b.name)), [tree]);
 
       const toggleDir = useCallback((path) => {
