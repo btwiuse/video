@@ -478,8 +478,6 @@
       const [loading, setLoading] = useState(false);
       const [expanded, setExpanded] = useState({});
       const [treeOpen, setTreeOpen] = useState({});
-      const [scriptText, setScriptText] = useState('');
-      const [scriptLoading, setScriptLoading] = useState(false);
       const expandedRef = useRef({});
       useEffect(() => { expandedRef.current = expanded; }, [expanded]);
 
@@ -585,66 +583,6 @@
           </div>
           {artifacts.length === 0 && <p className="text-stone-500 text-sm">暂无产物文件</p>}
           <div className="bg-ink-900 rounded border border-ink-700 overflow-hidden">
-            {/* 剧本原文.txt always on top */}
-            <div className="border-b border-ink-800">
-              <div className="flex items-center justify-between p-3">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <span className="text-stone-500 flex-shrink-0 text-xs">📄</span>
-                  <span className="text-stone-100 text-sm font-medium">剧本原文.txt</span>
-                  <span className="text-stone-500 text-xs">原始剧本</span>
-                </div>
-                <div className="flex gap-1.5 ml-3 flex-shrink-0">
-                  <button onClick={async () => {
-                    if (expandedRef.current['_script_']) {
-                      setExpanded(prev => { const next = {...prev}; delete next['_script_']; return next; });
-                      return;
-                    }
-                    setScriptLoading(true);
-                    try {
-                      const res = await api(`/pipelines/${pipelineId}/script`);
-                      if (res.ok) {
-                        const text = await res.text();
-                        setScriptText(text);
-                        setExpanded(prev => ({ ...prev, _script_: text }));
-                      } else {
-                        alert('无法加载剧本');
-                      }
-                    } catch (e) {
-                      alert('加载失败: ' + e.message);
-                    } finally { setScriptLoading(false); }
-                  }} className="text-xs px-2.5 py-1 bg-ink-700 hover:bg-ink-600 rounded text-stone-200 transition-colors">
-                    {expanded['_script_'] ? '收起' : '查看'}
-                  </button>
-                  <button onClick={async () => {
-                    try {
-                      const res = await api(`/pipelines/${pipelineId}/script`);
-                      if (!res.ok) throw new Error('Download failed');
-                      const blob = await res.blob();
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = '剧本原文.txt';
-                      document.body.appendChild(a);
-                      a.click();
-                      document.body.removeChild(a);
-                      URL.revokeObjectURL(url);
-                    } catch (e) { console.error(e); }
-                  }} className="text-xs px-2.5 py-1 bg-brass-500 hover:bg-brass-400 rounded text-ink-950 font-medium transition-colors">
-                    下载
-                  </button>
-                </div>
-              </div>
-              {expanded['_script_'] && (
-                <div className="bg-ink-950 p-4 border-t border-ink-700 relative">
-                  <div className="absolute top-2 right-2 flex gap-2">
-                    <button onClick={() => copyToClipboard(expanded['_script_'], '剧本原文.txt')} className="text-stone-400 hover:text-stone-200 transition-colors" title="复制">📋</button>
-                    <button onClick={() => setExpanded(prev => { const next = {...prev}; delete next['_script_']; return next; })} className="text-stone-400 hover:text-stone-200 transition-colors">✕</button>
-                  </div>
-                  <h4 className="text-sm font-semibold text-stone-300 mb-2">剧本原文.txt</h4>
-                  <pre className="text-xs text-stone-300 overflow-auto max-h-96 whitespace-pre-wrap">{expanded['_script_']}</pre>
-                </div>
-              )}
-            </div>
             {rootFiles.map(f => (
               <FileRow key={f.name} file={f} level={0}
                 pipelineId={pipelineId} expanded={expanded}
