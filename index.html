@@ -217,6 +217,7 @@
 
       const charImages = artifacts.filter(f => f.name.startsWith('characters/') && /\.(jpg|jpeg|png|webp)$/i.test(f.name));
       const sceneImages = artifacts.filter(f => f.name.startsWith('scenes/') && /\.(jpg|jpeg|png|webp)$/i.test(f.name));
+      const shotImages = artifacts.filter(f => f.name.startsWith('shots/') && /_startframe\.(jpg|jpeg|png|webp)$/i.test(f.name));
       const videoFiles = artifacts.filter(f => f.name.startsWith('shots/') && /\.(mp4|webm|mov)$/i.test(f.name));
       const audioFiles = artifacts.filter(f => (f.name.startsWith('audio/') || f.name.startsWith('sfx/') || f.name.startsWith('bgm/')) && /\.(wav|mp3|m4a|flac)$/i.test(f.name));
       const finalVideo = artifacts.find(f => f.name === 'final.mp4');
@@ -288,6 +289,24 @@
                 </div>
               )}
               {charImages.length === 0 && sceneImages.length === 0 && <p className="text-stone-500 text-sm">暂无视觉素材</p>}
+              {shotImages.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold text-stone-300 mb-3">镜头起始帧</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                    {shotImages.map(f => (
+                      <div key={f.name} className="flex flex-col items-center gap-1.5">
+                        <img
+                          src={`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(f.name)}`}
+                          alt={f.name.split('/').pop()}
+                          className="w-full aspect-video object-cover rounded bg-ink-700"
+                          onError={e => { e.target.style.display = 'none'; }}
+                        />
+                        <span className="text-xs text-stone-500 truncate max-w-full">{f.name.split('/').slice(-2, -1)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
