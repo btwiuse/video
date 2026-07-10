@@ -431,9 +431,18 @@
                             className="w-24 h-14 object-cover rounded flex-shrink-0 bg-cinema-700"
                             onError={e => {
                               e.target.src = `/pipelines/${pipelineId}/artifacts/shots/${shot.full_shot_id}/${shot.full_shot_id}_startframe.png`;
-                              e.target.onerror = () => { e.target.style.display = 'none'; };
+                              e.target.onerror = () => {
+                                e.target.src = `/pipelines/${pipelineId}/artifacts/shots/${shot.full_shot_id}/${shot.full_shot_id}_startframe.webp`;
+                                e.target.onerror = () => {
+                                  e.target.style.display = 'none';
+                                  e.target.parentElement.querySelector('.startframe-placeholder').style.display = 'flex';
+                                };
+                              };
                             }}
                           />
+                          <div className="w-24 h-14 startframe-placeholder hidden items-center justify-center rounded flex-shrink-0 bg-cinema-700 text-gray-500 text-xs">
+                            待生成
+                          </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <span className="text-xs font-bold text-indigo-400">{shot.full_shot_id}</span>
