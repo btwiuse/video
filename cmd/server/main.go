@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -479,12 +480,17 @@ func handleSummarize(w http.ResponseWriter, r *http.Request) {
 	}
 	cmd.Env = append(os.Environ(), fmt.Sprintf("DATA_DIR=%s", dataDir), fmt.Sprintf("OUTPUT_DIR=%s", outDir))
 	logFile, err := os.OpenFile(logPath(id), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	var buf bytes.Buffer
 	if err == nil {
-		cmd.Stdout = logFile
-		cmd.Stderr = logFile
+		cmd.Stdout = io.MultiWriter(logFile, &buf)
+		cmd.Stderr = io.MultiWriter(logFile, &buf)
 		defer logFile.Close()
+	} else {
+		cmd.Stdout = &buf
+		cmd.Stderr = &buf
 	}
-	out, err := cmd.CombinedOutput()
+	err = cmd.Run()
+	out := buf.Bytes()
 	if err != nil {
 		vlog("pipeline %s summarize failed: %v output=%s", id, err, string(out))
 		http.Error(w, fmt.Sprintf("summarize failed: %v", err), http.StatusInternalServerError)
