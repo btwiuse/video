@@ -274,37 +274,24 @@ class StoryboardGenerator:
                     logger.info("Phase 3: %s (%s) done", scene_info["name"], scene_info["scene_id"])
 
         all_shots: list[dict] = []
-        for scene_info in overview.get("scenes", []):
-            scene_id = scene_info["scene_id"]
-            chars_in_scene = scene_info.get("characters_present", [])
-            logger.info("Phase 4: shots for %s (%s)...", scene_info["name"], scene_id)
-
-            shot_num = 1
-            prev_shot: dict | None = None
-            while True:
-                logger.info("  -> Shot %d...", shot_num)
-                shot_detail = self._call_tool(
-                    SYSTEM_FILMMAKER,
-                    self._build_shot_prompt(script_text, scene_info, chars_in_scene,
-                                             characters, scenes, shot_num, prev_shot),
-                    TOOL_CREATE_SHOT,
-                )
-                shot_id = f"{scene_id}_SHOT{shot_num:02d}"
-                shot_detail["full_shot_id"] = shot_id
-                shot_detail["scene_id"] = scene_id
-                shot_detail["md_file"] = f"shots/{shot_id}/{shot_id}.md"
-                shot_detail["startframe_file"] = f"shots/{shot_id}/{shot_id}_startframe.png"
-                shot_detail["video_file"] = f"shots/{shot_id}/{shot_id}.mp4"
-                all_shots.append(shot_detail)
-                shot_dir = ensure_output_dir("shots", shot_id)
-                self._save_shot_files(shot_detail, shot_dir)
-                self._save_shot_deps(shot_detail, shot_dir, characters, scenes)
-
-                if shot_detail.get("is_scene_end", False):
-                    logger.info("  <- Scene %s complete: %d shots", scene_id, shot_num)
-                    break
-                prev_shot = shot_detail
-                shot_num += 1
+        scene_infos = overview.get("scenes", [])
+        if scene_infos:
+            logger.info("Phase 4: generating shots for %d scenes (parallel per-scene)...", len(scene_infos))
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = {}
+                for scene_info in scene_infos:
+                    future = executor.submit(
+                        self._generate_scene_shots,
+                        script_text, scene_info, characters, scenes,
+                    )
+                    futures[future] = scene_info["scene_id"]
+                for future in as_completed(futures):
+                    scene_shots = future.result()
+                    all_shots.extend(scene_shots)
+                    logger.info("Phase 4: %s done (%d shots)", futures[future], len(scene_shots))
+            # Restore original scene order
+            scene_order = {s["scene_id"]: i for i, s in enumerate(scene_infos)}
+            all_shots.sort(key=lambda s: (scene_order.get(s.get("scene_id", ""), 999), s.get("shot_num", 1)))
 
         elapsed = time.monotonic() - t0
         total_shots = len(all_shots)
@@ -698,6 +685,40 @@ class StoryboardGenerator:
     # ========================================================================
     # Storyboard Index
     # ========================================================================
+
+    def _generate_scene_shots(self, script_text: str, scene_info: dict,
+                                characters: list[dict], scenes: list[dict]) -> list[dict]:
+        """Generate all shots for one scene (sequential within scene)."""
+        scene_id = scene_info["scene_id"]
+        chars_in_scene = scene_info.get("characters_present", [])
+        scene_shots: list[dict] = []
+        shot_num = 1
+        prev_shot: dict | None = None
+        while True:
+            shot_detail = self._call_tool(
+                SYSTEM_FILMMAKER,
+                self._build_shot_prompt(script_text, scene_info, chars_in_scene,
+                                         characters, scenes, shot_num, prev_shot),
+                TOOL_CREATE_SHOT,
+                f"{scene_id}_SHOT{shot_num:02d}",
+            )
+            shot_id = f"{scene_id}_SHOT{shot_num:02d}"
+            shot_detail["full_shot_id"] = shot_id
+            shot_detail["scene_id"] = scene_id
+            shot_detail["shot_num"] = shot_num
+            shot_detail["md_file"] = f"shots/{shot_id}/{shot_id}.md"
+            shot_detail["startframe_file"] = f"shots/{shot_id}/{shot_id}_startframe.png"
+            shot_detail["video_file"] = f"shots/{shot_id}/{shot_id}.mp4"
+            scene_shots.append(shot_detail)
+            shot_dir = ensure_output_dir("shots", shot_id)
+            self._save_shot_files(shot_detail, shot_dir)
+            self._save_shot_deps(shot_detail, shot_dir, characters, scenes)
+            if shot_detail.get("is_scene_end", False):
+                logger.info("Scene %s complete: %d shots", scene_id, shot_num)
+                break
+            prev_shot = shot_detail
+            shot_num += 1
+        return scene_shots
 
     @staticmethod
     def _build_storyboard_index(
