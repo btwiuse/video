@@ -679,6 +679,7 @@ class Step2Pipeline:
 
             async def _gen_shot_start_frame(shot: dict) -> ImageResult | None:
                 shot_id = shot["full_shot_id"]
+                logger.info("  %s: start frame generation...", shot_id)
 
                 # Read start frame prompt from dedicated .md file
                 sf_md_path = ensure_output_dir("shots", shot_id) / f"{shot_id}_startframe.md"
@@ -721,8 +722,10 @@ class Step2Pipeline:
                     logger.warning("  %s start frame attempt %d failed: %s", shot_id, attempt + 1, r.error or "unknown")
                     await asyncio.sleep(2 ** attempt)
                 if r is None or r.status != "done":
+                    logger.warning("  %s: all start frame attempts failed", shot_id)
                     return None
                 r.label = shot_id
+                logger.info("  %s: start frame done", shot_id)
 
             results: list[ImageResult | None] = []
             for s in shots:
