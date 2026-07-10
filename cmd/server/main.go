@@ -115,11 +115,7 @@ func listArtifactsRecursive(dir string) ([]map[string]any, error) {
 }
 
 func scriptPath(id string) string {
-	base := os.Getenv("DATA_DIR")
-	if base == "" {
-		base = "."
-	}
-	return filepath.Join(base, "tmp", fmt.Sprintf("script_%s.txt", id))
+	return filepath.Join(outputDir(id), "script.txt")
 }
 
 func pipelineKey(id string) string {
@@ -294,10 +290,6 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 
 	// Save uploaded script
 	sp := scriptPath(id)
-	if err := os.MkdirAll(filepath.Dir(sp), 0755); err != nil {
-		http.Error(w, fmt.Sprintf("cannot create tmp dir: %v", err), http.StatusInternalServerError)
-		return
-	}
 	dst, err := os.Create(sp)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("cannot save script: %v", err), http.StatusInternalServerError)
