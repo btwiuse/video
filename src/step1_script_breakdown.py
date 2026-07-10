@@ -154,8 +154,8 @@ TOOL_CREATE_SHOT = {
                 "dialogue_line": {"type": "string", "description": "台词（含角色名和语气标注），无则留空"},
                 "sfx_marks": {"type": "string", "description": "音效标记和时间点，无则留空"},
                 "character_refs": {"type": "array", "items": {"type": "string"}, "description": "本镜头涉及的角色 ref_id 列表"},
-                "positive_prompt": {"type": "string", "description": "视频生成正面 prompt，详细到景别/运镜/角色(Image引用)/动作/光影/色彩/质感/画幅"},
-                "negative_prompt": {"type": "string", "description": "视频生成负面 prompt"},
+                "positive_prompt": {"type": "string", "description": "视频生成正面 prompt，用英文描述，详细到景别/运镜/角色(Image引用)/动作/光影/色彩/质感/画幅"},
+                "negative_prompt": {"type": "string", "description": "视频生成负面 prompt，用英文描述"},
                 "start_frame_prompt": {"type": "string", "description": "起始帧图片 prompt，用于文生图模型生成该镜头的第一帧静止图片。与 positive_prompt 的唯一区别：(1) 16:9 画幅 (2) 去掉所有运镜/运动描述——只描述一个静止瞬间。"},
             },
             "required": ["scene_id", "shot_num", "is_scene_end", "duration_sec", "transition_type", "shot_size", "action_description", "visual_subject", "positive_prompt", "negative_prompt", "start_frame_prompt"],
@@ -180,6 +180,7 @@ SYSTEM_FILMMAKER = f"""你是一位资深电影导演和分镜师，精通视觉
 3. 视频 prompt 中引用角色时用 "see {{角色ref_id}} for reference" 格式（ref_id 就是角色原名）
 4. 包含景别/运镜描述
 5. 光影/色彩/质感描述作为辅助，但不应占据超过 prompt 30% 的篇幅
+6. **用英文写 positive_prompt 和 negative_prompt（视频模型对英文理解最好）**
 
 ### 起始帧 prompt（start_frame_prompt）
 1. 与 positive_prompt 的唯一区别：去掉运镜/运动描述，只描述静止瞬间
