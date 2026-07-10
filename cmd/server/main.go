@@ -219,8 +219,6 @@ func runPythonAsync(p *Pipeline, args []string, stepNum int, maxShotsPerScene, t
 	)
 	if v := os.Getenv("PUBLIC_URL"); v != "" {
 		env = append(env, fmt.Sprintf("PUBLIC_URL=%s", v))
-	} else if v := os.Getenv("RAILWAY_PUBLIC_DOMAIN"); v != "" {
-		env = append(env, fmt.Sprintf("PUBLIC_URL=https://%s", v))
 	}
 	if maxShotsPerScene > 0 {
 		env = append(env, fmt.Sprintf("MAX_SHOTS_PER_SCENE=%d", maxShotsPerScene))
