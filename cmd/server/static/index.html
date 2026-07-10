@@ -512,6 +512,7 @@
       const [data, setData] = useState(null);
       const [loading, setLoading] = useState(false);
       const [expandedScenes, setExpandedScenes] = useState({});
+      const [expandedShots, setExpandedShots] = useState({});
 
       const load = useCallback(async () => {
         setLoading(true);
@@ -526,6 +527,10 @@
 
       const toggleScene = useCallback((sceneId) => {
         setExpandedScenes(prev => ({ ...prev, [sceneId]: !prev[sceneId] }));
+      }, []);
+
+      const toggleShot = useCallback((shotId) => {
+        setExpandedShots(prev => ({ ...prev, [shotId]: !prev[shotId] }));
       }, []);
 
       if (!data && loading) return <div className="mt-6 text-stone-500 text-sm">加载分镜中...</div>;
@@ -587,34 +592,62 @@
                   </div>
                   {isExpanded && (
                     <div className="border-t border-ink-700">
-                      {sceneShots.map((shot, i) => (
-                        <div key={shot.full_shot_id} className="p-3 bg-ink-950/50 flex gap-3 border-b border-ink-700 last:border-b-0">
-                          <img
-                            src={`/pipelines/${pipelineId}/artifacts/shots/${shot.full_shot_id}/${shot.full_shot_id}_startframe.png`}
-                            alt={shot.full_shot_id}
-                            className="w-28 h-16 object-cover rounded flex-shrink-0 bg-ink-700"
-                            onError={e => {
-                              e.target.style.display = 'none';
-                              e.target.src = '';
-                              const ph = e.target.parentElement?.querySelector('.startframe-placeholder');
-                              if (ph) ph.style.display = 'flex';
-                            }}
-                          />
-                          <div className="w-28 h-16 startframe-placeholder hidden items-center justify-center rounded flex-shrink-0 bg-ink-700 text-stone-500 text-xs">
-                            待生成
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="text-xs font-bold text-brass-400">{shot.full_shot_id}</span>
-                              <span className="text-xs text-stone-400 bg-ink-700 px-1.5 py-0.5 rounded">{shot.transition_type || '-'}</span>
-                              <span className="text-xs text-stone-400">{shot.duration_sec != null ? (Number.isInteger(shot.duration_sec) ? shot.duration_sec : shot.duration_sec.toFixed(1)) + '秒' : '-'}</span>
+                      {sceneShots.map((shot, i) => {
+                        const shotOpen = !!expandedShots[shot.full_shot_id];
+                        return (
+                          <div key={shot.full_shot_id}>
+                            <div
+                              className="flex items-center gap-3 p-3 bg-ink-950/50 border-b border-ink-700 last:border-b-0 cursor-pointer hover:bg-ink-800/30 transition-colors"
+                              onClick={() => toggleShot(shot.full_shot_id)}
+                            >
+                              <span className="text-stone-500 text-xs w-3 text-center transition-transform flex-shrink-0" style={{ transform: shotOpen ? 'rotate(90deg)' : 'none' }}>▶</span>
+                              <img
+                                src={`/pipelines/${pipelineId}/artifacts/shots/${shot.full_shot_id}/${shot.full_shot_id}_startframe.png`}
+                                alt={shot.full_shot_id}
+                                className="w-28 h-16 object-cover rounded flex-shrink-0 bg-ink-700"
+                                onError={e => {
+                                  e.target.style.display = 'none';
+                                  e.target.src = '';
+                                  const ph = e.target.parentElement?.querySelector('.startframe-placeholder');
+                                  if (ph) ph.style.display = 'flex';
+                                }}
+                              />
+                              <div className="w-28 h-16 startframe-placeholder hidden items-center justify-center rounded flex-shrink-0 bg-ink-700 text-stone-500 text-xs">待生成</div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-xs font-bold text-brass-400">{shot.full_shot_id}</span>
+                                  <span className="text-xs text-stone-400 bg-ink-700 px-1.5 py-0.5 rounded">{shot.transition_type || '-'}</span>
+                                  <span className="text-xs text-stone-400">{shot.duration_sec != null ? (Number.isInteger(shot.duration_sec) ? shot.duration_sec : shot.duration_sec.toFixed(1)) + '秒' : '-'}</span>
+                                  {shot.shot_size && <span className="text-xs text-stone-500">{shot.shot_size}</span>}
+                                </div>
+                                <div className="text-xs text-stone-500 truncate">{shot.action_description || `Scene ${si+1} 第${i+1}镜`}</div>
+                              </div>
                             </div>
-                            <div className="text-xs text-stone-500">
-                              {`Scene ${si+1} 第${i+1}镜`}
-                            </div>
+                            {shotOpen && (
+                              <div className="bg-ink-950 p-4 border-b border-ink-700 space-y-3 text-xs text-stone-300">
+                                {shot.action_description && (
+                                  <div>
+                                    <span className="text-stone-500 font-semibold">动作描述</span>
+                                    <p className="mt-1 leading-relaxed">{shot.action_description}</p>
+                                  </div>
+                                )}
+                                {shot.dialogue_line && (
+                                  <div>
+                                    <span className="text-stone-500 font-semibold">对白</span>
+                                    <p className="mt-1 leading-relaxed text-brass-400">{shot.dialogue_line}</p>
+                                  </div>
+                                )}
+                                {shot.positive_prompt && (
+                                  <div>
+                                    <span className="text-stone-500 font-semibold">视频 Prompt</span>
+                                    <pre className="mt-1 text-stone-400 whitespace-pre-wrap font-sans leading-relaxed">{shot.positive_prompt}</pre>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

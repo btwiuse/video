@@ -752,6 +752,10 @@ class StoryboardGenerator:
                     "full_shot_id": s["full_shot_id"],
                     "duration_sec": s.get("duration_sec", 5),
                     "transition_type": s.get("transition_type", "B"),
+                    "shot_size": s.get("shot_size", ""),
+                    "action_description": s.get("action_description", ""),
+                    "positive_prompt": s.get("positive_prompt", ""),
+                    "dialogue_line": s.get("dialogue_line", ""),
                 }
                 for s in all_shots
             ],
