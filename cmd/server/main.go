@@ -203,7 +203,7 @@ func detectStatus(id string) PipelineStatus {
 	return StatusStep5
 }
 
-func runPythonAsync(p *Pipeline, args []string, stepNum int, maxShotsPerScene, totalShots int) {
+func runPythonAsync(p *Pipeline, args []string, stepNum int, maxShotsPerScene, totalShots, totalDuration int) {
 	p.Ctx, p.Cancel = context.WithCancel(context.Background())
 	cmd := exec.CommandContext(p.Ctx, "uv", append([]string{"run", "python"}, args...)...)
 	cmd.Dir = "."
@@ -221,6 +221,9 @@ func runPythonAsync(p *Pipeline, args []string, stepNum int, maxShotsPerScene, t
 	}
 	if totalShots > 0 {
 		env = append(env, fmt.Sprintf("TOTAL_SHOTS=%d", totalShots))
+	}
+	if totalDuration > 0 {
+		env = append(env, fmt.Sprintf("TOTAL_DURATION=%d", totalDuration))
 	}
 	cmd.Env = env
 	logFile, err := os.OpenFile(logPath(p.ID), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
@@ -451,19 +454,21 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 	vlog("pipeline %s step %d (%s) starting", id, step, stepNames[step])
 
 	// Parse optional step params from request body
-	var maxShotsPerScene, totalShots int
+	var maxShotsPerScene, totalShots, totalDuration int
 	if r.Body != nil {
 		var params struct {
 			MaxShotsPerScene int `json:"max_shots_per_scene"`
 			TotalShots       int `json:"total_shots"`
+			TotalDuration    int `json:"total_duration"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&params); err == nil {
 			maxShotsPerScene = params.MaxShotsPerScene
 			totalShots = params.TotalShots
+			totalDuration = params.TotalDuration
 		}
 	}
 
-	runPythonAsync(p, args, step, maxShotsPerScene, totalShots)
+	runPythonAsync(p, args, step, maxShotsPerScene, totalShots, totalDuration)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)

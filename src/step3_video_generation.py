@@ -106,7 +106,7 @@ class TokenVokeProvider(VideoProvider):
         output_path: str,
     ) -> VideoResult:
         """Single video generation via TokenVoke async task API."""
-        # Collect all images as data URLs
+        # Collect all images as data URLs (upload via asset:// or public URL instead)
         images: list[str] = []
         for path in ([start_frame_path] if start_frame_path else []) + ref_image_paths:
             url = self._file_to_data_url(path)
@@ -122,11 +122,11 @@ class TokenVokeProvider(VideoProvider):
                 "resolution": "720p",
             },
         }
-        if images:
-            body["images"] = images
+        # TODO: upload images to public URL or use asset:// protocol
+        # Currently TokenVoke upstream rejects data URLs; skip images for now
 
         async with httpx.AsyncClient(timeout=900) as client:
-            # 1. Create task (retry on 403 and 400 content moderation errors)
+            # 1. Create task (retry on 403; 400 only if content moderation)
             task_id = None
             last_error = ""
             for attempt in range(10):
@@ -139,7 +139,17 @@ class TokenVokeProvider(VideoProvider):
                     data = resp.json()
                     task_id = data.get("task_id") or data.get("id")
                     break
-                if resp.status_code in (403, 400):
+                if resp.status_code == 403:
+                    last_error = resp.text[:500]
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                if resp.status_code == 400:
+                    # Content moderation 400 may be transient; invalid params are permanent
+                    if "InvalidParameter" in resp.text or "invalid" in resp.text.lower():
+                        return VideoResult(
+                            shot_id=shot_id, path=output_path, status="failed",
+                            error=f"Bad request: {resp.text[:500]}",
+                        )
                     last_error = resp.text[:500]
                     await asyncio.sleep(2 ** attempt)
                     continue

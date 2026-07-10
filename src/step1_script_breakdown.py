@@ -542,11 +542,14 @@ class StoryboardGenerator:
         # User constraints from env vars
         max_per_scene = os.environ.get("MAX_SHOTS_PER_SCENE", "")
         total_shots_limit = os.environ.get("TOTAL_SHOTS", "")
+        total_dur = os.environ.get("TOTAL_DURATION", "")
         constraints = ""
         if max_per_scene:
             constraints += f"\n注意：本场景最多 {max_per_scene} 个镜头，已生成 {shot_num - 1} 镜。"
         if total_shots_limit:
             constraints += f"\n注意：全片总镜头数上限 {total_shots_limit} 镜。"
+        if total_dur:
+            constraints += f"\n注意：全片目标总时长约 {total_dur} 秒，请据此控制每个镜头的 duration_sec（单镜头不超过 10 秒）。"
 
         return f"""场景"{name}"（{sid}）的第 {shot_num} 镜。{constraints}
 
