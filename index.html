@@ -199,7 +199,7 @@
         };
         fetchArtifacts();
         if (isStepRunning) {
-          const t = setInterval(fetchArtifacts, 3000);
+          const t = setInterval(() => { if (!document.hidden) fetchArtifacts(); }, 10000);
           return () => { cancelled = true; clearInterval(t); };
         }
         return () => { cancelled = true; };
@@ -494,7 +494,7 @@
 
       useEffect(() => {
         load();
-        const t = setInterval(load, 5000);
+        const t = setInterval(() => { if (!document.hidden) load(); }, 10000);
         return () => clearInterval(t);
       }, [load]);
 
@@ -616,7 +616,7 @@
       useEffect(() => { loadLogs(); }, [loadLogs]);
 
       useEffect(() => {
-        const t = setInterval(loadLogs, 3000);
+        const t = setInterval(() => { if (!document.hidden) loadLogs(); }, 10000);
         return () => clearInterval(t);
       }, [loadLogs]);
 
@@ -676,9 +676,9 @@
         if (!data) load();
         if (poll && !data) {
           const t = setInterval(() => {
-            if (cancelled) return;
+            if (cancelled || document.hidden) return;
             load();
-          }, 3000);
+          }, 10000);
           return () => { cancelled = true; clearInterval(t); };
         }
         return () => { cancelled = true; };
@@ -1135,7 +1135,7 @@
         } finally { setLoading(false); }
       }, []);
 
-      useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t); }, []);
+      useEffect(() => { load(); const t = setInterval(() => { if (!document.hidden) load(); }, 10000); return () => clearInterval(t); }, []);
 
       const sorted = [...items].sort((a, b) => {
         const ta = new Date(a.created_at).getTime();
@@ -1271,7 +1271,9 @@
         if (currentView === 'detail' && selected) {
           const shouldPoll = selected.status === 'running' || selected.status?.startsWith('step_');
           if (shouldPoll) {
-            pollRef.current = setInterval(refreshSelected, 3000);
+            const poll = () => { if (!document.hidden) refreshSelected(); };
+            poll();
+            pollRef.current = setInterval(poll, 10000);
           }
         }
         return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };

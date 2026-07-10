@@ -565,7 +565,9 @@ class StoryboardGenerator:
 
     def _call_tool(self, system_prompt: str, user_prompt: str, tool_def: dict, debug_tag: str = "") -> dict:
         """Make a tool-calling API request with streaming feedback, return parsed JSON."""
-        logger.info("  -> Calling tool: %s", tool_def["function"]["name"])
+        tool_name = tool_def["function"]["name"]
+        tag = f" [{debug_tag}]" if debug_tag else ""
+        logger.info("  -> %s%s", tool_name, tag)
         logger.debug("  System: %d chars, User: %d chars", len(system_prompt), len(user_prompt))
 
         t0 = time.monotonic()
@@ -621,8 +623,9 @@ class StoryboardGenerator:
             if now - last_log >= 8.0:
                 rc = sum(len(r) for r in reasoning_parts)
                 ac = sum(len(a) for a in arguments_parts)
-                logger.info("    ... %d chunks, reasoning=%d chars, args=%d chars, %.0fs ...",
-                             chunk_count, rc, ac, now - t0)
+                logger.info("  ... %s: %.0fs, %d chunks, args=%d chars%s",
+                             debug_tag or tool_name, now - t0, chunk_count, ac,
+                             f", reasoning={rc} chars" if rc else "")
                 last_log = now
 
         if reasoning_parts:
@@ -632,8 +635,8 @@ class StoryboardGenerator:
         elapsed = time.monotonic() - t0
         tool_args = "".join(arguments_parts)
 
-        logger.info("  <- %s done in %.1fs: args=%d chars (%d chunks)",
-                     tool_def["function"]["name"], elapsed, len(tool_args), chunk_count)
+        logger.info("  <- %s done in %.1fs: args=%d chars (%d chunks)%s",
+                     tool_name, elapsed, len(tool_args), chunk_count, tag)
 
         if not tool_args:
             logger.error("  No tool arguments received! Content: %s", "".join(content_parts)[:500])
