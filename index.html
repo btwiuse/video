@@ -708,6 +708,7 @@
     function StoryboardViewer({ pipelineId, poll }) {
       const [data, setData] = useState(null);
       const [loading, setLoading] = useState(false);
+      const [charPrompts, setCharPrompts] = useState({});
       const [expandedScenes, setExpandedScenes] = useState({});
       const [expandedShots, setExpandedShots] = useState({});
 
@@ -733,6 +734,22 @@
         }
         return () => { cancelled = true; };
       }, [poll, load, data]);
+
+      // Load character prompts from .md files
+      useEffect(() => {
+        if (!data) return;
+        const chars = data.characters || [];
+        chars.forEach(async (c) => {
+          if (charPrompts[c.ref_id]) return;
+          try {
+            const res = await api(`/pipelines/${pipelineId}/artifacts/characters/${encodeURIComponent(c.ref_id)}.md`);
+            if (res.ok) {
+              const text = await res.text();
+              setCharPrompts(prev => ({ ...prev, [c.ref_id]: text }));
+            }
+          } catch (_) {}
+        });
+      }, [data, pipelineId]);
 
       const toggleScene = useCallback((sceneId) => {
         setExpandedScenes(prev => ({ ...prev, [sceneId]: !prev[sceneId] }));
@@ -762,7 +779,12 @@
               <div className="bg-ink-900 rounded border border-ink-700 p-4">
                 <h4 className="text-sm font-semibold text-stone-300 mb-3">角色</h4>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {characters.map((c, idx) => (
+                  {characters.map((c, idx) => {
+                    const md = charPrompts[c.ref_id] || '';
+                    const face = md.match(/## 外貌([\s\S]*?)(?=##|$)/)?.[1]?.trim() || '';
+                    const clothing = md.match(/## 服装([\s\S]*?)(?=##|$)/)?.[1]?.trim() || '';
+                    const voice = md.match(/## 声音与性格([\s\S]*?)(?=##|$)/)?.[1]?.trim() || '';
+                    return (
                     <div key={c.ref_id + '_' + idx} className="flex flex-col items-center gap-2">
                       <div className="relative w-20 h-20">
                         <img
@@ -780,8 +802,10 @@
                         <div className="char-placeholder absolute inset-0 rounded-full bg-ink-700 ring-1 ring-ink-600 hidden items-center justify-center text-stone-500 text-xs">待生成</div>
                       </div>
                       <span className="text-xs text-stone-400 truncate max-w-full">{c.name || c.ref_id}</span>
+                      {face && <span className="text-[10px] text-stone-500 text-center leading-tight">{face}</span>}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
