@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Film Pipeline Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -11,27 +14,91 @@
   <script>
     tailwind.config = {
       theme: {
+        colors: {
+          transparent: 'transparent',
+          current: 'currentColor',
+          ink: {
+            950: '#0d0c0b',
+            900: '#1a1816',
+            800: '#252220',
+            700: '#34302d',
+            600: '#4a4440',
+          },
+          brass: {
+            400: '#dbb95d',
+            500: '#c9a84c',
+            600: '#b8963e',
+          },
+          stone: {
+            100: '#f0ede8',
+            200: '#e0dcd5',
+            300: '#c4bfb7',
+            400: '#a09890',
+            500: '#7a736b',
+          },
+          leaf: {
+            400: '#6aa07a',
+            500: '#5a8a6a',
+            600: '#4a7359',
+          },
+          clay: {
+            400: '#b86a62',
+            500: '#a8524a',
+            600: '#8a423c',
+          },
+        },
+        fontFamily: {
+          heading: ['"Playfair Display"', 'Georgia', 'serif'],
+          sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
+          mono: ['"JetBrains Mono"', 'SF Mono', 'monospace'],
+        },
         extend: {
-          colors: {
-            cinema: {
-              900: '#0f0f14',
-              800: '#1a1a24',
-              700: '#252535',
-              600: '#32324a',
-              500: '#4a4a6a',
-            }
-          }
-        }
-      }
+          keyframes: {
+            'pulse-brass': {
+              '0%, 100%': { boxShadow: '0 0 4px rgba(201,168,76,0.3)' },
+              '50%': { boxShadow: '0 0 16px rgba(201,168,76,0.6)' },
+            },
+            'shimmer': {
+              '0%': { backgroundPosition: '-200% 0' },
+              '100%': { backgroundPosition: '200% 0' },
+            },
+          },
+          animation: {
+            'pulse-brass': 'pulse-brass 2s ease-in-out infinite',
+            'shimmer': 'shimmer 1.5s ease-in-out infinite',
+          },
+        },
+      },
     }
   </script>
   <style>
-    body { background: #0f0f14; color: #e5e5e5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-    .step-dot { transition: all 0.3s ease; }
-    .pipeline-card { transition: all 0.2s ease; }
-    .pipeline-card:hover { transform: translateY(-2px); }
-    @keyframes pulse-glow { 0%,100% { box-shadow: 0 0 5px rgba(99,102,241,0.4); } 50% { box-shadow: 0 0 20px rgba(99,102,241,0.8); } }
-    .running-glow { animation: pulse-glow 2s infinite; }
+    body {
+      background: #0d0c0b;
+      color: #f0ede8;
+      font-family: 'DM Sans', system-ui, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    ::selection { background: rgba(201,168,76,0.3); color: #f0ede8; }
+    .pipeline-card { transition: all 0.2s ease-out; }
+    .pipeline-card:hover { transform: translateY(-3px); }
+    .step-btn { transition: all 0.15s ease-out; }
+    .step-btn:active { transform: scale(0.96); }
+    .nav-btn { transition: all 0.15s ease-out; }
+    .nav-btn:hover { transform: translateY(-1px); }
+    .log-viewer::-webkit-scrollbar { width: 6px; }
+    .log-viewer::-webkit-scrollbar-track { background: #1a1816; }
+    .log-viewer::-webkit-scrollbar-thumb { background: #34302d; border-radius: 3px; }
+    .shimmer-bg {
+      background: linear-gradient(90deg, #1a1816 25%, #252220 50%, #1a1816 75%);
+      background-size: 200% 100%;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, ::before, ::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+      .pipeline-card:hover { transform: none; }
+      .step-btn:active { transform: none; }
+      .nav-btn:hover { transform: none; }
+    }
   </style>
 </head>
 <body>
@@ -47,44 +114,148 @@
     }
 
     function StatusBadge({ status }) {
-      const colors = {
-        pending: 'bg-gray-600 text-gray-200',
-        running: 'bg-indigo-600 text-indigo-100 running-glow',
-        done: 'bg-emerald-600 text-emerald-100',
-        failed: 'bg-red-600 text-red-100',
-        canceled: 'bg-orange-600 text-orange-100',
-        step_1: 'bg-blue-600 text-blue-100',
-        step_2: 'bg-blue-600 text-blue-100',
-        step_3: 'bg-purple-600 text-purple-100',
-        step_4: 'bg-purple-600 text-purple-100',
-        step_5: 'bg-purple-600 text-purple-100',
+      const styles = {
+        pending:     'bg-ink-700 text-stone-400',
+        running:     'bg-brass-500/20 text-brass-400 animate-pulse-brass',
+        done:        'bg-leaf-500/20 text-leaf-400',
+        failed:      'bg-clay-500/20 text-clay-400',
+        canceled:    'bg-ink-700 text-stone-400',
+        step_1:      'bg-brass-500/10 text-brass-400',
+        step_2:      'bg-brass-500/10 text-brass-400',
+        step_3:      'bg-brass-500/10 text-brass-400',
+        step_4:      'bg-brass-500/10 text-brass-400',
+        step_5:      'bg-brass-500/10 text-brass-400',
       };
       const labels = {
         pending: '待处理', running: '运行中', done: '完成', failed: '失败', canceled: '已取消',
         step_1: '步骤 1', step_2: '步骤 2', step_3: '步骤 3', step_4: '步骤 4', step_5: '步骤 5',
       };
-      return <span className={`px-2 py-1 rounded text-xs font-semibold ${colors[status] || 'bg-gray-500 text-gray-100'}`}>{labels[status] || status}</span>;
+      return (
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium ${styles[status] || 'bg-ink-700 text-stone-400'}`}>
+          {status === 'running' && <span className="w-1.5 h-1.5 rounded-full bg-brass-400" />}
+          {labels[status] || status}
+        </span>
+      );
     }
 
     function StepProgress({ currentStep }) {
       return (
-        <div className="flex items-center gap-2 my-6">
-          {[1,2,3,4,5].map(n => (
-            <React.Fragment key={n}>
-              <div className={`step-dot w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                n <= currentStep ? 'bg-indigo-500 text-white' : 'bg-cinema-700 text-gray-500'
-              }`}>{n}</div>
-              {n < 5 && <div className={`h-0.5 w-8 ${n < currentStep ? 'bg-indigo-500' : 'bg-cinema-700'}`} />}
-            </React.Fragment>
-          ))}
+        <div className="relative my-8">
+          <div className="absolute top-5 left-0 right-0 h-px bg-ink-700" />
+          <div className="relative flex justify-between">
+            {[1,2,3,4,5].map(n => {
+              const done = n <= currentStep;
+              const active = n === currentStep + 1;
+              return (
+                <div key={n} className="flex flex-col items-center">
+                  <div className={`relative z-10 w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300 ${
+                    done
+                      ? 'bg-brass-500 text-ink-950'
+                      : active
+                        ? 'bg-brass-500/20 text-brass-400 ring-1 ring-brass-500/50'
+                        : 'bg-ink-800 text-stone-400'
+                  }`}>
+                    {done ? '✓' : n}
+                  </div>
+                  <span className={`mt-2 text-xs font-medium ${done ? 'text-stone-200' : 'text-stone-400'}`}>
+                    {STEP_NAMES[n]}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       );
+    }
+
+    function FileRow({ file, level, pipelineId, expanded, onView, onDownload, onCopy, onToggle }) {
+        const paddingLeft = 16 + level * 20;
+        return (
+          <div className="border-b border-ink-800 last:border-b-0">
+            <div className="flex items-center justify-between py-1.5 pr-3" style={{ paddingLeft }}>
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <span className="text-stone-500 flex-shrink-0 text-xs">📄</span>
+                <span className="text-stone-100 text-sm truncate">{file.name.split('/').pop()}</span>
+                <span className="text-stone-500 text-xs flex-shrink-0">{(file.size / 1024).toFixed(1)} KB</span>
+              </div>
+              <div className="flex gap-1.5 ml-3 flex-shrink-0">
+                <button onClick={() => onView(file.name)} className="text-xs px-2 py-0.5 bg-ink-700 hover:bg-ink-600 rounded text-stone-200 transition-colors">
+                  {expanded[file.name] ? '收起' : '查看'}
+                </button>
+                <button onClick={() => onDownload(file.name)} className="text-xs px-2 py-0.5 bg-brass-500 hover:bg-brass-400 rounded text-ink-950 font-medium transition-colors">
+                  下载
+                </button>
+              </div>
+            </div>
+            {expanded[file.name] && (
+              <div className="bg-ink-950 p-3 border-t border-ink-700 relative" style={{ paddingLeft: paddingLeft + 8 }}>
+                <div className="absolute top-2 right-2 flex gap-2">
+                  {(fileCategory(file.name) === 'text') && <button onClick={() => onCopy(expanded[file.name], file.name)} className="text-stone-400 hover:text-stone-200 transition-colors text-xs" title="复制">📋</button>}
+                  <button onClick={() => onToggle(file.name)} className="text-stone-400 hover:text-stone-200 transition-colors text-xs">✕</button>
+                </div>
+                <h4 className="text-xs font-semibold text-stone-400 mb-1.5">{file.name}</h4>
+                {fileCategory(file.name) === 'image' ? (
+                  <img src={expanded[file.name]} alt={file.name} className="max-w-full rounded" />
+                ) : fileCategory(file.name) === 'video' ? (
+                  <video src={expanded[file.name]} controls className="max-w-full rounded" />
+                ) : fileCategory(file.name) === 'audio' ? (
+                  <audio src={expanded[file.name]} controls className="w-full" />
+                ) : (
+                  <pre className="text-xs text-stone-300 overflow-auto max-h-96 whitespace-pre-wrap">{expanded[file.name]}</pre>
+                )}
+              </div>
+            )}
+          </div>
+        );
+    }
+
+    function DirNode({ name, node, level, path, treeOpen, onToggleDir, expanded, onView, onDownload, onCopy, onToggle }) {
+        const fullPath = path ? `${path}/${name}` : name;
+        const isOpen = treeOpen[fullPath] !== undefined ? treeOpen[fullPath] : level < 2;
+        const paddingLeft = 16 + level * 20;
+
+        const childDirs = Object.keys(node.__children || {}).sort();
+        const childFiles = (node.__files || []).sort((a, b) => a.name.localeCompare(b.name));
+
+        return (
+          <div>
+            <div
+              className="flex items-center gap-1.5 py-1.5 pr-3 cursor-pointer hover:bg-ink-800/50 transition-colors select-none"
+              style={{ paddingLeft }}
+              onClick={() => onToggleDir(fullPath)}
+            >
+              <span className="text-stone-400 flex-shrink-0 text-xs w-3 text-center transition-transform" style={{ transform: isOpen ? 'rotate(90deg)' : 'none' }}>
+                ▶
+              </span>
+              <span className="text-stone-500 flex-shrink-0 text-xs">📁</span>
+              <span className="text-stone-200 text-sm font-medium">{name}</span>
+              <span className="text-stone-600 text-xs ml-1">
+                {childDirs.length + childFiles.length}项
+              </span>
+            </div>
+            {isOpen && (
+              <div>
+                {childDirs.map(d => (
+                  <DirNode key={d} name={d} node={node.__children[d]} level={level + 1} path={fullPath}
+                    treeOpen={treeOpen} onToggleDir={onToggleDir}
+                    expanded={expanded} onView={onView} onDownload={onDownload} onCopy={onCopy} onToggle={onToggle} />
+                ))}
+                {childFiles.map(f => (
+                  <FileRow key={f.name} file={f} level={level + 1}
+                    pipelineId={pipelineId} expanded={expanded}
+                    onView={onView} onDownload={onDownload} onCopy={onCopy} onToggle={onToggle} />
+                ))}
+              </div>
+            )}
+          </div>
+        );
     }
 
     function ArtifactList({ pipelineId }) {
       const [artifacts, setArtifacts] = useState([]);
       const [loading, setLoading] = useState(false);
       const [expanded, setExpanded] = useState({});
+      const [treeOpen, setTreeOpen] = useState({});
       const [scriptText, setScriptText] = useState('');
       const [scriptLoading, setScriptLoading] = useState(false);
       const expandedRef = useRef({});
@@ -103,7 +274,7 @@
 
       useEffect(() => { load(); }, [load]);
 
-      const download = async (name) => {
+      const download = useCallback(async (name) => {
         try {
           const res = await api(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(name)}`);
           if (!res.ok) throw new Error('Download failed');
@@ -117,7 +288,7 @@
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
         } catch (e) { console.error(e); }
-      };
+      }, [pipelineId]);
 
       const fileCategory = (name) => {
         const ext = name.split('.').pop()?.toLowerCase();
@@ -127,13 +298,9 @@
         return 'text';
       };
 
-      const viewJson = async (name) => {
+      const viewJson = useCallback(async (name) => {
         if (expandedRef.current[name]) {
-          setExpanded(prev => {
-            const next = { ...prev };
-            delete next[name];
-            return next;
-          });
+          setExpanded(prev => { const next = { ...prev }; delete next[name]; return next; });
           return;
         }
         const cat = fileCategory(name);
@@ -158,39 +325,58 @@
             setExpanded(prev => ({ ...prev, [name]: url }));
           } catch (e) { console.error(e); }
         }
-      };
+      }, [pipelineId]);
 
-      const toggleExpand = (name) => {
-        setExpanded(prev => {
-          const next = { ...prev };
-          if (next[name]) {
-            delete next[name];
-          }
-          return next;
-        });
-      };
+      const toggleExpand = useCallback((name) => {
+        setExpanded(prev => { const next = { ...prev }; if (next[name]) delete next[name]; return next; });
+      }, []);
 
-      const copyToClipboard = (text, name) => {
+      const copyToClipboard = useCallback((text, name) => {
         navigator.clipboard.writeText(text).then(() => alert('已复制: ' + name)).catch(() => alert('复制失败'));
-      };
+      }, []);
+
+      function buildTree(files) {
+        const root = {};
+        for (const f of files) {
+          const parts = f.name.split('/');
+          let node = root;
+          for (let i = 0; i < parts.length - 1; i++) {
+            if (!node[parts[i]]) node[parts[i]] = { __children: {} };
+            node = node[parts[i]].__children;
+          }
+          if (!node.__files) node.__files = [];
+          node.__files.push(f);
+        }
+        return root;
+      }
+
+      const tree = React.useMemo(() => buildTree(artifacts), [artifacts]);
+      const topDirs = React.useMemo(() => Object.keys(tree).filter(k => k !== '__files').sort(), [tree]);
+      const rootFiles = React.useMemo(() => (tree.__files || []).sort((a, b) => a.name.localeCompare(b.name)), [tree]);
+
+      const toggleDir = useCallback((path) => {
+        setTreeOpen(prev => ({ ...prev, [path]: !(prev[path] !== undefined ? prev[path] : true) }));
+      }, []);
 
       return (
-        <div className="mt-8">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-semibold text-white">产物文件</h3>
-            <button onClick={load} disabled={loading} className="text-sm text-indigo-400 hover:text-indigo-300">
+        <div className="mt-10">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-heading text-lg font-semibold text-stone-100">产物文件</h3>
+            <button onClick={load} disabled={loading} className="nav-btn text-sm text-stone-400 hover:text-brass-400 transition-colors">
               {loading ? '刷新中...' : '刷新'}
             </button>
           </div>
-          {artifacts.length === 0 && <p className="text-gray-500 text-sm">暂无产物文件</p>}
-          <div className="space-y-2">
-            <div className="bg-cinema-800 rounded border border-cinema-700 overflow-hidden">
+          {artifacts.length === 0 && <p className="text-stone-500 text-sm">暂无产物文件</p>}
+          <div className="bg-ink-900 rounded border border-ink-700 overflow-hidden">
+            {/* 剧本原文.txt always on top */}
+            <div className="border-b border-ink-800">
               <div className="flex items-center justify-between p-3">
-                <div className="flex-1 min-w-0">
-                  <span className="text-white text-sm font-medium">剧本原文.txt</span>
-                  <span className="text-gray-500 text-xs ml-2">原始剧本</span>
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <span className="text-stone-500 flex-shrink-0 text-xs">📄</span>
+                  <span className="text-stone-100 text-sm font-medium">剧本原文.txt</span>
+                  <span className="text-stone-500 text-xs">原始剧本</span>
                 </div>
-                <div className="flex gap-2 ml-4">
+                <div className="flex gap-1.5 ml-3 flex-shrink-0">
                   <button onClick={async () => {
                     if (expandedRef.current['_script_']) {
                       setExpanded(prev => { const next = {...prev}; delete next['_script_']; return next; });
@@ -208,10 +394,8 @@
                       }
                     } catch (e) {
                       alert('加载失败: ' + e.message);
-                    } finally {
-                      setScriptLoading(false);
-                    }
-                  }} className="text-xs px-2 py-1 bg-cinema-600 hover:bg-cinema-500 rounded text-gray-200">
+                    } finally { setScriptLoading(false); }
+                  }} className="text-xs px-2.5 py-1 bg-ink-700 hover:bg-ink-600 rounded text-stone-200 transition-colors">
                     {expanded['_script_'] ? '收起' : '查看'}
                   </button>
                   <button onClick={async () => {
@@ -228,57 +412,31 @@
                       document.body.removeChild(a);
                       URL.revokeObjectURL(url);
                     } catch (e) { console.error(e); }
-                  }} className="text-xs px-2 py-1 bg-indigo-600 hover:bg-indigo-500 rounded text-white">
+                  }} className="text-xs px-2.5 py-1 bg-brass-500 hover:bg-brass-400 rounded text-ink-950 font-medium transition-colors">
                     下载
                   </button>
                 </div>
               </div>
               {expanded['_script_'] && (
-                <div className="bg-cinema-900 p-4 border-t border-cinema-700 relative">
+                <div className="bg-ink-950 p-4 border-t border-ink-700 relative">
                   <div className="absolute top-2 right-2 flex gap-2">
-                    <button onClick={() => copyToClipboard(expanded['_script_'], '剧本原文.txt')} className="text-gray-400 hover:text-white" title="复制">📋</button>
-                    <button onClick={() => setExpanded(prev => { const next = {...prev}; delete next['_script_']; return next; })} className="text-gray-400 hover:text-white">✕</button>
+                    <button onClick={() => copyToClipboard(expanded['_script_'], '剧本原文.txt')} className="text-stone-400 hover:text-stone-200 transition-colors" title="复制">📋</button>
+                    <button onClick={() => setExpanded(prev => { const next = {...prev}; delete next['_script_']; return next; })} className="text-stone-400 hover:text-stone-200 transition-colors">✕</button>
                   </div>
-                  <h4 className="text-sm font-semibold text-gray-300 mb-2">剧本原文.txt</h4>
-                  <pre className="text-xs text-gray-300 overflow-auto max-h-96 whitespace-pre-wrap">{expanded['_script_']}</pre>
+                  <h4 className="text-sm font-semibold text-stone-300 mb-2">剧本原文.txt</h4>
+                  <pre className="text-xs text-stone-300 overflow-auto max-h-96 whitespace-pre-wrap">{expanded['_script_']}</pre>
                 </div>
               )}
             </div>
-            {artifacts.map(f => (
-              <div key={f.name} className="bg-cinema-800 rounded border border-cinema-700 overflow-hidden">
-                <div className="flex items-center justify-between p-3">
-                  <div className="flex-1 min-w-0">
-                    <span className="text-white text-sm font-medium">{f.name}</span>
-                    <span className="text-gray-500 text-xs ml-2">{(f.size / 1024).toFixed(1)} KB</span>
-                  </div>
-                  <div className="flex gap-2 ml-4">
-                    <button onClick={() => viewJson(f.name)} className="text-xs px-2 py-1 bg-cinema-600 hover:bg-cinema-500 rounded text-gray-200">
-                      {expanded[f.name] ? '收起' : '查看'}
-                    </button>
-                    <button onClick={() => download(f.name)} className="text-xs px-2 py-1 bg-indigo-600 hover:bg-indigo-500 rounded text-white">
-                      下载
-                    </button>
-                  </div>
-                </div>
-                {expanded[f.name] && (
-                  <div className="bg-cinema-900 p-4 border-t border-cinema-700 relative">
-                    <div className="absolute top-2 right-2 flex gap-2">
-                      {fileCategory(f.name) === 'text' && <button onClick={() => copyToClipboard(expanded[f.name], f.name)} className="text-gray-400 hover:text-white" title="复制">📋</button>}
-                      <button onClick={() => toggleExpand(f.name)} className="text-gray-400 hover:text-white">✕</button>
-                    </div>
-                    <h4 className="text-sm font-semibold text-gray-300 mb-2">{f.name}</h4>
-                    {fileCategory(f.name) === 'image' ? (
-                      <img src={expanded[f.name]} alt={f.name} className="max-w-full rounded" />
-                    ) : fileCategory(f.name) === 'video' ? (
-                      <video src={expanded[f.name]} controls className="max-w-full rounded" />
-                    ) : fileCategory(f.name) === 'audio' ? (
-                      <audio src={expanded[f.name]} controls className="w-full" />
-                    ) : (
-                      <pre className="text-xs text-gray-300 overflow-auto max-h-96 whitespace-pre-wrap">{expanded[f.name]}</pre>
-                    )}
-                  </div>
-                )}
-              </div>
+            {rootFiles.map(f => (
+              <FileRow key={f.name} file={f} level={0}
+                pipelineId={pipelineId} expanded={expanded}
+                onView={viewJson} onDownload={download} onCopy={copyToClipboard} onToggle={toggleExpand} />
+            ))}
+            {topDirs.map(d => (
+              <DirNode key={d} name={d} node={tree[d]} level={0} path=""
+                treeOpen={treeOpen} onToggleDir={toggleDir}
+                expanded={expanded} onView={viewJson} onDownload={download} onCopy={copyToClipboard} onToggle={toggleExpand} />
             ))}
           </div>
         </div>
@@ -324,15 +482,15 @@
       };
 
       return (
-        <div className="mt-8">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-semibold text-white">运行日志</h3>
+        <div className="mt-10">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-heading text-lg font-semibold text-stone-100">运行日志</h3>
             <div className="flex items-center gap-3">
-              <label className="flex items-center gap-1 text-xs text-gray-400">
-                <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
+              <label className="flex items-center gap-1.5 text-xs text-stone-400 cursor-pointer">
+                <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} className="accent-brass-500" />
                 自动滚动
               </label>
-              <button onClick={() => loadLogs(true)} disabled={loading} className="text-sm text-indigo-400 hover:text-indigo-300">
+              <button onClick={() => loadLogs(true)} disabled={loading} className="nav-btn text-sm text-stone-400 hover:text-brass-400 transition-colors">
                 {loading ? '刷新中...' : '刷新'}
               </button>
             </div>
@@ -340,9 +498,9 @@
           <div
             ref={logContainerRef}
             onScroll={handleScroll}
-            className="bg-cinema-900 border border-cinema-700 rounded p-4 h-96 overflow-auto font-mono text-xs text-gray-300 whitespace-pre-wrap"
+            className="log-viewer bg-ink-950 border border-ink-700 rounded p-4 h-96 overflow-auto font-mono text-xs text-stone-300 whitespace-pre-wrap"
           >
-            {logs || <span className="text-gray-500">暂无日志</span>}
+            {logs || <span className="text-stone-500">暂无日志</span>}
           </div>
         </div>
       );
@@ -364,7 +522,11 @@
 
       useEffect(() => { load(); }, [load]);
 
-      if (!data && loading) return <div className="mt-6 text-gray-500 text-sm">加载分镜中...</div>;
+      const toggleScene = useCallback((sceneId) => {
+        setExpandedScenes(prev => ({ ...prev, [sceneId]: !prev[sceneId] }));
+      }, []);
+
+      if (!data && loading) return <div className="mt-6 text-stone-500 text-sm">加载分镜中...</div>;
       if (!data) return null;
 
       const scenes = data.scenes || [];
@@ -372,27 +534,27 @@
       const shots = data.shots || [];
 
       return (
-        <div className="mt-8">
-          <h3 className="text-lg font-semibold text-white mb-3">
+        <div className="mt-10">
+          <h3 className="font-heading text-lg font-semibold text-stone-100 mb-4">
             分镜概览
-            <span className="text-gray-400 text-sm font-normal ml-2">
+            <span className="text-stone-400 text-sm font-normal ml-2">
               {characters.length} 角色 · {scenes.length} 场景 · {shots.length} 镜头
             </span>
           </h3>
           <div className="space-y-3">
             {characters.length > 0 && (
-              <div className="bg-cinema-800 rounded border border-cinema-700 p-3">
-                <h4 className="text-sm font-semibold text-gray-300 mb-2">角色</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                  {characters.map(c => (
-                    <div key={c.ref_id} className="flex flex-col items-center gap-1">
+              <div className="bg-ink-900 rounded border border-ink-700 p-4">
+                <h4 className="text-sm font-semibold text-stone-300 mb-3">角色</h4>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {characters.map((c, idx) => (
+                    <div key={c.ref_id + '_' + idx} className="flex flex-col items-center gap-2">
                       <img
                         src={`/pipelines/${pipelineId}/artifacts/characters/${encodeURIComponent(c.ref_id)}_front.jpg`}
                         alt={c.ref_id}
-                        className="w-20 h-20 object-cover rounded-lg bg-cinema-700"
-                        onError={e => { e.target.style.display = 'none'; }}
+                        className="w-20 h-20 object-cover rounded-full bg-ink-700 ring-1 ring-ink-600"
+                        onError={e => { e.target.style.display = 'none'; e.target.src = ''; }}
                       />
-                      <span className="text-xs text-gray-400 truncate max-w-full">{c.ref_id}</span>
+                      <span className="text-xs text-stone-400 truncate max-w-full">{c.ref_id}</span>
                     </div>
                   ))}
                 </div>
@@ -402,54 +564,50 @@
               const sceneShots = shots.filter(s => s.full_shot_id?.startsWith(scene.scene_id));
               const isExpanded = expandedScenes[scene.scene_id];
               return (
-                <div key={scene.scene_id} className="bg-cinema-800 rounded border border-cinema-700 overflow-hidden">
+                <div key={scene.scene_id} className="bg-ink-900 rounded border border-ink-700 overflow-hidden">
                   <div
-                    className="flex items-center justify-between p-3 cursor-pointer hover:bg-cinema-750"
-                    onClick={() => setExpandedScenes(prev => ({ ...prev, [scene.scene_id]: !prev[scene.scene_id] }))}
+                    className="flex items-center justify-between p-3 cursor-pointer hover:bg-ink-800 transition-colors"
+                    onClick={() => toggleScene(scene.scene_id)}
                   >
-                    <div className="flex-1 min-w-0 flex items-center gap-2">
+                    <div className="flex-1 min-w-0 flex items-center gap-3">
                       <img
                         src={`/pipelines/${pipelineId}/artifacts/scenes/${scene.scene_id}_detail.jpg`}
                         alt={scene.scene_id}
-                        className="w-12 h-8 object-cover rounded flex-shrink-0 bg-cinema-700"
-                        onError={e => { e.target.style.display = 'none'; }}
+                        className="w-14 h-9 object-cover rounded flex-shrink-0 bg-ink-700"
+                        onError={e => { e.target.style.display = 'none'; e.target.src = ''; }}
                       />
                       <div>
-                        <span className="text-white text-sm font-medium">{scene.scene_id}</span>
-                        <span className="text-gray-500 text-xs ml-2">{sceneShots.length} 镜</span>
+                        <span className="text-stone-100 text-sm font-medium">{scene.scene_id}</span>
+                        <span className="text-stone-500 text-xs ml-2">{sceneShots.length} 镜</span>
                       </div>
                     </div>
-                    <span className="text-gray-400 text-xs">{isExpanded ? '收起' : '展开'}</span>
+                    <span className="text-stone-400 text-xs">{isExpanded ? '收起' : '展开'}</span>
                   </div>
                   {isExpanded && (
-                    <div className="border-t border-cinema-700">
+                    <div className="border-t border-ink-700">
                       {sceneShots.map((shot, i) => (
-                        <div key={shot.full_shot_id} className="p-3 bg-cinema-900/50 flex gap-3 border-b border-cinema-700">
+                        <div key={shot.full_shot_id} className="p-3 bg-ink-950/50 flex gap-3 border-b border-ink-700 last:border-b-0">
                           <img
-                            src={`/pipelines/${pipelineId}/artifacts/shots/${shot.full_shot_id}/${shot.full_shot_id}_startframe.jpg`}
+                            src={`/pipelines/${pipelineId}/artifacts/shots/${shot.full_shot_id}/${shot.full_shot_id}_startframe.png`}
                             alt={shot.full_shot_id}
-                            className="w-24 h-14 object-cover rounded flex-shrink-0 bg-cinema-700"
+                            className="w-28 h-16 object-cover rounded flex-shrink-0 bg-ink-700"
                             onError={e => {
-                              e.target.src = `/pipelines/${pipelineId}/artifacts/shots/${shot.full_shot_id}/${shot.full_shot_id}_startframe.png`;
-                              e.target.onerror = () => {
-                                e.target.src = `/pipelines/${pipelineId}/artifacts/shots/${shot.full_shot_id}/${shot.full_shot_id}_startframe.webp`;
-                                e.target.onerror = () => {
-                                  e.target.style.display = 'none';
-                                  e.target.parentElement.querySelector('.startframe-placeholder').style.display = 'flex';
-                                };
-                              };
+                              e.target.style.display = 'none';
+                              e.target.src = '';
+                              const ph = e.target.parentElement?.querySelector('.startframe-placeholder');
+                              if (ph) ph.style.display = 'flex';
                             }}
                           />
-                          <div className="w-24 h-14 startframe-placeholder hidden items-center justify-center rounded flex-shrink-0 bg-cinema-700 text-gray-500 text-xs">
+                          <div className="w-28 h-16 startframe-placeholder hidden items-center justify-center rounded flex-shrink-0 bg-ink-700 text-stone-500 text-xs">
                             待生成
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="text-xs font-bold text-indigo-400">{shot.full_shot_id}</span>
-                              <span className="text-xs text-gray-400 bg-cinema-700 px-1.5 py-0.5 rounded">{shot.transition_type || '-'}</span>
-                              <span className="text-xs text-gray-500">{shot.duration_sec != null ? (Number.isInteger(shot.duration_sec) ? shot.duration_sec : shot.duration_sec.toFixed(1)) + '秒' : '-'}</span>
+                              <span className="text-xs font-bold text-brass-400">{shot.full_shot_id}</span>
+                              <span className="text-xs text-stone-400 bg-ink-700 px-1.5 py-0.5 rounded">{shot.transition_type || '-'}</span>
+                              <span className="text-xs text-stone-400">{shot.duration_sec != null ? (Number.isInteger(shot.duration_sec) ? shot.duration_sec : shot.duration_sec.toFixed(1)) + '秒' : '-'}</span>
                             </div>
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs text-stone-500">
                               {`Scene ${si+1} 第${i+1}镜`}
                             </div>
                           </div>
@@ -477,14 +635,10 @@
         api(`/pipelines/${pipeline.pipeline_id}/summarize`)
           .then(res => res.ok ? res.json() : Promise.resolve(null))
           .then(data => {
-            if (!cancelled && data) {
-              setSummary(data);
-            }
+            if (!cancelled && data) setSummary(data);
           })
           .catch(() => {})
-          .finally(() => {
-            if (!cancelled) setSummaryLoading(false);
-          });
+          .finally(() => { if (!cancelled) setSummaryLoading(false); });
         return () => { cancelled = true; };
       }, [pipeline.pipeline_id]);
 
@@ -498,7 +652,6 @@
         return pipeline.step || 0;
       };
       const currentStep = getCurrentStep();
-
       const pid = pipeline.pipeline_id;
 
       const canRunStep = (n) => {
@@ -523,7 +676,7 @@
           for (let s = startStep; s <= 5; s++) {
             await api(`/pipelines/${pid}/steps/${s}`, { method: 'POST' });
             const startTime = Date.now();
-            const timeout = 30 * 60 * 1000; // 30 minutes
+            const timeout = 30 * 60 * 1000;
             while (true) {
               await new Promise(r => setTimeout(r, 3000));
               if (Date.now() - startTime > timeout) {
@@ -550,38 +703,33 @@
         if (!confirm('确定删除此 pipeline 及其所有产物?')) return;
         try {
           const res = await api(`/pipelines/${pid}`, { method: 'DELETE' });
-          if (!res.ok) {
-            alert(`删除失败: HTTP ${res.status}`);
-            return;
-          }
+          if (!res.ok) { alert(`删除失败: HTTP ${res.status}`); return; }
           onBack();
-        } catch (e) {
-          alert(`删除失败: ${e.message}`);
-        }
+        } catch (e) { alert(`删除失败: ${e.message}`); }
       };
 
       return (
-        <div className="bg-cinema-800 rounded-lg p-6 border border-cinema-700">
-          <div className="flex items-start justify-between mb-4">
+        <div className="bg-ink-900 rounded-lg p-6 border border-ink-700">
+          <div className="flex items-start justify-between mb-2">
             <div className="flex-1 min-w-0">
-              <h2 className="text-xl font-bold text-white truncate" title={pipeline.name}>{pipeline.name || 'Untitled Pipeline'}</h2>
-              {summaryLoading && <p className="text-gray-400 text-xs mt-1">正在生成摘要...</p>}
+              <h2 className="font-heading text-xl font-semibold text-stone-100 truncate" title={pipeline.name}>{pipeline.name || 'Untitled Pipeline'}</h2>
+              {summaryLoading && <p className="text-stone-400 text-xs mt-1">正在生成摘要...</p>}
               {summary && summary.summary && (
-                <p className="text-gray-300 text-sm mt-1">{summary.summary}</p>
+                <p className="text-stone-300 text-sm mt-1 leading-relaxed">{summary.summary}</p>
               )}
               <div className="flex items-center gap-3 mt-2">
                 <StatusBadge status={pipeline.status} />
-                <span className="text-gray-400 text-sm">步骤 {currentStep}/5</span>
-                {pipeline.duration && <span className="text-gray-400 text-xs">运行时长: {pipeline.duration}</span>}
+                <span className="text-stone-400 text-sm">步骤 {currentStep}/5</span>
+                {pipeline.duration && <span className="text-stone-500 text-xs">运行时长: {pipeline.duration}</span>}
               </div>
             </div>
-            <button onClick={del} className="text-red-400 hover:text-red-300 text-sm px-3 py-1 bg-cinema-700 rounded ml-4">删除</button>
+            <button onClick={del} className="text-xs px-2.5 py-1.5 bg-ink-700 hover:bg-ink-600 text-clay-400 rounded transition-colors ml-4">删除</button>
           </div>
 
           <StepProgress currentStep={currentStep} />
 
           {pipeline.error && (
-            <div className="bg-red-900/30 border border-red-700 text-red-200 p-3 rounded text-sm mb-4">
+            <div className="bg-clay-500/10 border border-clay-500/30 text-clay-400 p-3 rounded text-sm mb-6">
               {pipeline.error}
             </div>
           )}
@@ -595,13 +743,13 @@
                   key={n}
                   onClick={() => runStep(n)}
                   disabled={!canRunStep(n)}
-                  className={`py-3 px-2 rounded text-sm font-medium transition relative ${
+                  className={`step-btn py-3 px-2 rounded text-sm font-medium transition-all ${
                     isActive
-                      ? 'bg-indigo-600 text-white ring-2 ring-indigo-400'
+                      ? 'bg-brass-500 text-ink-950 ring-1 ring-brass-400'
                       : isDone
-                        ? 'bg-indigo-600 hover:bg-indigo-500 text-white'
-                        : 'bg-cinema-700 text-gray-400'
-                  } ${!canRunStep(n) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        ? 'bg-brass-500/15 text-brass-400 hover:bg-brass-500/25'
+                        : 'bg-ink-800 text-stone-400'
+                  } ${!canRunStep(n) ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}
                 >
                   <div className="font-bold">{n}</div>
                   <div className="text-xs opacity-80">{STEP_NAMES[n]}</div>
@@ -610,21 +758,20 @@
             })}
           </div>
 
-          <div className="flex gap-3 mb-4">
-            <button onClick={runAll} disabled={actionLoading || pipeline.status === 'done'} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-600 text-white rounded font-medium text-sm">
+          <div className="flex gap-3 mb-6">
+            <button onClick={runAll} disabled={actionLoading || pipeline.status === 'done'} className="nav-btn px-4 py-2 bg-brass-500 hover:bg-brass-400 disabled:bg-ink-700 text-ink-950 rounded text-sm font-medium transition-all disabled:text-stone-400">
               运行全部步骤
             </button>
-            <button onClick={onRefresh} disabled={actionLoading} className="px-4 py-2 bg-cinema-600 hover:bg-cinema-500 text-gray-200 rounded text-sm">
+            <button onClick={onRefresh} disabled={actionLoading} className="nav-btn px-4 py-2 bg-ink-700 hover:bg-ink-600 text-stone-200 rounded text-sm transition-all">
               刷新状态
             </button>
           </div>
 
           <StoryboardViewer pipelineId={pid} />
           <LogViewer pipelineId={pid} isRunning={pipeline.status === 'running' || pipeline.status?.startsWith('step_')} />
-
           <ArtifactList pipelineId={pid} />
 
-          <div className="mt-6 text-xs text-gray-500">
+          <div className="mt-8 text-xs text-stone-500 leading-relaxed">
             创建时间: {new Date(pipeline.created_at).toLocaleString()}<br/>
             更新时间: {new Date(pipeline.updated_at).toLocaleString()}
           </div>
@@ -665,38 +812,40 @@
             fd.append('script', blob, 'script.txt');
           }
           const res = await fetch(`${API_BASE}/pipelines`, { method: 'POST', body: fd });
-          if (!res.ok) {
-            const txt = await res.text();
-            throw new Error(txt || `HTTP ${res.status}`);
-          }
+          if (!res.ok) { const txt = await res.text(); throw new Error(txt || `HTTP ${res.status}`); }
           const data = await res.json();
           onCreated(data.pipeline_id);
-        } catch (e) {
-          setError(e.message);
-        } finally { setSubmitting(false); }
+        } catch (e) { setError(e.message); }
+        finally { setSubmitting(false); }
       };
 
       return (
-        <div className="bg-cinema-800 rounded-lg p-6 border border-cinema-700">
-          <h2 className="text-lg font-bold text-white mb-4">创建新 Pipeline</h2>
-          {error && <div className="bg-red-900/30 border border-red-700 text-red-200 p-3 rounded text-sm mb-4">{error}</div>}
-          <div className="space-y-4">
+        <div className="bg-ink-900 rounded-lg p-8 border border-ink-700">
+          <h2 className="font-heading text-lg font-semibold text-stone-100 mb-6">创建新 Pipeline</h2>
+          {error && <div className="bg-clay-500/10 border border-clay-500/30 text-clay-400 p-3 rounded text-sm mb-4">{error}</div>}
+          <div className="space-y-5">
             <div>
-              <label className="block text-sm text-gray-300 mb-1">上传剧本文件</label>
-              <input ref={fileRef} type="file" accept=".txt,.md" onChange={handleFile} className="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-cinema-600 file:text-gray-200 hover:file:bg-cinema-500"/>
+              <label className="block text-sm text-stone-300 mb-1.5 font-medium">上传剧本文件</label>
+              <input ref={fileRef} type="file" accept=".txt,.md" onChange={handleFile}
+                className="block w-full text-sm text-stone-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-ink-700 file:text-stone-200 hover:file:bg-ink-600 file:transition-colors file:cursor-pointer cursor-pointer" />
             </div>
-            <div className="text-center text-gray-500 text-sm">或</div>
+            <div className="flex items-center gap-3 text-stone-500 text-sm">
+              <span className="h-px flex-1 bg-ink-700" />
+              <span>或</span>
+              <span className="h-px flex-1 bg-ink-700" />
+            </div>
             <div>
-              <label className="block text-sm text-gray-300 mb-1">剧本内容</label>
+              <label className="block text-sm text-stone-300 mb-1.5 font-medium">剧本内容</label>
               <textarea
                 value={scriptText}
                 onChange={(e) => { setScriptText(e.target.value); setScriptFile(null); if(fileRef.current) fileRef.current.value = ''; }}
                 rows={8}
-                className="w-full bg-cinema-900 border border-cinema-700 rounded p-3 text-gray-200 text-sm focus:outline-none focus:border-indigo-500"
+                className="w-full bg-ink-950 border border-ink-700 rounded p-3 text-stone-200 text-sm focus:outline-none focus:border-brass-500/50 transition-colors placeholder:text-stone-500"
                 placeholder="在此粘贴剧本内容..."
               />
             </div>
-            <button onClick={submit} disabled={submitting} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-600 text-white rounded font-medium">
+            <button onClick={submit} disabled={submitting}
+              className="step-btn w-full py-2.5 bg-brass-500 hover:bg-brass-400 disabled:bg-ink-700 text-ink-950 rounded font-medium transition-all disabled:text-stone-400">
               {submitting ? '创建中...' : '创建 Pipeline'}
             </button>
           </div>
@@ -707,7 +856,7 @@
     function PipelineList({ onSelect, onCreateNew }) {
       const [items, setItems] = useState([]);
       const [loading, setLoading] = useState(true);
-      const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'list'
+      const [viewMode, setViewMode] = useState('grid');
 
       const load = useCallback(async () => {
         setLoading(true);
@@ -725,41 +874,39 @@
       const sorted = [...items].sort((a, b) => {
         const ta = new Date(a.created_at).getTime();
         const tb = new Date(b.created_at).getTime();
-        return viewMode === 'list' ? ta - tb : tb - ta; // list: oldest first, grid: newest first
+        return viewMode === 'list' ? ta - tb : tb - ta;
       });
 
-      const formatDuration = (d) => {
-        if (!d) return '';
-        return d;
-      };
+      const formatDuration = (d) => d || '';
 
       if (viewMode === 'grid') {
         return (
           <div>
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-4">
               <div />
-              <button onClick={() => setViewMode('list')} className="text-sm text-indigo-400 hover:text-indigo-300">列表视图</button>
+              <button onClick={() => setViewMode('list')} className="nav-btn text-sm text-stone-400 hover:text-brass-400 transition-colors">列表视图</button>
             </div>
-            {loading && items.length === 0 && <p className="text-gray-500">加载中...</p>}
+            {loading && items.length === 0 && <p className="text-stone-500">加载中...</p>}
             {items.length === 0 && !loading && (
-              <div className="text-center py-16">
-                <p className="text-gray-500 mb-4">暂无 Pipeline</p>
-                <button onClick={onCreateNew} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded">创建 Pipeline</button>
+              <div className="text-center py-20">
+                <p className="text-stone-400 mb-4">暂无 Pipeline</p>
+                <button onClick={onCreateNew} className="nav-btn px-4 py-2 bg-brass-500 hover:bg-brass-400 text-ink-950 rounded font-medium transition-all">创建 Pipeline</button>
               </div>
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {sorted.map(p => (
-                <div key={p.pipeline_id} onClick={() => onSelect(p.pipeline_id)} className="pipeline-card bg-cinema-800 p-5 rounded-lg border border-cinema-700 cursor-pointer">
+                <div key={p.pipeline_id} onClick={() => onSelect(p.pipeline_id)}
+                  className="pipeline-card bg-ink-900 p-5 rounded-lg border border-ink-700 cursor-pointer hover:border-brass-500/30 transition-all">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-white text-sm font-medium truncate" title={p.name}>{p.name || p.pipeline_id.slice(-8)}</span>
+                    <span className="text-stone-100 text-sm font-medium truncate" title={p.name}>{p.name || p.pipeline_id.slice(-8)}</span>
                     <StatusBadge status={p.status} />
                   </div>
-                  <div className="text-gray-400 text-xs">步骤 {p.step}/5</div>
-                  <div className="mt-3 w-full bg-cinema-700 rounded-full h-1.5">
-                    <div className="bg-indigo-500 h-1.5 rounded-full" style={{ width: `${(p.step / 5) * 100}%` }} />
+                  <div className="text-stone-400 text-xs">步骤 {p.step}/5</div>
+                  <div className="mt-3 w-full bg-ink-700 rounded-full h-1 overflow-hidden">
+                    <div className="bg-brass-500 h-full rounded-full transition-all duration-500" style={{ width: `${(p.step / 5) * 100}%` }} />
                   </div>
-                  <div className="mt-3 text-xs text-gray-500">{new Date(p.updated_at).toLocaleString()}</div>
-                  {p.duration && <div className="mt-1 text-xs text-gray-500">运行时长: {formatDuration(p.duration)}</div>}
+                  <div className="mt-3 text-xs text-stone-500">{new Date(p.updated_at).toLocaleString()}</div>
+                  {p.duration && <div className="mt-0.5 text-xs text-stone-500">运行时长: {formatDuration(p.duration)}</div>}
                 </div>
               ))}
             </div>
@@ -769,19 +916,19 @@
 
       return (
         <div>
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-4">
             <div />
-            <button onClick={() => setViewMode('grid')} className="text-sm text-indigo-400 hover:text-indigo-300">卡片视图</button>
+            <button onClick={() => setViewMode('grid')} className="nav-btn text-sm text-stone-400 hover:text-brass-400 transition-colors">卡片视图</button>
           </div>
-          {loading && items.length === 0 && <p className="text-gray-500">加载中...</p>}
+          {loading && items.length === 0 && <p className="text-stone-500">加载中...</p>}
           {items.length === 0 && !loading && (
-            <div className="text-center py-16">
-              <p className="text-gray-500 mb-4">暂无 Pipeline</p>
-              <button onClick={onCreateNew} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded">创建 Pipeline</button>
+            <div className="text-center py-20">
+              <p className="text-stone-400 mb-4">暂无 Pipeline</p>
+              <button onClick={onCreateNew} className="nav-btn px-4 py-2 bg-brass-500 hover:bg-brass-400 text-ink-950 rounded font-medium transition-all">创建 Pipeline</button>
             </div>
           )}
-          <div className="bg-cinema-800 rounded-lg border border-cinema-700 overflow-hidden">
-            <div className="grid grid-cols-12 gap-4 p-3 bg-cinema-700 text-xs text-gray-300 font-semibold">
+          <div className="bg-ink-900 rounded-lg border border-ink-700 overflow-hidden">
+            <div className="grid grid-cols-12 gap-4 p-3 bg-ink-800 text-xs text-stone-300 font-semibold">
               <div className="col-span-4">名称</div>
               <div className="col-span-2">状态</div>
               <div className="col-span-1">步骤</div>
@@ -789,12 +936,13 @@
               <div className="col-span-2">运行时长</div>
             </div>
             {sorted.map(p => (
-              <div key={p.pipeline_id} onClick={() => onSelect(p.pipeline_id)} className="grid grid-cols-12 gap-4 p-3 border-t border-cinema-700 cursor-pointer hover:bg-cinema-700/50">
-                <div className="col-span-4 text-white text-sm font-medium truncate" title={p.name}>{p.name || p.pipeline_id.slice(-8)}</div>
+              <div key={p.pipeline_id} onClick={() => onSelect(p.pipeline_id)}
+                className="grid grid-cols-12 gap-4 p-3 border-t border-ink-700 cursor-pointer hover:bg-ink-800/50 transition-colors">
+                <div className="col-span-4 text-stone-100 text-sm font-medium truncate" title={p.name}>{p.name || p.pipeline_id.slice(-8)}</div>
                 <div className="col-span-2"><StatusBadge status={p.status} /></div>
-                <div className="col-span-1 text-gray-400 text-xs">步骤 {p.step}/5</div>
-                <div className="col-span-3 text-gray-400 text-xs">{new Date(p.created_at).toLocaleString()}</div>
-                <div className="col-span-2 text-gray-400 text-xs">{formatDuration(p.duration) || '-'}</div>
+                <div className="col-span-1 text-stone-400 text-xs">步骤 {p.step}/5</div>
+                <div className="col-span-3 text-stone-400 text-xs">{new Date(p.created_at).toLocaleString()}</div>
+                <div className="col-span-2 text-stone-400 text-xs">{formatDuration(p.duration) || '-'}</div>
               </div>
             ))}
           </div>
@@ -818,104 +966,81 @@
       };
 
       const navigateTo = (view, id = null) => {
-        if (view === 'detail' && id) {
-          window.location.hash = `#/pipelines/${id}`;
-        } else if (view === 'create') {
-          window.location.hash = '#/create';
-        } else {
-          window.location.hash = '#';
-        }
+        if (view === 'detail' && id) { window.location.hash = `#/pipelines/${id}`; }
+        else if (view === 'create') { window.location.hash = '#/create'; }
+        else { window.location.hash = '#'; }
       };
 
       const refreshSelected = useCallback(async () => {
         if (!pipelineId) return;
         try {
           const res = await api(`/pipelines/${pipelineId}`);
-          if (res.ok) {
-            const data = await res.json();
-            setSelected(data);
-          }
+          if (res.ok) { const data = await res.json(); setSelected(data); }
         } catch (e) { console.error(e); }
       }, [pipelineId]);
 
-      // Sync state with hash
       useEffect(() => {
         const onHashChange = () => {
           const { view: v, id } = getHashView();
           if (v === 'detail' && id) {
             api(`/pipelines/${id}`).then(res => {
               if (res.ok) {
-                res.json().then(data => {
-                  setSelected(data);
-                  setCurrentView('detail');
-                  setPipelineId(id);
-                });
-              } else {
-                // Pipeline doesn't exist on server (e.g., Railway restart)
-                navigateTo('list');
-              }
+                res.json().then(data => { setSelected(data); setCurrentView('detail'); setPipelineId(id); });
+              } else { navigateTo('list'); }
             });
-          } else if (v === 'create') {
-            setCurrentView('create');
-            setPipelineId(null);
-            setSelected(null);
-          } else {
-            setCurrentView('list');
-            setPipelineId(null);
-            setSelected(null);
-          }
+          } else if (v === 'create') { setCurrentView('create'); setPipelineId(null); setSelected(null); }
+          else { setCurrentView('list'); setPipelineId(null); setSelected(null); }
         };
         window.addEventListener('hashchange', onHashChange);
-        // Initial load from hash
         onHashChange();
         return () => window.removeEventListener('hashchange', onHashChange);
       }, []);
 
-      // Poll when running
       useEffect(() => {
-        if (currentView === 'detail' && selected && (selected.status === 'running' || selected.status?.startsWith('step_'))) {
-          pollRef.current = setInterval(refreshSelected, 3000);
-        } else if (pollRef.current) {
-          clearInterval(pollRef.current);
-          pollRef.current = null;
+        if (currentView === 'detail' && selected) {
+          const shouldPoll = selected.status === 'running' || selected.status?.startsWith('step_');
+          if (shouldPoll) {
+            pollRef.current = setInterval(refreshSelected, 3000);
+          }
         }
-        return () => { if (pollRef.current) clearInterval(pollRef.current); };
+        return () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
       }, [currentView, selected, refreshSelected]);
 
-      const selectPipeline = async (id) => {
-        navigateTo('detail', id);
-      };
+      const selectPipeline = async (id) => { navigateTo('detail', id); };
 
-      // Initial health check
       useEffect(() => {
         (async () => {
-          try {
-            const res = await api('/health');
-            setHealth(res.ok);
-          } catch (e) { setHealth(false); }
+          try { const res = await api('/health'); setHealth(res.ok); }
+          catch (e) { setHealth(false); }
         })();
       }, []);
 
       return (
         <div className="min-h-screen flex flex-col">
-          <header className="bg-cinema-800 border-b border-cinema-700 px-6 py-4 flex items-center justify-between">
-            <button onClick={() => navigateTo('list')} className="flex items-center gap-3 hover:opacity-80 transition">
-              <div className="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center text-white font-bold text-lg">F</div>
-              <h1 className="text-xl font-bold text-white">Film Pipeline Studio</h1>
+          <header className="bg-ink-900 border-b border-ink-700 px-6 py-4 flex items-center justify-between">
+            <button onClick={() => navigateTo('list')} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+              <div className="w-9 h-9 bg-brass-500 rounded flex items-center justify-center text-ink-950 font-heading font-bold text-lg">F</div>
+              <div>
+                <h1 className="font-heading text-lg font-semibold text-stone-100 leading-tight">Film Pipeline Studio</h1>
+                <p className="text-xs text-stone-500 leading-tight">AI 剧本到电影</p>
+              </div>
             </button>
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${health ? 'bg-emerald-400' : 'bg-red-500'}`} />
-                <span className="text-sm text-gray-400">{health ? '服务正常' : '服务离线'}</span>
+                <div className={`w-2 h-2 rounded-full ${health ? 'bg-leaf-400' : 'bg-clay-500'}`} />
+                <span className="text-sm text-stone-400">{health ? '在线' : '离线'}</span>
               </div>
-              <button onClick={() => navigateTo('create')} className="text-sm px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded">新建 Pipeline</button>
+              <button onClick={() => navigateTo('create')}
+                className="nav-btn text-sm px-3 py-1.5 bg-brass-500 hover:bg-brass-400 text-ink-950 rounded font-medium transition-all">
+                新建 Pipeline
+              </button>
             </div>
           </header>
 
           <main className="flex-1 p-6 overflow-auto">
             {currentView === 'create' && (
-              <div className="max-w-2xl mx-auto">
-                <button onClick={() => navigateTo('list')} className="text-sm text-gray-400 hover:text-white mb-4">← 返回列表</button>
+              <div className="max-w-xl mx-auto">
+                <button onClick={() => navigateTo('list')} className="nav-btn text-sm text-stone-400 hover:text-brass-400 mb-4 transition-colors">← 返回列表</button>
                 <CreatePipeline onCreated={(id) => { selectPipeline(id); }} />
               </div>
             )}
@@ -923,7 +1048,7 @@
             {currentView === 'list' && (
               <div>
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-lg font-semibold text-white">Pipeline 列表</h2>
+                  <h2 className="font-heading text-lg font-semibold text-stone-100">Pipeline 列表</h2>
                 </div>
                 <PipelineList onSelect={selectPipeline} onCreateNew={() => navigateTo('create')} />
               </div>
@@ -931,13 +1056,13 @@
 
             {currentView === 'detail' && selected && (
               <div className="max-w-4xl mx-auto">
-                <button onClick={() => navigateTo('list')} className="text-sm text-gray-400 hover:text-white mb-4">← 返回列表</button>
+                <button onClick={() => navigateTo('list')} className="nav-btn text-sm text-stone-400 hover:text-brass-400 mb-4 transition-colors">← 返回列表</button>
                 <PipelineDetail pipeline={selected} onRefresh={refreshSelected} onBack={() => navigateTo('list')} />
               </div>
             )}
           </main>
 
-          <footer className="bg-cinema-800 border-t border-cinema-700 px-6 py-3 text-center text-xs text-gray-500">
+          <footer className="bg-ink-900 border-t border-ink-700 px-6 py-4 text-center text-xs text-stone-500">
             Film Pipeline Studio — AI Screenplay to Film Pipeline
           </footer>
         </div>
