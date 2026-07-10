@@ -905,6 +905,8 @@
         setActiveStep(n);
       };
       useEffect(() => {
+        const s = getStepFromHash();
+        if (s !== activeStep) setActiveStep(s);
         const onHash = () => { const s = getStepFromHash(); if (s !== activeStep) setActiveStep(s); };
         window.addEventListener('hashchange', onHash);
         return () => window.removeEventListener('hashchange', onHash);

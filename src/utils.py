@@ -10,8 +10,8 @@ from config import config
 
 
 def ensure_output_dir(*subdirs: str) -> Path:
-    """Create and return output subdirectory path."""
-    path = Path(config.OUTPUT_DIR).joinpath(*subdirs)
+    """Create and return output subdirectory path (absolute)."""
+    path = Path(config.OUTPUT_DIR).resolve().joinpath(*subdirs)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
