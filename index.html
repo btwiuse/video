@@ -193,6 +193,7 @@
       useEffect(() => {
         if (!isStepDone && !isStepRunning) { setArtifacts([]); return; }
         let cancelled = false;
+        let t;
         const fetchArtifacts = async () => {
           try {
             const res = await api(`/pipelines/${pipelineId}/artifacts`);
@@ -200,12 +201,11 @@
           } catch (e) { /* ignore */ }
         };
         fetchArtifacts();
-        if (isStepRunning) {
-          const t = setInterval(() => { if (!document.hidden) fetchArtifacts(); }, 10000);
-          return () => { cancelled = true; clearInterval(t); };
+        if (isStepRunning || (!isStepDone && pipeline.status !== 'done' && pipeline.status !== 'failed')) {
+          t = setInterval(() => { if (!document.hidden) fetchArtifacts(); }, 15000);
         }
-        return () => { cancelled = true; };
-      }, [pipelineId, isStepDone, isStepRunning]);
+        return () => { cancelled = true; if (t) clearInterval(t); };
+      }, [pipelineId, isStepDone, isStepRunning, pipeline.status]);
 
       const previewUrl = async (name) => {
         if (previews[name]) { setPreviews(p => { const n = {...p}; delete n[name]; return n; }); return; }
@@ -638,9 +638,10 @@
       useEffect(() => { loadLogs(); }, [loadLogs]);
 
       useEffect(() => {
-        const t = setInterval(() => { if (!document.hidden) loadLogs(); }, 10000);
+        if (pipeline.status === 'done' || pipeline.status === 'failed') return;
+        const t = setInterval(() => { if (!document.hidden) loadLogs(); }, 15000);
         return () => clearInterval(t);
-      }, [loadLogs]);
+      }, [loadLogs, pipeline.status]);
 
       useEffect(() => {
         if (autoScroll && logContainerRef.current) {

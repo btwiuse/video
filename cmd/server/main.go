@@ -367,8 +367,6 @@ func handleGetPipeline(w http.ResponseWriter, r *http.Request) {
 		savePipelineState(p)
 	}
 
-	vlog("pipeline %s status=%s step=%d", id, p.Status, p.Step)
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"pipeline_id": p.ID,
