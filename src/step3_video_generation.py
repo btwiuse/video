@@ -153,12 +153,11 @@ class SeedanceProvider(VideoProvider):
 
             # 2. Poll until complete (retry 403 on poll)
             poll_failures = 0
-            poll_log_interval = 0
+            poll_elapsed = 0
             while True:
                 await asyncio.sleep(5)
-                poll_log_interval += 1
-                if poll_log_interval % 6 == 0:
-                    logger.info("  poll %s: waiting (%.0fs)...", shot_id, poll_log_interval * 5)
+                poll_elapsed += 5
+                logger.info("  poll %s: waiting %ds...", shot_id, poll_elapsed)
                 poll = await client.get(
                     f"{self.ARK_BASE}/contents/generations/tasks/{task_id}",
                     headers=self._headers,
