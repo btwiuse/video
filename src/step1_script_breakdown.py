@@ -194,7 +194,7 @@ class StoryboardGenerator:
 
     def __init__(self):
         import httpx
-        self.model = config.DEEPSEEK_MODEL
+        self.model = config.DEEPSEEK_REASONING_MODEL if config.DEEPSEEK_USE_REASONING else config.DEEPSEEK_MODEL
         logger.info("DeepSeek tool-calling mode: model=%s base=%s", self.model, config.DEEPSEEK_BASE_URL)
         http_client = httpx.Client(
             timeout=config.DEEPSEEK_TIMEOUT,

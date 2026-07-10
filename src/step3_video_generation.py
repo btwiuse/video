@@ -145,7 +145,7 @@ class SeedanceProvider(VideoProvider):
             if task_id is None:
                 return VideoResult(
                     shot_id=shot_id, path=output_path, status="failed",
-                    error=f"Create task failed after 3 retries: {last_error}",
+                    error=f"Create task failed after 10 retries: {last_error}",
                 )
 
             # 2. Poll until complete (retry 403 on poll)
@@ -161,7 +161,7 @@ class SeedanceProvider(VideoProvider):
                     if poll_failures >= 10:
                         return VideoResult(
                             shot_id=shot_id, path=output_path, status="failed",
-                            error="Poll failed after 3 retries (403)",
+                            error="Poll failed after 10 retries (403)",
                         )
                     continue
                 poll_failures = 0

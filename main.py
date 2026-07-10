@@ -244,9 +244,6 @@ def status():
             print(f"  ⬜ {step}: not yet generated")
 
 
-if __name__ == "__main__":
-    cli()
-
 @cli.command("summarize")
 @click.argument("script_file", type=click.Path(exists=True))
 @click.option("--reasoning/--no-reasoning", default=None,
@@ -260,3 +257,7 @@ def summarize(script_file, reasoning):
     from src.summarize import summarize_script
     result = summarize_script(script_text)
     print(json.dumps(result, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    cli()

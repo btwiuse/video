@@ -788,7 +788,7 @@ class Step2Pipeline:
             lighting_description="",
             color_mood="",
             key_props_and_positions="",
-            window_view="",
+            window_exterior="",
         )
         return [("wide", wide_prompt)]
 
