@@ -1203,7 +1203,11 @@
         return viewMode === 'list' ? ta - tb : tb - ta;
       });
 
-      const formatDuration = (d) => d || '';
+      const formatDuration = (d) => {
+      if (!d) return '';
+      // Go's time.Duration.String() → "1h2m3.456789s" — round to integer seconds
+      return d.replace(/(\d+)\.\d+(s)/g, '$1$2');
+    };
 
       if (viewMode === 'grid') {
         return (

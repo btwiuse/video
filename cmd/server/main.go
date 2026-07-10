@@ -402,10 +402,13 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Reject if pipeline was canceled
-	if p.Status == StatusCanceled {
-		http.Error(w, "pipeline has been canceled", http.StatusConflict)
-		return
+	// Allow re-running a canceled pipeline — reset status
+	if p.Status == StatusCanceled || p.Status == StatusDone {
+		p.Status = StatusPending
+		p.Error = ""
+		p.Duration = ""
+		p.StartedAt = time.Time{}
+		savePipelineState(p)
 	}
 
 	// Validate dependencies
