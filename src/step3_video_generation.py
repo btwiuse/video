@@ -12,10 +12,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger("step3")
 
 import httpx
 
@@ -150,8 +153,12 @@ class SeedanceProvider(VideoProvider):
 
             # 2. Poll until complete (retry 403 on poll)
             poll_failures = 0
+            poll_log_interval = 0
             while True:
                 await asyncio.sleep(5)
+                poll_log_interval += 1
+                if poll_log_interval % 6 == 0:
+                    logger.info("  poll %s: waiting (%.0fs)...", shot_id, poll_log_interval * 5)
                 poll = await client.get(
                     f"{self.ARK_BASE}/contents/generations/tasks/{task_id}",
                     headers=self._headers,
