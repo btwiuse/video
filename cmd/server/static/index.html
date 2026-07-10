@@ -291,15 +291,15 @@
       const [autoScroll, setAutoScroll] = useState(true);
       const logContainerRef = useRef(null);
 
-      const loadLogs = useCallback(async () => {
-        setLoading(true);
+      const loadLogs = useCallback(async (userInitiated = false) => {
+        if (userInitiated) setLoading(true);
         try {
           const res = await api(`/pipelines/${pipelineId}/logs`);
           if (res.ok) {
             const text = await res.text();
             setLogs(text);
           }
-        } finally { setLoading(false); }
+        } finally { if (userInitiated) setLoading(false); }
       }, [pipelineId]);
 
       useEffect(() => { loadLogs(); }, [loadLogs]);
@@ -332,7 +332,7 @@
                 <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
                 自动滚动
               </label>
-              <button onClick={loadLogs} disabled={loading} className="text-sm text-indigo-400 hover:text-indigo-300">
+              <button onClick={() => loadLogs(true)} disabled={loading} className="text-sm text-indigo-400 hover:text-indigo-300">
                 {loading ? '刷新中...' : '刷新'}
               </button>
             </div>
