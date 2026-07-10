@@ -723,6 +723,7 @@ class Step2Pipeline:
                     return None
                 r.label = shot_id
                 logger.info("  %s: start frame done", shot_id)
+                return r
 
             results: list[ImageResult | None] = []
             for s in shots:
