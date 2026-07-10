@@ -436,7 +436,7 @@
                 onView={viewJson} onDownload={download} onCopy={copyToClipboard} onToggle={toggleExpand} />
             ))}
             {topDirs.map(d => (
-              <DirNode key={d} name={d} node={tree[d]} level={0} path=""
+              <DirNode key={d} name={d} node={tree.__children[d]} level={0} path=""
                 treeOpen={treeOpen} onToggleDir={toggleDir}
                 expanded={expanded} onView={viewJson} onDownload={download} onCopy={copyToClipboard} onToggle={toggleExpand} />
             ))}
