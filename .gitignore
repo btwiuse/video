@@ -48,8 +48,6 @@ temp-audio.m4a
 
 # Go
 server
-cmd/server/*.wasm
-*.wasm
 go.sum
 
 # Build output
