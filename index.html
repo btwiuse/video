@@ -833,9 +833,20 @@
                 )}
               </div>
             )}
-            {scenes.map((scene, si) => {
-              const sceneShots = shots.filter(s => s.full_shot_id?.startsWith(scene.scene_id));
-              const isExpanded = expandedScenes[scene.scene_id];
+            {scenes.length > 0 && (
+              <div className="bg-ink-900 rounded border border-ink-700 overflow-hidden">
+                <div
+                  className="flex items-center justify-between p-3 cursor-pointer hover:bg-ink-800 transition-colors"
+                  onClick={() => setExpandedScenes(prev => ({ ...prev, _all: !prev._all }))}
+                >
+                  <h4 className="text-sm font-semibold text-stone-300">场景</h4>
+                  <span className="text-xs text-stone-500">{expandedScenes._all ? '收起' : '展开'}</span>
+                </div>
+                {expandedScenes._all && (
+                  <div className="border-t border-ink-700">
+                    {scenes.map((scene, si) => {
+                      const sceneShots = shots.filter(s => s.full_shot_id?.startsWith(scene.scene_id));
+                      const isExpanded = expandedScenes[scene.scene_id] || false;
               return (
                 <div key={scene.scene_id} className="bg-ink-900 rounded border border-ink-700 overflow-hidden">
                   <div
@@ -919,6 +930,10 @@
                 </div>
               );
             })}
+                    </div>
+                  )}
+              </div>
+            )}
           </div>
         </div>
       );
