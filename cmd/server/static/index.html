@@ -383,9 +383,17 @@
             {characters.length > 0 && (
               <div className="bg-cinema-800 rounded border border-cinema-700 p-3">
                 <h4 className="text-sm font-semibold text-gray-300 mb-2">角色</h4>
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                   {characters.map(c => (
-                    <span key={c.ref_id} className="text-xs px-2 py-1 bg-cinema-700 rounded text-gray-300">{c.ref_id}</span>
+                    <div key={c.ref_id} className="flex flex-col items-center gap-1">
+                      <img
+                        src={`/pipelines/${pipelineId}/artifacts/characters/${encodeURIComponent(c.ref_id)}_front.jpg`}
+                        alt={c.ref_id}
+                        className="w-20 h-20 object-cover rounded-lg bg-cinema-700"
+                        onError={e => { e.target.style.display = 'none'; }}
+                      />
+                      <span className="text-xs text-gray-400 truncate max-w-full">{c.ref_id}</span>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -399,23 +407,42 @@
                     className="flex items-center justify-between p-3 cursor-pointer hover:bg-cinema-750"
                     onClick={() => setExpandedScenes(prev => ({ ...prev, [scene.scene_id]: !prev[scene.scene_id] }))}
                   >
-                    <div className="flex-1 min-w-0">
-                      <span className="text-white text-sm font-medium">{scene.scene_id}</span>
-                      <span className="text-gray-500 text-xs ml-2">{sceneShots.length} 镜</span>
+                    <div className="flex-1 min-w-0 flex items-center gap-2">
+                      <img
+                        src={`/pipelines/${pipelineId}/artifacts/scenes/${scene.scene_id}_detail.jpg`}
+                        alt={scene.scene_id}
+                        className="w-12 h-8 object-cover rounded flex-shrink-0 bg-cinema-700"
+                        onError={e => { e.target.style.display = 'none'; }}
+                      />
+                      <div>
+                        <span className="text-white text-sm font-medium">{scene.scene_id}</span>
+                        <span className="text-gray-500 text-xs ml-2">{sceneShots.length} 镜</span>
+                      </div>
                     </div>
                     <span className="text-gray-400 text-xs">{isExpanded ? '收起' : '展开'}</span>
                   </div>
                   {isExpanded && (
-                    <div className="border-t border-cinema-700 divide-y divide-cinema-700">
+                    <div className="border-t border-cinema-700">
                       {sceneShots.map((shot, i) => (
-                        <div key={shot.full_shot_id} className="p-3 bg-cinema-900/50">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-xs font-bold text-indigo-400">{shot.full_shot_id}</span>
-                            <span className="text-xs text-gray-400 bg-cinema-700 px-1.5 py-0.5 rounded">{shot.transition_type || '-'}</span>
-                            <span className="text-xs text-gray-500">{shot.duration_sec != null ? (Number.isInteger(shot.duration_sec) ? shot.duration_sec : shot.duration_sec.toFixed(1)) + '秒' : '-'}</span>
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            {`Scene ${si+1} 第${i+1}镜`}
+                        <div key={shot.full_shot_id} className="p-3 bg-cinema-900/50 flex gap-3 border-b border-cinema-700">
+                          <img
+                            src={`/pipelines/${pipelineId}/artifacts/shots/${shot.full_shot_id}/${shot.full_shot_id}_startframe.jpg`}
+                            alt={shot.full_shot_id}
+                            className="w-24 h-14 object-cover rounded flex-shrink-0 bg-cinema-700"
+                            onError={e => {
+                              e.target.src = `/pipelines/${pipelineId}/artifacts/shots/${shot.full_shot_id}/${shot.full_shot_id}_startframe.png`;
+                              e.target.onerror = () => { e.target.style.display = 'none'; };
+                            }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs font-bold text-indigo-400">{shot.full_shot_id}</span>
+                              <span className="text-xs text-gray-400 bg-cinema-700 px-1.5 py-0.5 rounded">{shot.transition_type || '-'}</span>
+                              <span className="text-xs text-gray-500">{shot.duration_sec != null ? (Number.isInteger(shot.duration_sec) ? shot.duration_sec : shot.duration_sec.toFixed(1)) + '秒' : '-'}</span>
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {`Scene ${si+1} 第${i+1}镜`}
+                            </div>
                           </div>
                         </div>
                       ))}
