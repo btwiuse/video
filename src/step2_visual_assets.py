@@ -1071,7 +1071,8 @@ class Step2Pipeline:
                 target = os.path.join(shot_dir, f"{shot_id}_startframe{ext}")
                 old_glob = glob.glob(os.path.join(shot_dir, f"{shot_id}_startframe.*"))
                 for old in old_glob:
-                    os.remove(old)
+                    if not old.endswith(('.md', '.txt', '.json')):
+                        os.remove(old)
                 shutil.move(r.path, target)
                 r.path = target
                 logger.info("  %s: start frame regenerated -> %s", shot_id, target)
