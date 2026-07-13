@@ -1110,6 +1110,7 @@ func main() {
 	mux := http.NewServeMux()
 	mime.AddExtensionType(".css", "text/css")
 	mime.AddExtensionType(".js", "application/javascript")
+	mime.AddExtensionType(".jsx", "application/javascript")
 	mux.HandleFunc("/", serveHome)
 	mux.HandleFunc("/health", handleHealth)
 	mux.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("js"))))
