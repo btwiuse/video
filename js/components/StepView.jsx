@@ -502,7 +502,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
               )}
             </div>
             {promptText !== null && (
-              <div className="bg-ink-900/95 border border-ink-700 rounded p-4 max-h-[70vh] overflow-y-auto min-w-[280px] max-w-full lg:max-w-[40vw] flex flex-col gap-3">
+              <div className="bg-ink-900/95 border border-ink-700 rounded p-4 self-stretch max-h-[70vh] overflow-y-auto min-w-[280px] max-w-full lg:max-w-[40vw] flex flex-col gap-3 min-h-0">
                 <div className="flex items-center justify-between flex-shrink-0">
                   <h4 className="text-xs text-stone-400 font-medium">生成提示词</h4>
                   {editingLightbox ? (
@@ -534,10 +534,10 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                     key={lightboxName}
                     defaultValue={editPrompt}
                     onChange={e => setEditPrompt(e.target.value)}
-                    className="w-full flex-1 bg-ink-950 text-stone-300 text-xs p-3 rounded border border-ink-700 font-mono resize-y min-h-[160px]"
+                    className="w-full flex-1 bg-ink-950 text-stone-300 text-xs p-3 rounded border border-ink-700 font-mono resize-y"
                   />
                 ) : (
-                  <div className="markdown-body max-h-[55vh] overflow-y-auto">
+                  <div className="markdown-body flex-1 min-h-0 overflow-y-auto">
                     <div dangerouslySetInnerHTML={{__html: marked.parse(promptText)}} />
                   </div>
                 )}
