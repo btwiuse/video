@@ -928,14 +928,21 @@ class StoryboardGenerator:
             "",
             f"| 字段 | 值 |",
             f"|------|----|",
-            f"| 场景 | {shot.get('scene_id', '')} |",
-            f"| 时长 | {shot.get('duration_sec', '')}s |",
-            f"| 衔接 | {shot.get('transition_type', '')} |",
-            f"| 景别 | {shot.get('shot_size', '')} |",
-            f"| 机位 | {shot.get('camera_position', '')} |",
-            f"| 运镜 | {shot.get('camera_movement', '')} |",
-            f"| 角色 | {', '.join(_ensure_list(shot.get('character_refs', [])))} |",
-            "",
+        ]
+        # Only include rows with non-empty values
+        table_rows = [
+            ("场景", shot.get("scene_id", "")),
+            ("时长", f"{shot.get('duration_sec', '')}s" if shot.get('duration_sec') else ""),
+            ("衔接", shot.get("transition_type", "")),
+            ("景别", shot.get("shot_size", "")),
+            ("机位", shot.get("camera_position", "")),
+            ("运镜", shot.get("camera_movement", "")),
+            ("角色", ', '.join(_ensure_list(shot.get("character_refs", [])))),
+        ]
+        for label, value in table_rows:
+            if value.strip():
+                lines.append(f"| {label} | {value} |")
+        lines.append("")
             f"## 画面内容",
             f"- 前景：{shot.get('visual_foreground', '')}",
             f"- 主体：{shot.get('visual_subject', '')}",
