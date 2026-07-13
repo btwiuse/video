@@ -25,6 +25,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
   const [stepReloadKey, setStepReloadKey] = useState(0);
   const [storyboardData, setStoryboardData] = useState(null);
   const prevPipelineRef = useRef(pipeline);
+  const textareaRef = useRef(null);
 
   useEffect(() => {
     const prev = prevPipelineRef.current;
@@ -513,7 +514,9 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                   </button>
                 </div>
                 <textarea
-                  value={editPrompt}
+                  ref={textareaRef}
+                  key={lightboxName}
+                  defaultValue={editPrompt}
                   onChange={e => setEditPrompt(e.target.value)}
                   className="w-full flex-1 bg-ink-950 text-stone-300 text-xs p-3 rounded border border-ink-700 font-mono resize-y min-h-[160px]"
                 />
