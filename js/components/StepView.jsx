@@ -132,7 +132,8 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
     if (pp) {
       try {
         const cb = cacheBust[name];
-        const res = await api(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(pp)}${cb ? '?ck=' + cb : ''}`);
+        const enc = pp.split('/').map(s => encodeURIComponent(s)).join('/');
+        const res = await api(`/pipelines/${pipelineId}/artifacts/${enc}${cb ? '?ck=' + cb : ''}`);
         if (res.ok) { const t = await res.text(); setPromptText(t); setEditPrompt(t); }
       } catch (_) {}
     }
@@ -510,7 +511,8 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                         if (!pp) return;
                         setPromptSaving(true);
                         const val = textareaRef.current?.value ?? editPrompt;
-                        const res = await api(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(pp)}`, { method: 'PUT', body: val });
+                        const enc = pp.split('/').map(s => encodeURIComponent(s)).join('/');
+                        const res = await api(`/pipelines/${pipelineId}/artifacts/${enc}`, { method: 'PUT', body: val });
                         if (res.ok) { setPromptText(val); }
                         setPromptSaving(false);
                         setEditingLightbox(false);
