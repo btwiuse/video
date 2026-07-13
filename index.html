@@ -428,7 +428,7 @@
               {sceneImages.length > 0 && (
                 <div>
                   <h4 className="text-sm font-semibold text-stone-300 mb-3">场景参考</h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {sceneImages.map(f => {
                       const label = f.name.split('/')[1]?.replace(/\.(jpg|jpeg|png)$/, '');
                       const isRegen = regenerating['scene_' + label];
