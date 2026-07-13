@@ -20,7 +20,7 @@ function LogViewer({ pipelineId }) {
       const res = await api(`/pipelines/${pipelineId}/logs`);
       if (res.ok) {
         const text = await res.text();
-        setLogs(text);
+        setLogs(text.replace(/\r\n/g, '\n').replace(/\r/g, '\n'));
       }
     } catch (e) { /* ignore */ }
   }, [pipelineId]);
