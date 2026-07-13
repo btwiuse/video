@@ -131,7 +131,8 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
     const pp = promptPathFromImage(name);
     if (pp) {
       try {
-        const res = await api(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(pp)}`);
+        const cb = cacheBust[name];
+        const res = await api(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(pp)}${cb ? '?ck=' + cb : ''}`);
         if (res.ok) { const t = await res.text(); setPromptText(t); setEditPrompt(t); }
       } catch (_) {}
     }
