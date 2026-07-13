@@ -6,6 +6,7 @@ const [selected, setSelected] = useState(null);
 const [health, setHealth] = useState(null);
 const [currentView, setCurrentView] = useState('list');
 const [pipelineId, setPipelineId] = useState(null);
+const [theme, setTheme] = useState(() => { try { return localStorage.getItem('pipelineTheme') || 'default'; } catch { return 'default'; } });
 const pollRef = useRef(null);
 
 const getHashView = () => {
@@ -66,6 +67,11 @@ useEffect(() => {
   })();
 }, []);
 
+useEffect(() => {
+  document.body.className = theme === 'default' ? '' : `theme-${theme}`;
+  try { localStorage.setItem('pipelineTheme', theme); } catch {}
+}, [theme]);
+
 return (
   <div className="min-h-screen flex flex-col">
     <header className="bg-ink-900 border-b border-ink-700 px-6 py-4 flex items-center justify-between">
@@ -76,7 +82,17 @@ return (
           <p className="text-xs text-stone-500 leading-tight">AI 剧本到电影</p>
         </div>
       </button>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
+        <select value={theme} onChange={e => setTheme(e.target.value)}
+          className="text-xs bg-ink-800 text-stone-400 border border-ink-700 rounded px-2 py-1 focus:outline-none focus:border-brass-500 cursor-pointer">
+          <option value="default">默认主题</option>
+          <option value="carbon">碳纤维</option>
+          <option value="stripes">斜纹</option>
+          <option value="dots">波点</option>
+          <option value="checker">棋盘</option>
+          <option value="argyle">菱形</option>
+          <option value="wave">波纹</option>
+        </select>
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${health ? 'bg-leaf-400' : 'bg-clay-500'}`} />
           <span className="text-sm text-stone-400">{health ? '在线' : '离线'}</span>

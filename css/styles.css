@@ -34,3 +34,55 @@ body {
   .nav-btn:hover { transform: none; }
 }
 
+/* ── Theme system ── */
+body { background-color: #0d0c0b; background-blend-mode: overlay; background-size: auto; }
+
+body.theme-carbon {
+  background-color: #1a1a1a;
+  background-image:
+    radial-gradient(circle at 25% 25%, rgba(255,255,255,0.04) 1px, transparent 1px),
+    radial-gradient(circle at 75% 75%, rgba(255,255,255,0.04) 1px, transparent 1px),
+    linear-gradient(45deg, rgba(0,0,0,0.1) 25%, transparent 25%, transparent 75%, rgba(0,0,0,0.1) 75%),
+    linear-gradient(45deg, rgba(0,0,0,0.1) 25%, transparent 25%, transparent 75%, rgba(0,0,0,0.1) 75%);
+  background-size: 60px 60px, 60px 60px, 20px 20px, 20px 20px;
+  background-position: 0 0, 30px 30px, 0 0, 10px 10px;
+}
+
+body.theme-stripes {
+  background-color: #0d0c0b;
+  background-image: repeating-linear-gradient(45deg, rgba(201,168,76,0.06) 0px, rgba(201,168,76,0.06) 2px, transparent 2px, transparent 8px);
+  background-size: 12px 12px;
+}
+
+body.theme-dots {
+  background-color: #0d0c0b;
+  background-image: radial-gradient(rgba(201,168,76,0.1) 1.5px, transparent 1.5px);
+  background-size: 24px 24px;
+}
+
+body.theme-checker {
+  background-color: #1a1816;
+  background-image:
+    linear-gradient(45deg, rgba(255,255,255,0.03) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.03) 75%),
+    linear-gradient(45deg, rgba(255,255,255,0.03) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.03) 75%);
+  background-size: 40px 40px, 40px 40px;
+  background-position: 0 0, 20px 20px;
+}
+
+body.theme-argyle {
+  background-color: #0d0c0b;
+  background-image:
+    linear-gradient(135deg, rgba(106,160,122,0.08) 25%, transparent 25%, transparent 50%, rgba(106,160,122,0.08) 50%, rgba(106,160,122,0.08) 75%, transparent 75%),
+    linear-gradient(45deg, rgba(106,160,122,0.08) 25%, transparent 25%, transparent 50%, rgba(106,160,122,0.08) 50%, rgba(106,160,122,0.08) 75%, transparent 75%);
+  background-size: 40px 40px, 40px 40px;
+}
+
+body.theme-wave {
+  background-color: #0d0c0b;
+  background-image:
+    radial-gradient(ellipse at 20% 50%, rgba(201,168,76,0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 60% 50%, rgba(201,168,76,0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 50%, rgba(201,168,76,0.06) 0%, transparent 50%);
+  background-size: 100% 100%, 100% 100%, 100% 100%;
+}
+
