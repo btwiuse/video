@@ -20,7 +20,15 @@ function LogViewer({ pipelineId }) {
       const res = await api(`/pipelines/${pipelineId}/logs`);
       if (res.ok) {
         const text = await res.text();
-        setLogs(text.replace(/\r\n/g, '\n').replace(/\r/g, '\n'));
+        // Normalize line endings and strip tqdm artifacts
+        const cleaned = text
+          .replace(/\r\n/g, '\n')
+          .replace(/\r/g, '\n')
+          .split('\n')
+          .filter(l => l.trim() || l === '')
+          .map(l => l.trimEnd())
+          .join('\n');
+        setLogs(cleaned);
       }
     } catch (e) { /* ignore */ }
   }, [pipelineId]);
