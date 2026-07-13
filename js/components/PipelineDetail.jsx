@@ -43,6 +43,11 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
   };
   const currentStep = getCurrentStep();
   const pid = pipeline.pipeline_id;
+  // Same availability check as StepTabs: a step is available if completed or isNext
+  const stepAvailable = (n) => {
+    if (pipeline.status === 'done') return n <= 5;
+    return n <= currentStep || n === currentStep + 1;
+  };
 
   // Step tab routing via hash
   const getDefaultStep = () => {
@@ -128,6 +133,44 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
     } catch (e) { toast.error(`删除失败: ${e.message}`); }
   };
 
+  const handleDownloadFinalVideo = async () => {
+    try {
+      const url = artifactUrl(pid, 'final.mp4');
+      const res = await fetch(url);
+      if (!res.ok) {
+        toast.error('最终视频尚未生成，请先完成全部步骤');
+        return;
+      }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `pipeline_${pid}_final.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(a.href);
+      toast('下载开始');
+    } catch (e) {
+      toast.error(`下载失败: ${e.message}`);
+    }
+  };
+
+  const handleNextStep = () => {
+    const next = activeStep + 1;
+    if (next > 5) return;
+    if (actionLoading || pipeline.status === 'running') {
+      toast('当前步骤正在运行中，请等待完成后进入下一步');
+      return;
+    }
+    if (!stepAvailable(next)) {
+      const cs = getCurrentStep();
+      toast(`请先完成「${STEP_NAMES[cs + 1]}」，再进入下一步`);
+      return;
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    navigateToStep(next);
+  };
+
   return (
     <div className="bg-ink-900 rounded-lg p-6 border border-ink-700">
       <div className="flex items-start justify-between mb-2">
@@ -165,9 +208,20 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
   totalDuration={totalDuration} setTotalDuration={setTotalDuration} />
 
       <div className="flex justify-end">
-        <button onClick={() => navigateToStep(Math.min(currentStep + 1, 5))} disabled={currentStep >= 5 || actionLoading} className="nav-btn text-xs px-2.5 py-1.5 bg-ink-700 hover:bg-ink-600 disabled:bg-ink-800/60 text-stone-300 hover:text-stone-100 disabled:text-stone-600 rounded transition-colors">
-          下一步 →
-        </button>
+        {currentStep >= 5 ? (
+          <button onClick={handleDownloadFinalVideo} className="nav-btn text-xs px-3 py-1.5 bg-brass-500 hover:bg-brass-400 text-ink-950 rounded transition-colors font-medium">
+            ↓ 下载最终视频
+          </button>
+        ) : (
+          <button onClick={handleNextStep}
+            className={`nav-btn text-xs px-2.5 py-1.5 rounded transition-colors font-medium ${
+              !stepAvailable(activeStep + 1) || actionLoading || pipeline.status === 'running'
+                ? 'bg-ink-800/60 text-stone-600 cursor-not-allowed'
+                : 'bg-brass-500 hover:bg-brass-400 text-ink-950'
+            }`}>
+            下一步 →
+          </button>
+        )}
       </div>
       <LogViewer pipelineId={pid} />
       <ArtifactList pipelineId={pid} />
