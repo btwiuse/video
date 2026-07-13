@@ -119,7 +119,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
     }
     if (name.startsWith('shots/')) {
       const m = name.match(/shots\/([^/]+)\/\1_startframe\./);
-      return m ? `shots/${m[1]}/${m[1]}.md` : null;
+      return m ? `shots/${m[1]}/${m[1]}_startframe.md` : null;
     }
     return null;
   };
