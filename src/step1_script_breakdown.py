@@ -134,7 +134,7 @@ TOOL_CREATE_SHOT = {
                 "shot_size": {"type": "string", "description": "景别"},
                 "camera_position": {"type": "string", "description": "机位描述"},
                 "camera_movement": {"type": "string", "description": "运镜描述"},
-                "action_description": {"type": "string", "description": "镜头内的完整动作流程，按时间顺序：0-N秒发生了什么、角色如何移动、肢体动作、表情变化、关键时间点。这是视频模型最核心的输入——视频是运动媒介，没有清晰的运动描述就得不到有意义的视频。每个镜头至少写3句动作描述。"},
+                "action_description": {"type": "string", "description": "镜头内的完整动作流程，按时间顺序每行一段，每行以时间标记开头（如【0-3秒】或 0-3秒：）。这是视频模型最核心的输入——视频是运动媒介，没有清晰的运动描述就得不到有意义的视频。每个镜头至少写3段。"},
                 "visual_foreground": {"type": "string", "description": "前景内容"},
                 "visual_subject": {"type": "string", "description": "主体（角色位置、表情、状态——不含运动，运动写在 action_description 中）"},
                 "visual_background": {"type": "string", "description": "背景内容"},
@@ -943,6 +943,7 @@ class StoryboardGenerator:
             if value.strip():
                 lines.append(f"| {label} | {value} |")
         lines.append("")
+        lines += [
             f"## 画面内容",
             f"- 前景：{shot.get('visual_foreground', '')}",
             f"- 主体：{shot.get('visual_subject', '')}",
@@ -950,7 +951,12 @@ class StoryboardGenerator:
             f"- 细节：{shot.get('visual_details', '')}",
             "",
             f"## 动作",
-            f"{shot.get('action_description', '') or '（无）'}",
+            "",
+] + [
+            f"- {line.strip()}"
+            for line in (shot.get('action_description', '') or '（无）').strip().split('\n')
+            if line.strip()
+] + [
             "",
             f"## 光影",
             f"- 主光：{shot.get('lighting_key', '')}",

@@ -490,14 +490,15 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 	// Also clear generated artifacts for this step
 	switch step {
 	case 1:
-		for _, sub := range []string{"characters", "scenes", "shots"} {
-			if d := filepath.Join(dir, sub); fileExists(d) {
-				os.RemoveAll(d)
-				vlog("pipeline %s cleared stale artifacts: %s/", id, sub)
+		for _, pattern := range []string{"characters/*.md", "scenes/*.md", "shots/*/*.md", "shots/*/deps.json"} {
+			matches, _ := filepath.Glob(filepath.Join(dir, pattern))
+			for _, m := range matches {
+				os.Remove(m)
 			}
 		}
+		vlog("pipeline %s cleared stale storyboard artifacts", id)
 	case 2:
-		for _, pattern := range []string{"characters/*", "scenes/*", "shots/*/*_startframe.*"} {
+		for _, pattern := range []string{"characters/*.jpg", "characters/*.png", "scenes/*.jpg", "scenes/*.png", "shots/*/*_startframe.*"} {
 			matches, _ := filepath.Glob(filepath.Join(dir, pattern))
 			for _, m := range matches {
 				os.Remove(m)
