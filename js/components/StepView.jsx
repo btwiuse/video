@@ -513,7 +513,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                         const val = textareaRef.current?.value ?? editPrompt;
                         const enc = pp.split('/').map(s => encodeURIComponent(s)).join('/');
                         const res = await api(`/pipelines/${pipelineId}/artifacts/${enc}`, { method: 'PUT', body: val });
-                        if (res.ok) { setPromptText(val); }
+                        if (res.ok) { setPromptText(val); setEditPrompt(val); }
                         setPromptSaving(false);
                         setEditingLightbox(false);
                       }} disabled={promptSaving} className="text-xs px-2 py-1 bg-leaf-500/20 text-leaf-400 rounded hover:bg-leaf-500/30 transition-colors disabled:opacity-40 cursor-pointer">
