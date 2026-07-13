@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run python
 """
 AI 剧本到电影系统 — CLI 入口
 
