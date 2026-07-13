@@ -1453,7 +1453,15 @@
                 {pipeline.duration && <span className="text-stone-500 text-xs">运行时长: {formatDuration(pipeline.duration)}</span>}
               </div>
             </div>
-            <button onClick={del} className="text-xs px-2.5 py-1.5 bg-ink-700 hover:bg-ink-600 text-clay-400 rounded transition-colors ml-4">删除</button>
+            <div className="flex items-center gap-2">
+              <button onClick={runAll} disabled={actionLoading || pipeline.status === 'done'} className="nav-btn text-xs px-2.5 py-1.5 bg-brass-500 hover:bg-brass-400 disabled:bg-ink-700 text-ink-950 rounded transition-colors disabled:text-stone-400 font-medium">
+                运行全部步骤
+              </button>
+              <button onClick={() => navigateToStep(Math.min(currentStep + 1, 5))} disabled={currentStep >= 5 || actionLoading} className="nav-btn text-xs px-2.5 py-1.5 bg-ink-700 hover:bg-ink-600 disabled:bg-ink-800/60 text-stone-300 hover:text-stone-100 disabled:text-stone-600 rounded transition-colors">
+                下一步
+              </button>
+              <button onClick={del} className="text-xs px-2.5 py-1.5 bg-ink-700 hover:bg-ink-600 text-clay-400 rounded transition-colors">删除</button>
+            </div>
           </div>
 
           <StepTabs currentStep={currentStep} pipelineStatus={pipeline.status} activeStep={activeStep} onNavigate={navigateToStep} />
@@ -1468,12 +1476,6 @@
   maxShotsPerScene={maxShotsPerScene} setMaxShotsPerScene={setMaxShotsPerScene}
   totalShots={totalShots} setTotalShots={setTotalShots}
   totalDuration={totalDuration} setTotalDuration={setTotalDuration} />
-
-          <div className="flex gap-3 mb-6">
-            <button onClick={runAll} disabled={actionLoading || pipeline.status === 'done'} className="nav-btn px-4 py-2 bg-brass-500 hover:bg-brass-400 disabled:bg-ink-700 text-ink-950 rounded text-sm font-medium transition-all disabled:text-stone-400">
-              运行全部步骤
-            </button>
-          </div>
 
           <LogViewer pipelineId={pid} />
           <ArtifactList pipelineId={pid} />
