@@ -472,19 +472,52 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 
 	vlog("pipeline %s step %d (%s) starting", id, step, stepNames[step])
 
-	// Clear this step's output file so frontend shows loading/empty state
-	stepOutput := map[int]string{
+	// Clear this step's output files so regeneration actually re-generates
+	stepOutputs := map[int]string{
 		1: "storyboard.json",
 		2: "manifest.json",
 		3: "clip_manifest.json",
 		4: "audio_manifest.json",
 		5: "final.mp4",
 	}
-	if f := stepOutput[step]; f != "" {
+	if f := stepOutputs[step]; f != "" {
 		fp := filepath.Join(dir, f)
 		if fileExists(fp) {
 			os.Remove(fp)
 			vlog("pipeline %s cleared stale output: %s", id, f)
+		}
+	}
+	// Also clear generated artifacts for this step
+	switch step {
+	case 1:
+		for _, sub := range []string{"characters", "scenes", "shots"} {
+			if d := filepath.Join(dir, sub); fileExists(d) {
+				os.RemoveAll(d)
+				vlog("pipeline %s cleared stale artifacts: %s/", id, sub)
+			}
+		}
+	case 2:
+		for _, pattern := range []string{"characters/*", "scenes/*", "shots/*/*_startframe.*"} {
+			matches, _ := filepath.Glob(filepath.Join(dir, pattern))
+			for _, m := range matches {
+				os.Remove(m)
+			}
+		}
+		vlog("pipeline %s cleared stale image artifacts", id)
+	case 3:
+		matches, _ := filepath.Glob(filepath.Join(dir, "shots/*/*.mp4"))
+		matches2, _ := filepath.Glob(filepath.Join(dir, "shots/*/*.webm"))
+		matches3, _ := filepath.Glob(filepath.Join(dir, "shots/*/*.mov"))
+		for _, m := range append(append(matches, matches2...), matches3...) {
+			os.Remove(m)
+		}
+		vlog("pipeline %s cleared stale video artifacts", id)
+	case 4:
+		for _, sub := range []string{"audio", "sfx", "bgm"} {
+			if d := filepath.Join(dir, sub); fileExists(d) {
+				os.RemoveAll(d)
+				vlog("pipeline %s cleared stale audio artifacts: %s/", id, sub)
+			}
 		}
 	}
 

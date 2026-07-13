@@ -215,6 +215,7 @@
       const [previews, setPreviews] = useState({});
       const [regenerating, setRegenerating] = useState({});
       const [cacheBust, setCacheBust] = useState({});
+      const [lightbox, setLightbox] = useState(null);
       const [stepReloadKey, setStepReloadKey] = useState(0);
       const prevPipelineRef = useRef(pipeline);
 
@@ -341,8 +342,9 @@
                             <img
                               src={artifactUrl(pipelineId, f.name, cb)}
                               alt={f.name.split('/').pop()}
-                              className="w-full h-full object-cover rounded bg-ink-700"
+                              className="w-full h-full object-cover rounded bg-ink-700 cursor-pointer"
                               onError={e => { e.target.style.display = 'none'; }}
+                              onClick={() => setLightbox(artifactUrl(pipelineId, f.name, cb))}
                             />
                             {isRegen && (
                               <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
@@ -388,8 +390,9 @@
                             <img
                               src={artifactUrl(pipelineId, f.name, cb)}
                               alt={f.name.split('/').pop()}
-                              className="w-full h-full object-cover rounded bg-ink-700"
+                              className="w-full h-full object-cover rounded bg-ink-700 cursor-pointer"
                               onError={e => { e.target.style.display = 'none'; }}
+                              onClick={() => setLightbox(artifactUrl(pipelineId, f.name, cb))}
                             />
                             {isRegen && (
                               <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
@@ -436,8 +439,9 @@
                             <img
                               src={artifactUrl(pipelineId, f.name, cb)}
                               alt={f.name.split('/').pop()}
-                              className="w-full h-full object-cover rounded bg-ink-700"
+                              className="w-full h-full object-cover rounded bg-ink-700 cursor-pointer"
                               onError={e => { e.target.style.display = 'none'; }}
+                              onClick={() => setLightbox(artifactUrl(pipelineId, f.name, cb))}
                             />
                             {isRegen && (
                               <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
@@ -537,6 +541,26 @@
           {!isStepDone && !isStepRunning && (
             <div className="text-center py-8 text-stone-500 text-sm border border-dashed border-ink-700 rounded">
               此步骤尚未执行
+            </div>
+          )}
+          {lightbox && (
+            <div
+              className="fixed inset-0 z-50 bg-ink-950/90 flex items-center justify-center p-4 cursor-pointer"
+              onClick={() => setLightbox(null)}
+              onKeyDown={e => { if (e.key === 'Escape') setLightbox(null); }}
+              tabIndex={-1}
+              ref={el => { if (el) el.focus(); }}
+            >
+              <button
+                onClick={() => setLightbox(null)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-ink-900/80 hover:bg-clay-500/80 text-stone-400 hover:text-white flex items-center justify-center text-sm transition-all cursor-pointer z-10"
+              >✕</button>
+              <img
+                src={lightbox}
+                className="max-w-full max-h-full object-contain rounded cursor-default"
+                onClick={e => e.stopPropagation()}
+                alt="放大预览"
+              />
             </div>
           )}
         </div>
@@ -1247,10 +1271,9 @@
         if (pipeline.status === 'done') return 5;
         if (pipeline.status === 'running') return Math.max(0, (pipeline.step || 1) - 1);
         if (pipeline.status?.startsWith('step_')) {
-          const n = parseInt(pipeline.status.split('_')[1]);
-          return Math.max(0, n - 1);
+          return parseInt(pipeline.status.split('_')[1]);
         }
-        if (pipeline.status === 'failed') return Math.max(0, (pipeline.step || 1) - 1);
+        if (pipeline.status === 'failed' || pipeline.status === 'canceled') return Math.max(0, (pipeline.step || 1) - 1);
         return pipeline.step || 0;
       };
       const currentStep = getCurrentStep();
