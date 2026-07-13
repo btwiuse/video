@@ -943,55 +943,52 @@ class StoryboardGenerator:
             if value.strip():
                 lines.append(f"| {label} | {value} |")
         lines.append("")
-        lines += [
-            f"## 画面内容",
-            f"- 前景：{shot.get('visual_foreground', '')}",
-            f"- 主体：{shot.get('visual_subject', '')}",
-            f"- 背景：{shot.get('visual_background', '')}",
-            f"- 细节：{shot.get('visual_details', '')}",
-            "",
-            f"## 动作",
-            "",
-] + [
-            f"- {line.strip()}"
-            for line in (shot.get('action_description', '') or '（无）').strip().split('\n')
-            if line.strip()
-] + [
-            "",
-            f"## 光影",
-            f"- 主光：{shot.get('lighting_key', '')}",
-            f"- 辅光：{shot.get('lighting_fill', '')}",
-            f"- 光比：{shot.get('lighting_ratio', '')}",
-            f"- 氛围：{shot.get('lighting_mood', '')}",
-            "",
-            f"## 色彩",
-            f"- 主导：{shot.get('color_dominant', '')}",
-            f"- 点缀：{shot.get('color_accent', '')}",
-            f"- 参照：{shot.get('color_reference', '')}",
-            "",
-            f"## 构图与空间",
-            f"- 纵深：{shot.get('composition_depth', '')}",
-            f"- 锚点：{shot.get('composition_anchor', '')}",
-            f"- 方向：{shot.get('composition_direction', '')}",
-            f"- 位置：{shot.get('spatial_position', '')}",
-            f"- 前镜衔接：{shot.get('spatial_continuity_prev', '')}",
-            f"- 后镜预留：{shot.get('spatial_continuity_next', '')}",
-            "",
-            f"## 音频",
-            f"- 对白：{shot.get('dialogue_line', '') or '（无）'}",
-            f"- 音效：{shot.get('sfx_marks', '') or '（无）'}",
-            "",
-            f"## 视频 Prompt（正面）",
-            f"```",
-            f"{shot.get('positive_prompt', '')}",
-            f"```",
-            "",
-            f"## 视频 Prompt（负面）",
-            f"```",
-            f"{shot.get('negative_prompt', '')}",
-            f"```",
-            "",
-        ]
+        lines.append("## 画面内容")
+        lines.append(f"- 前景：{shot.get('visual_foreground', '')}")
+        lines.append(f"- 主体：{shot.get('visual_subject', '')}")
+        lines.append(f"- 背景：{shot.get('visual_background', '')}")
+        lines.append(f"- 细节：{shot.get('visual_details', '')}")
+        lines.append("")
+        lines.append("## 动作")
+        lines.append("")
+        for seg in (shot.get('action_description', '') or '（无）').strip().split('\n'):
+            seg = seg.strip()
+            if seg:
+                lines.append(f"- {seg}")
+        lines.append("")
+        lines.append("## 光影")
+        lines.append(f"- 主光：{shot.get('lighting_key', '')}")
+        lines.append(f"- 辅光：{shot.get('lighting_fill', '')}")
+        lines.append(f"- 光比：{shot.get('lighting_ratio', '')}")
+        lines.append(f"- 氛围：{shot.get('lighting_mood', '')}")
+        lines.append("")
+        lines.append("## 色彩")
+        lines.append(f"- 主导：{shot.get('color_dominant', '')}")
+        lines.append(f"- 点缀：{shot.get('color_accent', '')}")
+        lines.append(f"- 参照：{shot.get('color_reference', '')}")
+        lines.append("")
+        lines.append("## 构图与空间")
+        lines.append(f"- 纵深：{shot.get('composition_depth', '')}")
+        lines.append(f"- 锚点：{shot.get('composition_anchor', '')}")
+        lines.append(f"- 方向：{shot.get('composition_direction', '')}")
+        lines.append(f"- 位置：{shot.get('spatial_position', '')}")
+        lines.append(f"- 前镜衔接：{shot.get('spatial_continuity_prev', '')}")
+        lines.append(f"- 后镜预留：{shot.get('spatial_continuity_next', '')}")
+        lines.append("")
+        lines.append("## 音频")
+        lines.append(f"- 对白：{shot.get('dialogue_line', '') or '（无）'}")
+        lines.append(f"- 音效：{shot.get('sfx_marks', '') or '（无）'}")
+        lines.append("")
+        lines.append("## 视频 Prompt（正面）")
+        lines.append("```")
+        lines.append(shot.get('positive_prompt', ''))
+        lines.append("```")
+        lines.append("")
+        lines.append("## 视频 Prompt（负面）")
+        lines.append("```")
+        lines.append(shot.get('negative_prompt', ''))
+        lines.append("```")
+        lines.append("")
         (out_dir / f"{shot_id}.md").write_text("\n".join(lines), encoding="utf-8")
 
         # Separate start frame prompt file (model data for Step 2)
