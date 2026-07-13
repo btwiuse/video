@@ -266,6 +266,7 @@
       const [cacheBust, setCacheBust] = useState({});
       const [lightbox, setLightbox] = useState(null);
       const [stepReloadKey, setStepReloadKey] = useState(0);
+      const [storyboardData, setStoryboardData] = useState(null);
       const prevPipelineRef = useRef(pipeline);
 
       useEffect(() => {
@@ -287,6 +288,10 @@
           } catch (e) { /* ignore */ }
         };
         fetchArtifacts();
+        const prevStep = prevPipelineRef.current?.step;
+        if (!storyboardData && step === 2 && !artLoading && (isStepDone || isStepRunning)) {
+          api(`/pipelines/${pipelineId}/artifacts/storyboard.json`).then(r => r.ok && r.json().then(d => setStoryboardData(d)));
+        }
         if (isStepRunning || (!isStepDone && pipeline.status !== 'done' && pipeline.status !== 'failed')) {
           t = setInterval(() => { if (!document.hidden) fetchArtifacts(); }, 15000);
         }
@@ -305,6 +310,30 @@
 
       const charImages = artifacts.filter(f => f.name.startsWith('characters/') && /\.(jpg|jpeg|png|webp)$/i.test(f.name));
       const sceneImages = artifacts.filter(f => f.name.startsWith('scenes/') && /\.(jpg|jpeg|png|webp)$/i.test(f.name));
+      const charPlaceholders = React.useMemo(() => {
+        if (!storyboardData) return [];
+        const expected = [];
+        for (const c of storyboardData.characters || []) {
+          for (const suffix of ['front', 'profile', 'fullbody']) {
+            const name = `characters/${c.ref_id}_${suffix}.jpg`;
+            if (!charImages.find(f => f.name === name)) expected.push({ name, placeholder: true, ref_id: c.ref_id, angle: suffix });
+          }
+        }
+        return expected;
+      }, [storyboardData, charImages]);
+      const scenePlaceholders = React.useMemo(() => {
+        if (!storyboardData) return [];
+        const expected = [];
+        for (const s of storyboardData.scenes || []) {
+          for (const suffix of ['wide', 'detail']) {
+            const name = `scenes/${s.scene_id}_${suffix}.jpg`;
+            if (!sceneImages.find(f => f.name === name)) expected.push({ name, placeholder: true, scene_id: s.scene_id, suffix });
+          }
+        }
+        return expected;
+      }, [storyboardData, sceneImages]);
+      const allCharImages = [...charImages, ...charPlaceholders];
+      const allSceneImages = [...sceneImages, ...scenePlaceholders];
       const shotImages = artifacts.filter(f => f.name.startsWith('shots/') && /_startframe\.(jpg|jpeg|png|webp)$/i.test(f.name));
       const videoFiles = artifacts.filter(f => f.name.startsWith('shots/') && /\.(mp4|webm|mov)$/i.test(f.name));
       const audioFiles = artifacts.filter(f => (f.name.startsWith('audio/') || f.name.startsWith('sfx/') || f.name.startsWith('bgm/')) && /\.(wav|mp3|m4a|flac)$/i.test(f.name));
@@ -377,103 +406,123 @@
 
           {step === 2 && (isStepDone || isStepRunning) && (
             <div className="space-y-6">
-              {charImages.length > 0 && (
+              {allCharImages.length > 0 && (
                 <div>
                   <h4 className="text-sm font-semibold text-stone-300 mb-3">角色肖像</h4>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                    {charImages.map(f => {
+                    {allCharImages.map(f => {
                       const label = f.name.split('/')[1]?.replace(/\.(jpg|jpeg|png)$/, '');
                       const isRegen = regenerating['char_' + label];
                       const cb = cacheBust[f.name];
+                      const isPlaceholder = f.placeholder;
                       return (
                         <div key={f.name + (cb || '')} className="flex flex-col items-center gap-1.5 group relative">
                           <div className="relative w-full aspect-[3/4]">
-                            <img
-                              src={artifactUrl(pipelineId, f.name, cb)}
-                              alt={f.name.split('/').pop()}
-                              className="w-full h-full object-cover rounded bg-ink-700 cursor-pointer"
-                              onError={e => { e.target.style.display = 'none'; }}
-                              onClick={() => setLightbox(artifactUrl(pipelineId, f.name, cb))}
-                            />
-                            {isRegen && (
+                            {isPlaceholder ? (
+                              <div className="w-full h-full rounded bg-ink-800 border border-dashed border-ink-600 flex flex-col items-center justify-center">
+                                <span className="text-stone-600 text-2xl">?</span>
+                                <span className="text-stone-600 text-xs mt-1">待生成</span>
+                              </div>
+                            ) : (
+                              <img
+                                src={artifactUrl(pipelineId, f.name, cb)}
+                                alt={f.name.split('/').pop()}
+                                className="w-full h-full object-cover rounded bg-ink-700 cursor-pointer"
+                                onError={e => { e.target.style.display = 'none'; }}
+                                onClick={() => setLightbox(artifactUrl(pipelineId, f.name, cb))}
+                              />
+                            )}
+                            {!isPlaceholder && isRegen && (
                               <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
                                 <div className="w-6 h-6 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
                               </div>
                             )}
                           </div>
                           <span className="text-xs text-stone-500 truncate max-w-full">{f.name.split('/').pop()?.replace(/\.(jpg|jpeg|png)$/, '')}</span>
-                          <button
-                            onClick={async () => {
-                              if (isRegen) return;
-                              setRegenerating(r => ({ ...r, ['char_' + label]: true }));
-                              try {
-                                await api(`/pipelines/${pipelineId}/regenerate`, {
-                                  method: 'POST',
-                                  body: JSON.stringify({ character_images: [label] }),
-                                });
-                                setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
-                              } catch (e) { /* ignore */ }
-                              setRegenerating(r => { const n = {...r}; delete n['char_' + label]; return n; });
-                            }}
-                            className="absolute top-1 right-1 w-7 h-7 rounded bg-ink-900/80 hover:bg-brass-500/80 text-stone-400 hover:text-ink-950 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-0"
-                            disabled={isRegen}
-                            title="重新生成此角色"
-                          >⟳</button>
+                          {!isPlaceholder && (
+                            <button
+                              onClick={async () => {
+                                if (isRegen) return;
+                                setRegenerating(r => ({ ...r, ['char_' + label]: true }));
+                                try {
+                                  await api(`/pipelines/${pipelineId}/regenerate`, {
+                                    method: 'POST',
+                                    body: JSON.stringify({ character_images: [label] }),
+                                  });
+                                  setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
+                                } catch (e) { /* ignore */ }
+                                setRegenerating(r => { const n = {...r}; delete n['char_' + label]; return n; });
+                              }}
+                              className="absolute top-1 right-1 w-7 h-7 rounded bg-ink-900/80 hover:bg-brass-500/80 text-stone-400 hover:text-ink-950 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-0"
+                              disabled={isRegen}
+                              title="重新生成此角色"
+                            >⟳</button>
+                          )}
                         </div>
                       );
                     })}
                   </div>
                 </div>
               )}
-              {sceneImages.length > 0 && (
+              {allSceneImages.length > 0 && (
                 <div>
                   <h4 className="text-sm font-semibold text-stone-300 mb-3">场景参考</h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {sceneImages.map(f => {
+                    {allSceneImages.map(f => {
                       const label = f.name.split('/')[1]?.replace(/\.(jpg|jpeg|png)$/, '');
                       const isRegen = regenerating['scene_' + label];
                       const cb = cacheBust[f.name];
+                      const isPlaceholder = f.placeholder;
                       return (
                         <div key={f.name + (cb || '')} className="group relative">
                           <div className="relative w-full aspect-video">
-                            <img
-                              src={artifactUrl(pipelineId, f.name, cb)}
-                              alt={f.name.split('/').pop()}
-                              className="w-full h-full object-cover rounded bg-ink-700 cursor-pointer"
-                              onError={e => { e.target.style.display = 'none'; }}
-                              onClick={() => setLightbox(artifactUrl(pipelineId, f.name, cb))}
-                            />
-                            {isRegen && (
+                            {isPlaceholder ? (
+                              <div className="w-full h-full rounded bg-ink-800 border border-dashed border-ink-600 flex flex-col items-center justify-center">
+                                <span className="text-stone-600 text-2xl">?</span>
+                                <span className="text-stone-600 text-xs mt-1">待生成</span>
+                              </div>
+                            ) : (
+                              <img
+                                src={artifactUrl(pipelineId, f.name, cb)}
+                                alt={f.name.split('/').pop()}
+                                className="w-full h-full object-cover rounded bg-ink-700 cursor-pointer"
+                                onError={e => { e.target.style.display = 'none'; }}
+                                onClick={() => setLightbox(artifactUrl(pipelineId, f.name, cb))}
+                              />
+                            )}
+                            {!isPlaceholder && isRegen && (
                               <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
                                 <div className="w-6 h-6 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
                               </div>
                             )}
                           </div>
                           <span className="text-xs text-stone-500 mt-1 block">{f.name.split('/').pop()?.replace(/\.(jpg|jpeg|png)$/, '')}</span>
-                          <button
-                            onClick={async () => {
-                              if (isRegen) return;
-                              setRegenerating(r => ({ ...r, ['scene_' + label]: true }));
-                              try {
-                                await api(`/pipelines/${pipelineId}/regenerate`, {
-                                  method: 'POST',
-                                  body: JSON.stringify({ scene_images: [label] }),
-                                });
-                                setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
-                              } catch (e) { /* ignore */ }
-                              setRegenerating(r => { const n = {...r}; delete n['scene_' + label]; return n; });
-                            }}
-                            className="absolute top-1 right-1 w-7 h-7 rounded bg-ink-900/80 hover:bg-brass-500/80 text-stone-400 hover:text-ink-950 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-0"
-                            disabled={isRegen}
-                            title="重新生成此场景"
-                          >⟳</button>
+                          {!isPlaceholder && (
+                            <button
+                              onClick={async () => {
+                                if (isRegen) return;
+                                setRegenerating(r => ({ ...r, ['scene_' + label]: true }));
+                                try {
+                                  await api(`/pipelines/${pipelineId}/regenerate`, {
+                                    method: 'POST',
+                                    body: JSON.stringify({ scene_images: [label] }),
+                                  });
+                                  setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
+                                } catch (e) { /* ignore */ }
+                                setRegenerating(r => { const n = {...r}; delete n['scene_' + label]; return n; });
+                              }}
+                              className="absolute top-1 right-1 w-7 h-7 rounded bg-ink-900/80 hover:bg-brass-500/80 text-stone-400 hover:text-ink-950 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-0"
+                              disabled={isRegen}
+                              title="重新生成此场景"
+                            >⟳</button>
+                          )}
                         </div>
                       );
                     })}
                   </div>
                 </div>
               )}
-              {charImages.length === 0 && sceneImages.length === 0 && <p className="text-stone-500 text-sm">暂无视觉素材</p>}
+              {allCharImages.length === 0 && allSceneImages.length === 0 && <p className="text-stone-500 text-sm">暂无视觉素材</p>}
               {shotImages.length > 0 && (
                 <div>
                   <h4 className="text-sm font-semibold text-stone-300 mb-3">镜头起始帧</h4>
