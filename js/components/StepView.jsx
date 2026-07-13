@@ -22,6 +22,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
   const [editPrompt, setEditPrompt] = useState('');
   const [promptLoading, setPromptLoading] = useState(false);
   const [promptSaving, setPromptSaving] = useState(false);
+  const [editingLightbox, setEditingLightbox] = useState(false);
   const [stepReloadKey, setStepReloadKey] = useState(0);
   const [storyboardData, setStoryboardData] = useState(null);
   const prevPipelineRef = useRef(pipeline);
@@ -504,25 +505,42 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
               <div className="bg-ink-900/95 border border-ink-700 rounded p-4 max-h-[70vh] overflow-y-auto min-w-[280px] max-w-full lg:max-w-[40vw] flex flex-col gap-3">
                 <div className="flex items-center justify-between flex-shrink-0">
                   <h4 className="text-xs text-stone-400 font-medium">生成提示词</h4>
-                  <button onClick={async () => {
-                    const pp = promptPathFromImage(lightboxName);
-                    if (!pp) return;
-                    const res = await api(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(pp)}`, { method: 'PUT', body: editPrompt });
-                    if (res.ok) setPromptText(editPrompt);
-                  }} disabled={editPrompt === promptText} className="text-xs px-2 py-1 bg-leaf-500/20 text-leaf-400 rounded hover:bg-leaf-500/30 transition-colors disabled:opacity-40 cursor-pointer">
-                    保存
-                  </button>
+                  {editingLightbox ? (
+                    <div className="flex items-center gap-2">
+                      <button onClick={async () => {
+                        const pp = promptPathFromImage(lightboxName);
+                        if (!pp) return;
+                        setPromptSaving(true);
+                        const val = textareaRef.current?.value ?? editPrompt;
+                        const res = await api(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(pp)}`, { method: 'PUT', body: val });
+                        if (res.ok) { setPromptText(val); setEditPrompt(val); }
+                        setPromptSaving(false);
+                        setEditingLightbox(false);
+                      }} disabled={promptSaving} className="text-xs px-2 py-1 bg-leaf-500/20 text-leaf-400 rounded hover:bg-leaf-500/30 transition-colors disabled:opacity-40 cursor-pointer">
+                        {promptSaving ? '保存中...' : '保存'}
+                      </button>
+                      <button onClick={() => { setEditingLightbox(false); }}
+                        className="text-xs px-2 py-1 bg-ink-700 text-stone-400 rounded hover:bg-ink-600 transition-colors cursor-pointer">取消</button>
+                    </div>
+                  ) : (
+                    <button onClick={() => { setEditingLightbox(true); }}
+                      className="w-6 h-6 rounded bg-ink-700 hover:bg-brass-500/30 text-stone-400 hover:text-brass-400 flex items-center justify-center text-sm transition-all cursor-pointer"
+                      title="编辑 .md">✎</button>
+                  )}
                 </div>
-                <textarea
-                  ref={textareaRef}
-                  key={lightboxName}
-                  defaultValue={editPrompt}
-                  onChange={e => setEditPrompt(e.target.value)}
-                  className="w-full flex-1 bg-ink-950 text-stone-300 text-xs p-3 rounded border border-ink-700 font-mono resize-y min-h-[160px]"
-                />
-                <div className="markdown-body border-t border-ink-700 pt-3">
-                  <div dangerouslySetInnerHTML={{__html: marked.parse(editPrompt)}} />
-                </div>
+                {editingLightbox ? (
+                  <textarea
+                    ref={textareaRef}
+                    key={lightboxName}
+                    defaultValue={editPrompt}
+                    onChange={e => setEditPrompt(e.target.value)}
+                    className="w-full flex-1 bg-ink-950 text-stone-300 text-xs p-3 rounded border border-ink-700 font-mono resize-y min-h-[160px]"
+                  />
+                ) : (
+                  <div className="markdown-body max-h-[55vh] overflow-y-auto">
+                    <div dangerouslySetInnerHTML={{__html: marked.parse(promptText)}} />
+                  </div>
+                )}
               </div>
             )}
             {promptLoading && (
