@@ -159,7 +159,7 @@ TOOL_CREATE_SHOT = {
                 "negative_prompt": {"type": "string", "description": "视频生成负面 prompt，用中文描述"},
                 "start_frame_prompt": {"type": "string", "description": "起始帧图片 prompt，用于文生图模型生成该镜头的第一帧静止图片。与 positive_prompt 的唯一区别：(1) 16:9 画幅 (2) 去掉所有运镜/运动描述——只描述一个静止瞬间。"},
             },
-            "required": ["scene_id", "shot_num", "is_scene_end", "duration_sec", "transition_type", "shot_size", "action_description", "visual_subject", "positive_prompt", "negative_prompt", "start_frame_prompt"],
+            "required": ["scene_id", "shot_num", "is_scene_end", "duration_sec", "transition_type", "shot_size", "camera_position", "camera_movement", "action_description", "visual_subject", "positive_prompt", "negative_prompt", "start_frame_prompt"],
         },
     },
 }
