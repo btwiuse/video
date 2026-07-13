@@ -529,13 +529,15 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                   )}
                 </div>
                 {editingLightbox ? (
-                  <textarea
-                    ref={textareaRef}
-                    key={lightboxName}
-                    defaultValue={editPrompt}
-                    onChange={e => setEditPrompt(e.target.value)}
-                    className="w-full flex-1 bg-ink-950 text-stone-300 text-xs p-3 rounded border border-ink-700 font-mono resize-y box-border"
-                  />
+                  <div className="flex-1 min-h-0 overflow-y-auto">
+                    <textarea
+                      ref={textareaRef}
+                      key={lightboxName}
+                      defaultValue={editPrompt}
+                      onChange={e => setEditPrompt(e.target.value)}
+                      className="w-full h-full bg-ink-950 text-stone-300 text-xs p-3 rounded border border-ink-700 font-mono resize-y"
+                    />
+                  </div>
                 ) : (
                   <div className="markdown-body flex-1 min-h-0 overflow-y-auto">
                     <div dangerouslySetInnerHTML={{__html: marked.parse(promptText)}} />
