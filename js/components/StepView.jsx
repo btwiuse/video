@@ -513,7 +513,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                         setPromptSaving(true);
                         const val = textareaRef.current?.value ?? editPrompt;
                         const res = await api(`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(pp)}`, { method: 'PUT', body: val });
-                        if (res.ok) { setPromptText(val); setEditPrompt(val); }
+                        if (res.ok) { setPromptText(val); }
                         setPromptSaving(false);
                         setEditingLightbox(false);
                       }} disabled={promptSaving} className="text-xs px-2 py-1 bg-leaf-500/20 text-leaf-400 rounded hover:bg-leaf-500/30 transition-colors disabled:opacity-40 cursor-pointer">
@@ -534,7 +534,6 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                       ref={textareaRef}
                       key={lightboxName}
                       defaultValue={editPrompt}
-                      onChange={e => setEditPrompt(e.target.value)}
                       className="w-full h-full bg-ink-950 text-stone-300 text-xs p-3 rounded border border-ink-700 font-mono resize-y"
                     />
                   </div>
