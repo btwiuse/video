@@ -84,6 +84,8 @@
           animation: {
             'pulse-brass': 'pulse-brass 2s ease-in-out infinite',
             'shimmer': 'shimmer 1.5s ease-in-out infinite',
+            'slide-up': 'slide-up 0.25s ease-out',
+            'fade-out': 'fade-out 0.2s ease-in forwards',
           },
         },
       },
@@ -111,6 +113,14 @@
       background: linear-gradient(90deg, #1a1816 25%, #252220 50%, #1a1816 75%);
       background-size: 200% 100%;
     }
+    @keyframes slide-up {
+      from { opacity: 0; transform: translateY(8px) scale(0.96); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes fade-out {
+      from { opacity: 1; }
+      to { opacity: 0; }
+    }
     @media (prefers-reduced-motion: reduce) {
       *, ::before, ::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
       .pipeline-card:hover { transform: none; }
@@ -126,6 +136,40 @@
 
     const API_BASE = window.location.origin;
     const STEP_NAMES = ["", "分镜生成", "视觉素材", "视频生成", "音频生成", "后期合成"];
+
+    // Sonner-style toast
+    const __toasts = [];
+    let __toastId = 0;
+    const __toastListeners = new Set();
+    function toast(message, options = {}) {
+      const id = ++__toastId;
+      __toasts.push({ id, message, ...options });
+      __toastListeners.forEach(fn => fn([...__toasts]));
+      setTimeout(() => {
+        const idx = __toasts.findIndex(t => t.id === id);
+        if (idx !== -1) { __toasts.splice(idx, 1); __toastListeners.forEach(fn => fn([...__toasts])); }
+      }, options.duration || 3000);
+      return id;
+    }
+    toast.error = (msg) => toast(msg, { type: 'error' });
+    function Toaster() {
+      const [items, setItems] = useState([]);
+      useEffect(() => {
+        __toastListeners.add(setItems);
+        setItems([...__toasts]);
+        return () => __toastListeners.delete(setItems);
+      }, []);
+      return ReactDOM.createPortal(
+        <div className="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 min-w-[280px] max-w-[380px] pointer-events-none">
+          {items.map(t => (
+            <div key={t.id} className={`pointer-events-auto px-4 py-3 rounded-lg shadow-2xl text-sm font-medium animate-slide-up ${t.type === 'error' ? 'bg-clay-500/90 text-white' : 'bg-ink-800/95 text-stone-100 border border-ink-600/50 backdrop-blur-sm'}`}>
+              {t.message}
+            </div>
+          ))}
+        </div>,
+        document.body
+      );
+    }
 
     const fileCategory = (name) => {
       const ext = name.split('.').pop()?.toLowerCase();
@@ -729,7 +773,7 @@
       }, []);
 
       const copyToClipboard = useCallback((text, name) => {
-        navigator.clipboard.writeText(text).then(() => alert('已复制: ' + name)).catch(() => alert('复制失败'));
+        navigator.clipboard.writeText(text).then(() => toast('已复制: ' + name)).catch(() => toast.error('复制失败'));
       }, []);
 
       function buildTree(files) {
@@ -1352,7 +1396,7 @@
             while (true) {
               await new Promise(r => setTimeout(r, 3000));
               if (Date.now() - startTime > timeout) {
-                alert(`步骤 ${s} 超时 (30分钟)，请检查后端状态`);
+                toast.error(`步骤 ${s} 超时 (30分钟)，请检查后端状态`);
                 break;
               }
               const res = await api(`/pipelines/${pid}`);
@@ -1361,9 +1405,9 @@
               const status = data.status;
               if (status === 'failed' || status === 'canceled') {
                 if (status === 'canceled') {
-                  alert(`步骤 ${s} 已取消`);
+                  toast(`步骤 ${s} 已取消`);
                 } else {
-                  alert(`步骤 ${s} 失败: ${data.error || status}`);
+                  toast.error(`步骤 ${s} 失败: ${data.error || status}`);
                 }
                 return; // 停止全部流程
               }
@@ -1379,9 +1423,9 @@
         if (!confirm('确定删除此 pipeline 及其所有产物?')) return;
         try {
           const res = await api(`/pipelines/${pid}`, { method: 'DELETE' });
-          if (!res.ok) { alert(`删除失败: HTTP ${res.status}`); return; }
+          if (!res.ok) { toast.error(`删除失败: HTTP ${res.status}`); return; }
           onBack();
-        } catch (e) { alert(`删除失败: ${e.message}`); }
+        } catch (e) { toast.error(`删除失败: ${e.message}`); }
       };
 
       return (
@@ -1722,6 +1766,7 @@
           <footer className="bg-ink-900 border-t border-ink-700 px-6 py-4 text-center text-xs text-stone-500">
             Film Pipeline Studio — AI Screenplay to Film Pipeline
           </footer>
+          <Toaster />
         </div>
       );
     }
