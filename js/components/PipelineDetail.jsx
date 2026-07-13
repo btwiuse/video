@@ -196,7 +196,7 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
 
       <StepTabs currentStep={currentStep} pipelineStatus={pipeline.status} activeStep={activeStep} onNavigate={navigateToStep} />
 
-      {pipeline.error && (
+      {pipeline.error && pipeline.status === 'failed' && activeStep === pipeline.step && (
         <div className="bg-clay-500/10 border border-clay-500/30 text-clay-400 p-3 rounded text-sm mb-6">
           {pipeline.error}
         </div>
