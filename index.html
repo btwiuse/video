@@ -1527,9 +1527,6 @@
               <button onClick={runAll} disabled={actionLoading || pipeline.status === 'done'} className="nav-btn text-xs px-2.5 py-1.5 bg-brass-500 hover:bg-brass-400 disabled:bg-ink-700 text-ink-950 rounded transition-colors disabled:text-stone-400 font-medium">
                 运行全部步骤
               </button>
-              <button onClick={() => navigateToStep(Math.min(currentStep + 1, 5))} disabled={currentStep >= 5 || actionLoading} className="nav-btn text-xs px-2.5 py-1.5 bg-ink-700 hover:bg-ink-600 disabled:bg-ink-800/60 text-stone-300 hover:text-stone-100 disabled:text-stone-600 rounded transition-colors">
-                下一步
-              </button>
               <button onClick={del} className="text-xs px-2.5 py-1.5 bg-ink-700 hover:bg-ink-600 text-clay-400 rounded transition-colors">删除</button>
             </div>
           </div>
@@ -1547,6 +1544,11 @@
   totalShots={totalShots} setTotalShots={setTotalShots}
   totalDuration={totalDuration} setTotalDuration={setTotalDuration} />
 
+          <div className="flex justify-end">
+            <button onClick={() => navigateToStep(Math.min(currentStep + 1, 5))} disabled={currentStep >= 5 || actionLoading} className="nav-btn text-xs px-2.5 py-1.5 bg-ink-700 hover:bg-ink-600 disabled:bg-ink-800/60 text-stone-300 hover:text-stone-100 disabled:text-stone-600 rounded transition-colors">
+              下一步 →
+            </button>
+          </div>
           <LogViewer pipelineId={pid} />
           <ArtifactList pipelineId={pid} />
 
