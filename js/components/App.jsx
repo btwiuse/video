@@ -68,7 +68,7 @@ useEffect(() => {
 }, []);
 
 useEffect(() => {
-  document.body.className = theme === 'default' ? '' : `theme-${theme}`;
+  document.body.className = `theme-${theme}`;
   try { localStorage.setItem('pipelineTheme', theme); } catch {}
 }, [theme]);
 

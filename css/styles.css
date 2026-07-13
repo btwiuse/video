@@ -35,7 +35,10 @@ body {
 }
 
 /* ── Theme system ── */
-body { background-color: #0d0c0b; background-blend-mode: overlay; background-size: auto; }
+
+body.theme-default {
+  background: #0d0c0b;
+}
 
 body.theme-carbon {
   background-color: #1a1a1a;
@@ -63,8 +66,8 @@ body.theme-dots {
 body.theme-checker {
   background-color: #1a1816;
   background-image:
-    linear-gradient(45deg, rgba(255,255,255,0.03) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.03) 75%),
-    linear-gradient(45deg, rgba(255,255,255,0.03) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.03) 75%);
+    linear-gradient(45deg, rgba(255,255,255,0.05) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.05) 75%),
+    linear-gradient(45deg, rgba(255,255,255,0.05) 25%, transparent 25%, transparent 75%, rgba(255,255,255,0.05) 75%);
   background-size: 40px 40px, 40px 40px;
   background-position: 0 0, 20px 20px;
 }
@@ -72,17 +75,17 @@ body.theme-checker {
 body.theme-argyle {
   background-color: #0d0c0b;
   background-image:
-    linear-gradient(135deg, rgba(106,160,122,0.08) 25%, transparent 25%, transparent 50%, rgba(106,160,122,0.08) 50%, rgba(106,160,122,0.08) 75%, transparent 75%),
-    linear-gradient(45deg, rgba(106,160,122,0.08) 25%, transparent 25%, transparent 50%, rgba(106,160,122,0.08) 50%, rgba(106,160,122,0.08) 75%, transparent 75%);
+    linear-gradient(135deg, rgba(106,160,122,0.15) 25%, transparent 25%, transparent 50%, rgba(106,160,122,0.15) 50%, rgba(106,160,122,0.15) 75%, transparent 75%),
+    linear-gradient(45deg, rgba(106,160,122,0.15) 25%, transparent 25%, transparent 50%, rgba(106,160,122,0.15) 50%, rgba(106,160,122,0.15) 75%, transparent 75%);
   background-size: 40px 40px, 40px 40px;
 }
 
 body.theme-wave {
   background-color: #0d0c0b;
   background-image:
-    radial-gradient(ellipse at 20% 50%, rgba(201,168,76,0.06) 0%, transparent 50%),
-    radial-gradient(ellipse at 60% 50%, rgba(201,168,76,0.04) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 50%, rgba(201,168,76,0.06) 0%, transparent 50%);
-  background-size: 100% 100%, 100% 100%, 100% 100%;
+    radial-gradient(ellipse 100% 50% at 50% 0%, rgba(201,168,76,0.12) 0%, transparent 100%),
+    radial-gradient(ellipse 100% 50% at 20% 100%, rgba(201,168,76,0.08) 0%, transparent 100%),
+    radial-gradient(ellipse 80% 40% at 80% 30%, rgba(201,168,76,0.06) 0%, transparent 100%);
+  background-size: 100% 100%;
 }
 
