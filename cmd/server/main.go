@@ -155,7 +155,7 @@ func loadPipelineState(id string) *Pipeline {
 		return nil
 	}
 	// Reset pipelines that were running when the server died
-	if p.Status == StatusRunning || p.Status == StatusPending {
+	if p.Step > 0 && (p.Status == StatusRunning || p.Status == StatusPending) {
 		if p.Cancel == nil {
 			p.Status = StatusFailed
 			p.Error = "server restarted while step was running"
@@ -389,10 +389,10 @@ func handleGetPipeline(w http.ResponseWriter, r *http.Request) {
 		mu.Unlock()
 	}
 
-	// Refresh status from filesystem only if still pending
-	// Once running/failed/done/canceled, the background goroutine or terminal
-	// state owns the status.
-	if p.Status == StatusPending {
+	// Refresh status from filesystem only if the pipeline had actually
+	// started (step > 0). A brand new pipeline (step == 0) should stay
+	// pending until the user explicitly runs a step.
+	if p.Status == StatusPending && p.Step > 0 {
 		p.Status = detectStatus(id)
 		p.UpdatedAt = time.Now()
 		savePipelineState(p)

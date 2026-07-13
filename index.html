@@ -1292,7 +1292,7 @@
         if (pipeline.status === 'done') return 5;
         if (pipeline.status === 'running') return Math.max(0, (pipeline.step || 1) - 1);
         if (pipeline.status?.startsWith('step_')) {
-          return parseInt(pipeline.status.split('_')[1]);
+          return parseInt(pipeline.status.split('_')[1]) - 1;
         }
         if (pipeline.status === 'failed' || pipeline.status === 'canceled') return Math.max(0, (pipeline.step || 1) - 1);
         return pipeline.step || 0;
