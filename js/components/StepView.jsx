@@ -534,7 +534,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                     key={lightboxName}
                     defaultValue={editPrompt}
                     onChange={e => setEditPrompt(e.target.value)}
-                    className="w-full flex-1 bg-ink-950 text-stone-300 text-xs p-3 rounded border border-ink-700 font-mono resize-y"
+                    className="w-full flex-1 bg-ink-950 text-stone-300 text-xs p-3 rounded border border-ink-700 font-mono resize-y box-border"
                   />
                 ) : (
                   <div className="markdown-body flex-1 min-h-0 overflow-y-auto">
