@@ -16,7 +16,6 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
   const [previews, setPreviews] = useState({});
   const [regenerating, setRegenerating] = useState({});
   const [cacheBust, setCacheBust] = useState({});
-  const [lightbox, setLightbox] = useState(null);
   const [lightboxName, setLightboxName] = useState(null);
   const [promptText, setPromptText] = useState(null);
   const [editPrompt, setEditPrompt] = useState('');
@@ -125,8 +124,6 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
     return null;
   };
   const openLightbox = async (name) => {
-    const url = artifactUrl(pipelineId, name);
-    setLightbox(url);
     setLightboxName(name);
     setPromptText(null);
     setEditPrompt('');
@@ -140,7 +137,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
     }
     setPromptLoading(false);
   };
-  const closeLightbox = () => { setLightbox(null); setLightboxName(null); setPromptText(null); setEditPrompt(''); };
+  const closeLightbox = () => { setLightboxName(null); setPromptText(null); setEditPrompt(''); };
   const regenerateFromLightbox = async () => {
     const name = lightboxName;
     if (!name) return;
@@ -474,7 +471,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
           此步骤尚未执行
         </div>
       )}
-      {lightbox && (
+      {lightboxName && (
         <div
           className="fixed inset-0 z-50 bg-ink-950/90 flex items-center justify-center p-4 cursor-pointer"
           onClick={closeLightbox}
@@ -489,7 +486,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
           <div className="flex flex-col lg:flex-row gap-4 max-w-full max-h-full items-start cursor-default" onClick={e => e.stopPropagation()}>
             <div className="relative">
               <img
-                src={lightbox}
+                src={artifactUrl(pipelineId, lightboxName, cacheBust[lightboxName])}
                 className="max-h-[70vh] max-w-full lg:max-w-[50vw] object-contain rounded"
                 alt="放大预览"
               />
