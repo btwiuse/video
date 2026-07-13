@@ -12,6 +12,18 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 { font-weight: 600; margin-top: 1em; margin-bottom: 0.25em; color: #e4dcd3; }
+    .markdown-body h1 { font-size: 1.05rem; }
+    .markdown-body h2, .markdown-body h3, .markdown-body h4 { font-size: 0.95rem; }
+    .markdown-body p { margin: 0.25em 0; line-height: 1.6; word-wrap: break-word; overflow-wrap: break-word; }
+    .markdown-body ul, .markdown-body ol { padding-left: 1.5em; margin: 0.25em 0; }
+    .markdown-body li { margin: 0.15em 0; word-wrap: break-word; overflow-wrap: break-word; }
+    .markdown-body pre { background: #0a0a0f; padding: 0.75rem; border-radius: 0.375rem; margin: 0.5em 0; overflow-x: auto; border: 1px solid #2a2a35; }
+    .markdown-body code { font-size: 0.8rem; color: #a8a29e; word-wrap: break-word; overflow-wrap: break-word; white-space: pre-wrap; }
+    .markdown-body strong { color: #e4dcd3; }
+  </style>
   <script>
     tailwind.config = {
       theme: {
@@ -123,6 +135,10 @@
       const headers = isGet ? {} : { 'Content-Type': 'application/json', ...(opts.headers || {}) };
       return fetch(`${API_BASE}${url}`, { ...opts, headers });
     }
+    function artifactUrl(pipelineId, name, cb) {
+      const enc = name.split('/').map(s => encodeURIComponent(s)).join('/');
+      return `/pipelines/${pipelineId}/artifacts/${enc}${cb ? '?ck=' + cb : ''}`;
+    }
 
     function StatusBadge({ status }) {
       const styles = {
@@ -183,8 +199,14 @@
       );
     }
 
-    function StepView({ step, pipeline, currentStep, onRun, actionLoading, pipelineId, onCancel,
+    function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                         maxShotsPerScene, setMaxShotsPerScene, totalShots, setTotalShots, totalDuration, setTotalDuration }) {
+      const getCS = () => {
+        if (pipeline.status === 'done') return 5;
+        if (pipeline.status === 'failed' || pipeline.status === 'canceled') return Math.max(0, (pipeline.step || 1) - 1);
+        return pipeline.step || 0;
+      };
+      const currentStep = getCS();
       const isStepDone = step <= currentStep || pipeline.status === 'done';
       const isStepRunning = pipeline.status === 'running' && pipeline.step === step;
       const canGenerate = (step === currentStep + 1 || step <= currentStep) && !actionLoading;
@@ -193,6 +215,16 @@
       const [previews, setPreviews] = useState({});
       const [regenerating, setRegenerating] = useState({});
       const [cacheBust, setCacheBust] = useState({});
+      const [stepReloadKey, setStepReloadKey] = useState(0);
+      const prevPipelineRef = useRef(pipeline);
+
+      useEffect(() => {
+        const prev = prevPipelineRef.current;
+        prevPipelineRef.current = pipeline;
+        if (prev && prev.status !== pipeline.status) {
+          setStepReloadKey(k => k + 1);
+        }
+      }, [pipeline, pipeline.status]);
 
       useEffect(() => {
         if (!isStepDone && !isStepRunning) { setArtifacts([]); return; }
@@ -291,14 +323,14 @@
             </div>
           )}
 
-          {step === 1 && (isStepDone || isStepRunning) && <StoryboardViewer pipelineId={pipelineId} poll={isStepRunning} />}
+          {step === 1 && (isStepDone || isStepRunning) && <StoryboardViewer pipelineId={pipelineId} poll={isStepRunning} reloadKey={stepReloadKey} />}
 
           {step === 2 && (isStepDone || isStepRunning) && (
             <div className="space-y-6">
               {charImages.length > 0 && (
                 <div>
                   <h4 className="text-sm font-semibold text-stone-300 mb-3">角色肖像</h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                     {charImages.map(f => {
                       const label = f.name.split('/')[1]?.replace(/\.(jpg|jpeg|png)$/, '');
                       const isRegen = regenerating['char_' + label];
@@ -307,7 +339,7 @@
                         <div key={f.name + (cb || '')} className="flex flex-col items-center gap-1.5 group relative">
                           <div className="relative w-full aspect-[3/4]">
                             <img
-                              src={`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(f.name)}${cb ? '?ck=' + cb : ''}`}
+                              src={artifactUrl(pipelineId, f.name, cb)}
                               alt={f.name.split('/').pop()}
                               className="w-full h-full object-cover rounded bg-ink-700"
                               onError={e => { e.target.style.display = 'none'; }}
@@ -345,7 +377,7 @@
               {sceneImages.length > 0 && (
                 <div>
                   <h4 className="text-sm font-semibold text-stone-300 mb-3">场景参考</h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                     {sceneImages.map(f => {
                       const label = f.name.split('/')[1]?.replace(/\.(jpg|jpeg|png)$/, '');
                       const isRegen = regenerating['scene_' + label];
@@ -354,7 +386,7 @@
                         <div key={f.name + (cb || '')} className="group relative">
                           <div className="relative w-full aspect-video">
                             <img
-                              src={`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(f.name)}${cb ? '?ck=' + cb : ''}`}
+                              src={artifactUrl(pipelineId, f.name, cb)}
                               alt={f.name.split('/').pop()}
                               className="w-full h-full object-cover rounded bg-ink-700"
                               onError={e => { e.target.style.display = 'none'; }}
@@ -393,7 +425,7 @@
               {shotImages.length > 0 && (
                 <div>
                   <h4 className="text-sm font-semibold text-stone-300 mb-3">镜头起始帧</h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                     {shotImages.map(f => {
                       const shotId = f.name.split('/')[1];
                       const isRegen = regenerating['shot_' + shotId];
@@ -402,7 +434,7 @@
                         <div key={f.name + (cb || '')} className="flex flex-col items-center gap-1.5 group relative">
                           <div className="relative w-full aspect-video">
                             <img
-                              src={`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(f.name)}${cb ? '?ck=' + cb : ''}`}
+                              src={artifactUrl(pipelineId, f.name, cb)}
                               alt={f.name.split('/').pop()}
                               className="w-full h-full object-cover rounded bg-ink-700"
                               onError={e => { e.target.style.display = 'none'; }}
@@ -784,13 +816,24 @@
       );
     }
 
-    function StoryboardViewer({ pipelineId, poll }) {
+    function StoryboardViewer({ pipelineId, poll, reloadKey }) {
       const [data, setData] = useState(null);
       const [loading, setLoading] = useState(false);
       const [charPrompts, setCharPrompts] = useState({});
+      const [scenePrompts, setScenePrompts] = useState({});
       const [expandedScenes, setExpandedScenes] = useState({ _all: true });
       const [expandedShots, setExpandedShots] = useState({});
       const [expandedChars, setExpandedChars] = useState({ _all: true });
+      const [editCharMd, setEditCharMd] = useState({});
+      const [editingChar, setEditingChar] = useState({});
+      const [savingChar, setSavingChar] = useState({});
+      const [editSceneMd, setEditSceneMd] = useState({});
+      const [editingScene, setEditingScene] = useState({});
+      const [savingScene, setSavingScene] = useState({});
+      const [editSbMode, setEditSbMode] = useState(false);
+      const [editSbContent, setEditSbContent] = useState('');
+      const [savingSb, setSavingSb] = useState(false);
+      const [expandedSb, setExpandedSb] = useState(false);
 
       const load = useCallback(async () => {
         setLoading(true);
@@ -804,8 +847,10 @@
 
       useEffect(() => {
         let cancelled = false;
-        if (!data) load();
-        if (poll && !data) {
+        load();
+        setCharPrompts({});
+        setScenePrompts({});
+        if (poll) {
           const t = setInterval(() => {
             if (cancelled || document.hidden) return;
             load();
@@ -813,7 +858,7 @@
           return () => { cancelled = true; clearInterval(t); };
         }
         return () => { cancelled = true; };
-      }, [poll, load, data]);
+      }, [poll, load, reloadKey]);
 
       // Load character prompts from .md files
       useEffect(() => {
@@ -826,6 +871,22 @@
             if (res.ok) {
               const text = await res.text();
               setCharPrompts(prev => ({ ...prev, [c.ref_id]: text }));
+            }
+          } catch (_) {}
+        });
+      }, [data, pipelineId]);
+
+      // Load scene prompts from .md files
+      useEffect(() => {
+        if (!data) return;
+        const scenes = data.scenes || [];
+        scenes.forEach(async (s) => {
+          if (scenePrompts[s.scene_id]) return;
+          try {
+            const res = await api(`/pipelines/${pipelineId}/artifacts/scenes/${encodeURIComponent(s.scene_id)}.md`);
+            if (res.ok) {
+              const text = await res.text();
+              setScenePrompts(prev => ({ ...prev, [s.scene_id]: text }));
             }
           } catch (_) {}
         });
@@ -869,9 +930,6 @@
                     {characters.map((c, idx) => {
                       const open = expandedChars[c.ref_id] || false;
                       const md = charPrompts[c.ref_id] || '';
-                      const face = md.match(/## 外貌([\s\S]*?)(?=##|$)/)?.[1]?.trim() || '';
-                      const clothing = md.match(/## 服装([\s\S]*?)(?=##|$)/)?.[1]?.trim() || '';
-                      const voice = md.match(/## 声音与性格([\s\S]*?)(?=##|$)/)?.[1]?.trim() || '';
                       return (
                         <div key={c.ref_id}>
                           <div
@@ -894,16 +952,48 @@
                               <div className="w-10 h-10 rounded-full bg-ink-700 ring-1 ring-ink-600 flex items-center justify-center text-stone-500 text-xs hidden absolute inset-0">待生成</div>
                             </div>
                             <span className="text-sm text-stone-200 font-medium">{c.name || c.ref_id}</span>
+                            <button
+                              onClick={e => { e.stopPropagation(); setEditCharMd(prev => ({ ...prev, [c.ref_id]: md })); setEditingChar(prev => ({ ...prev, [c.ref_id]: !prev[c.ref_id] })); }}
+                              className="ml-auto text-stone-500 hover:text-brass-400 transition-colors text-xs px-1.5 py-0.5 rounded cursor-pointer"
+                              title={editingChar[c.ref_id] ? '退出编辑' : '编辑 .md'}
+                            >{editingChar[c.ref_id] ? '✓' : '✎'}</button>
                           </div>
                           {open && (
                             <div className="bg-ink-950 p-4 border-b border-ink-700 space-y-3 text-xs text-stone-300">
-                              {md ? (
-                                <div className="space-y-1">
-                                  {face && <p><span className="text-stone-500">外貌：</span>{face.replace(/\n/g, ' ').substring(0, 300)}</p>}
-                                  {clothing && <p><span className="text-stone-500">服装：</span>{clothing.replace(/\n/g, ' ').substring(0, 300)}</p>}
-                                  {voice && <p><span className="text-stone-500">性格：</span>{voice.replace(/\n/g, ' ').substring(0, 300)}</p>}
+                              {editingChar[c.ref_id] ? (
+                                <div className="space-y-2">
+                                  <textarea
+                                    className="w-full h-64 bg-ink-900 text-stone-200 text-xs p-3 rounded border border-ink-700 font-mono resize-y"
+                                    value={editCharMd[c.ref_id] ?? md}
+                                    onChange={e => setEditCharMd(prev => ({ ...prev, [c.ref_id]: e.target.value }))}
+                                  />
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      onClick={async () => {
+                                        setSavingChar(prev => ({ ...prev, [c.ref_id]: true }));
+                                        try {
+                                          const res = await api(`/pipelines/${pipelineId}/artifacts/characters/${encodeURIComponent(c.ref_id)}.md`, {
+                                            method: 'PUT',
+                                            body: editCharMd[c.ref_id] ?? md,
+                                          });
+                                          if (res.ok) {
+                                            setCharPrompts(prev => ({ ...prev, [c.ref_id]: editCharMd[c.ref_id] ?? md }));
+                                            setEditingChar(prev => { const n = {...prev}; delete n[c.ref_id]; return n; });
+                                          }
+                                        } catch (_) {}
+                                        setSavingChar(prev => ({ ...prev, [c.ref_id]: false }));
+                                      }}
+                                      className="px-3 py-1.5 text-xs font-medium bg-leaf-500/20 text-leaf-400 rounded hover:bg-leaf-500/30 transition-colors cursor-pointer"
+                                    >{savingChar[c.ref_id] ? '保存中...' : '保存'}</button>
+                                    <button
+                                      onClick={() => setEditingChar(prev => { const n = {...prev}; delete n[c.ref_id]; return n; })}
+                                      className="px-3 py-1.5 text-xs text-stone-500 hover:text-stone-300 transition-colors cursor-pointer"
+                                    >取消</button>
+                                  </div>
                                 </div>
-                              ) : <p className="text-stone-500">加载中...</p>}
+                              ) : (
+                                <div className="markdown-body max-h-96 overflow-y-auto" dangerouslySetInnerHTML={{__html: marked.parse(md)}} />
+                              )}
                             </div>
                           )}
                         </div>
@@ -947,9 +1037,46 @@
                       <span className="text-stone-100 text-sm font-medium">{scene.scene_id}</span>
                       <span className="text-stone-500 text-xs ml-2">{sceneShots.length} 镜</span>
                     </div>
+                    <button
+                      onClick={e => { e.stopPropagation(); const md = scenePrompts[scene.scene_id] || ''; setEditSceneMd(prev => ({ ...prev, [scene.scene_id]: md })); setEditingScene(prev => ({ ...prev, [scene.scene_id]: !prev[scene.scene_id] })); }}
+                      className="text-stone-500 hover:text-brass-400 transition-colors text-xs px-1.5 py-0.5 rounded cursor-pointer flex-shrink-0"
+                      title={editingScene[scene.scene_id] ? '退出编辑' : '编辑 .md'}
+                    >{editingScene[scene.scene_id] ? '✓' : '✎'}</button>
                   </div>
                   {isExpanded && (
                     <div className="border-t border-ink-700">
+                      {editingScene[scene.scene_id] && (
+                        <div className="bg-ink-950 p-4 border-b border-ink-700 space-y-2">
+                          <textarea
+                            className="w-full h-48 bg-ink-900 text-stone-200 text-xs p-3 rounded border border-ink-700 font-mono resize-y"
+                            value={editSceneMd[scene.scene_id] ?? scenePrompts[scene.scene_id] ?? ''}
+                            onChange={e => setEditSceneMd(prev => ({ ...prev, [scene.scene_id]: e.target.value }))}
+                          />
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={async () => {
+                                setSavingScene(prev => ({ ...prev, [scene.scene_id]: true }));
+                                try {
+                                  const res = await api(`/pipelines/${pipelineId}/artifacts/scenes/${encodeURIComponent(scene.scene_id)}.md`, {
+                                    method: 'PUT',
+                                    body: editSceneMd[scene.scene_id] ?? scenePrompts[scene.scene_id] ?? '',
+                                  });
+                                  if (res.ok) {
+                                    setScenePrompts(prev => ({ ...prev, [scene.scene_id]: editSceneMd[scene.scene_id] ?? scenePrompts[scene.scene_id] ?? '' }));
+                                    setEditingScene(prev => { const n = {...prev}; delete n[scene.scene_id]; return n; });
+                                  }
+                                } catch (_) {}
+                                setSavingScene(prev => ({ ...prev, [scene.scene_id]: false }));
+                              }}
+                              className="px-3 py-1.5 text-xs font-medium bg-leaf-500/20 text-leaf-400 rounded hover:bg-leaf-500/30 transition-colors cursor-pointer"
+                            >{savingScene[scene.scene_id] ? '保存中...' : '保存'}</button>
+                            <button
+                              onClick={() => setEditingScene(prev => { const n = {...prev}; delete n[scene.scene_id]; return n; })}
+                              className="px-3 py-1.5 text-xs text-stone-500 hover:text-stone-300 transition-colors cursor-pointer"
+                            >取消</button>
+                          </div>
+                        </div>
+                      )}
                       {sceneShots.map((shot, i) => {
                         const shotOpen = !!expandedShots[shot.full_shot_id];
                         return (
@@ -1013,6 +1140,80 @@
             })}
                     </div>
                   )}
+              </div>
+            )}
+          </div>
+
+          {/* storyboard.json 查看/编辑/重新生成 */}
+          <div className="bg-ink-900 rounded border border-ink-700 overflow-hidden mt-4">
+            <div
+              className="flex items-center gap-3 p-3 cursor-pointer hover:bg-ink-800 transition-colors"
+              onClick={() => setExpandedSb(!expandedSb)}
+            >
+              <span className="text-stone-500 text-xs w-3 text-center transition-transform flex-shrink-0" style={{ transform: expandedSb ? 'rotate(90deg)' : 'none' }}>▶</span>
+              <h4 className="text-sm font-semibold text-stone-300">storyboard.json</h4>
+              <span className="text-xs text-stone-500 ml-2">{shots.length} 镜 · {characters.length} 角色 · {scenes.length} 场景</span>
+              {!editSbMode && (
+                <button
+                  onClick={e => { e.stopPropagation(); setEditSbContent(JSON.stringify(data, null, 2)); setEditSbMode(true); setExpandedSb(true); }}
+                  className="ml-auto text-stone-500 hover:text-brass-400 transition-colors text-xs px-1.5 py-0.5 rounded cursor-pointer"
+                  title="编辑 JSON"
+                >✎</button>
+              )}
+            </div>
+            {expandedSb && (
+              <div className="border-t border-ink-700 p-4 bg-ink-950">
+                {editSbMode ? (
+                  <div className="space-y-2">
+                    <textarea
+                      className="w-full h-80 bg-ink-900 text-stone-200 text-xs p-3 rounded border border-ink-700 font-mono resize-y"
+                      value={editSbContent}
+                      onChange={e => setEditSbContent(e.target.value)}
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={async () => {
+                          setSavingSb(true);
+                          try {
+                            const res = await api(`/pipelines/${pipelineId}/artifacts/storyboard.json`, {
+                              method: 'PUT',
+                              body: editSbContent,
+                            });
+                            if (res.ok) {
+                              try { setData(JSON.parse(editSbContent)); } catch (_) {}
+                              setEditSbMode(false);
+                            }
+                          } catch (_) {}
+                          setSavingSb(false);
+                        }}
+                        className="px-3 py-1.5 text-xs font-medium bg-leaf-500/20 text-leaf-400 rounded hover:bg-leaf-500/30 transition-colors cursor-pointer"
+                      >{savingSb ? '保存中...' : '保存'}</button>
+                      <button
+                        onClick={() => setEditSbMode(false)}
+                        className="px-3 py-1.5 text-xs text-stone-500 hover:text-stone-300 transition-colors cursor-pointer"
+                      >取消</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <pre className="text-xs text-stone-400 whitespace-pre-wrap font-mono max-h-96 overflow-y-auto bg-ink-900 p-3 rounded">{JSON.stringify(data, null, 2)}</pre>
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm('重新运行步骤 1 将覆盖当前 storyboard.json 和 .md 文件，确定吗？')) return;
+                        try {
+                          const res = await api(`/pipelines/${pipelineId}/steps/1`, { method: 'POST' });
+                          if (res.ok) {
+                            setTimeout(async () => {
+                              const r2 = await api(`/pipelines/${pipelineId}`);
+                              if (r2.ok) { const d = await r2.json(); if (d.status === 'running') { /* poll will pick it up */ } }
+                            }, 1000);
+                          }
+                        } catch (_) {}
+                      }}
+                      className="px-3 py-1.5 text-xs font-medium bg-brass-500/20 text-brass-400 rounded hover:bg-brass-500/30 transition-colors cursor-pointer"
+                    >重新生成（步骤 1）</button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1165,7 +1366,7 @@
             </div>
           )}
 
-          <StepView step={activeStep} pipeline={pipeline} currentStep={currentStep} onRun={runStep} onCancel={cancelStep} actionLoading={actionLoading} pipelineId={pid}
+          <StepView step={activeStep} pipeline={pipeline} onRun={runStep} onCancel={cancelStep} actionLoading={actionLoading} pipelineId={pid}
   maxShotsPerScene={maxShotsPerScene} setMaxShotsPerScene={setMaxShotsPerScene}
   totalShots={totalShots} setTotalShots={setTotalShots}
   totalDuration={totalDuration} setTotalDuration={setTotalDuration} />

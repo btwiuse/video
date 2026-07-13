@@ -689,6 +689,19 @@ class Step2Pipeline:
                 else:
                     sf_prompt = shot.get("start_frame_prompt", "")
                 if not sf_prompt:
+                    # Fallback: read the main shot .md for scene description
+                    main_md_path = ensure_output_dir("shots", shot_id) / f"{shot_id}.md"
+                    if main_md_path.is_file():
+                        main_text = main_md_path.read_text(encoding="utf-8").strip()
+                        import re
+                        sections = []
+                        for section_name in ["画面内容", "构图与空间", "光影", "色彩"]:
+                            m = re.search(rf"##\s*{section_name}\s*\n(.+?)(?=\n##|$)", main_text, re.DOTALL)
+                            if m:
+                                sections.append(m.group(1).strip().replace("\n", " "))
+                        if sections:
+                            sf_prompt = " | ".join(sections)
+                if not sf_prompt:
                     return None
 
                 # Read deps.json to find character/scene dependencies
@@ -1002,6 +1015,21 @@ class Step2Pipeline:
                 sf_prompt = sf_md_path.read_text(encoding="utf-8").strip()
             else:
                 sf_prompt = shot.get("start_frame_prompt", "")
+            if not sf_prompt:
+                # Fallback: read the main shot .md for scene description
+                main_md_path = ensure_output_dir("shots", shot_id) / f"{shot_id}.md"
+                if main_md_path.is_file():
+                    main_text = main_md_path.read_text(encoding="utf-8").strip()
+                    # Extract relevant sections for a static frame description
+                    import re
+                    sections = []
+                    for section_name in ["画面内容", "构图与空间", "光影", "色彩"]:
+                        m = re.search(rf"##\s*{section_name}\s*\n(.+?)(?=\n##|$)", main_text, re.DOTALL)
+                        if m:
+                            sections.append(m.group(1).strip().replace("\n", " "))
+                    if sections:
+                        sf_prompt = " | ".join(sections)
+                        logger.info("  %s: composed start frame prompt from shot .md", shot_id)
             if not sf_prompt:
                 logger.warning("  %s: no start frame prompt, skipping", shot_id)
                 continue

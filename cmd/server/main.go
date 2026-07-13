@@ -264,10 +264,19 @@ func runPythonAsync(p *Pipeline, args []string, stepNum int, maxShotsPerScene, t
 			p.Error = err.Error()
 			vlog("pipeline %s step %d failed: %v", p.ID, p.Step, err)
 		} else {
-			// Verify actual output status
-			p.Status = detectStatus(p.ID)
-			if p.Status == StatusDone {
-				p.Step = 5
+			// Use detectStatus only for initial sequential runs (stepNum == 0).
+			// For explicit step runs, set status directly to the completed step.
+			if stepNum == 0 {
+				p.Status = detectStatus(p.ID)
+				if p.Status == StatusDone {
+					p.Step = 5
+				}
+			} else {
+				if stepNum >= 5 {
+					p.Status = StatusDone
+				} else {
+					p.Status = PipelineStatus(fmt.Sprintf("step_%d", stepNum))
+				}
 			}
 			vlog("pipeline %s step %d done status=%s", p.ID, p.Step, p.Status)
 		}
@@ -462,6 +471,22 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vlog("pipeline %s step %d (%s) starting", id, step, stepNames[step])
+
+	// Clear this step's output file so frontend shows loading/empty state
+	stepOutput := map[int]string{
+		1: "storyboard.json",
+		2: "manifest.json",
+		3: "clip_manifest.json",
+		4: "audio_manifest.json",
+		5: "final.mp4",
+	}
+	if f := stepOutput[step]; f != "" {
+		fp := filepath.Join(dir, f)
+		if fileExists(fp) {
+			os.Remove(fp)
+			vlog("pipeline %s cleared stale output: %s", id, f)
+		}
+	}
 
 	// Parse optional step params from request body
 	var maxShotsPerScene, totalShots, totalDuration int
@@ -825,6 +850,37 @@ func handleArtifacts(w http.ResponseWriter, r *http.Request) {
 	name := strings.Join(parts[2:], "/")
 
 	path := filepath.Join(outputDir(pid), name)
+	if !strings.HasPrefix(filepath.Clean(path), filepath.Clean(outputDir(pid))+string(filepath.Separator)) {
+		http.Error(w, "artifact not found", http.StatusNotFound)
+		return
+	}
+
+	// PUT — save/overwrite text artifact (.md, .json)
+	if r.Method == http.MethodPut {
+		ext := strings.ToLower(filepath.Ext(name))
+		if ext != ".md" && ext != ".json" && ext != ".txt" {
+			http.Error(w, "only .md, .json, .txt files can be saved", http.StatusBadRequest)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("cannot read body: %v", err), http.StatusBadRequest)
+			return
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			http.Error(w, fmt.Sprintf("cannot create dir: %v", err), http.StatusInternalServerError)
+			return
+		}
+		if err := os.WriteFile(path, body, 0644); err != nil {
+			http.Error(w, fmt.Sprintf("cannot write file: %v", err), http.StatusInternalServerError)
+			return
+		}
+		vlog("pipeline %s artifact saved: %s (%d bytes)", pid, name, len(body))
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"status": "saved", "path": name, "size": len(body)})
+		return
+	}
+
 	if !fileExists(path) {
 		http.Error(w, "artifact not found", http.StatusNotFound)
 		return
