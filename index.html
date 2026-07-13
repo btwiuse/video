@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='none'/></svg>">
   <title>Film Pipeline Studio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -190,6 +191,8 @@
       const [artifacts, setArtifacts] = useState([]);
       const [artLoading, setArtLoading] = useState(false);
       const [previews, setPreviews] = useState({});
+      const [regenerating, setRegenerating] = useState({});
+      const [cacheBust, setCacheBust] = useState({});
 
       useEffect(() => {
         if (!isStepDone && !isStepRunning) { setArtifacts([]); return; }
@@ -296,17 +299,46 @@
                 <div>
                   <h4 className="text-sm font-semibold text-stone-300 mb-3">角色肖像</h4>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                    {charImages.map(f => (
-                      <div key={f.name} className="flex flex-col items-center gap-1.5">
-                        <img
-                          src={`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(f.name)}`}
-                          alt={f.name.split('/').pop()}
-                          className="w-full aspect-[3/4] object-cover rounded bg-ink-700"
-                          onError={e => { e.target.style.display = 'none'; }}
-                        />
-                        <span className="text-xs text-stone-500 truncate max-w-full">{f.name.split('/').pop()?.replace(/\.(jpg|jpeg|png)$/, '')}</span>
-                      </div>
-                    ))}
+                    {charImages.map(f => {
+                      const label = f.name.split('/')[1]?.replace(/\.(jpg|jpeg|png)$/, '');
+                      const isRegen = regenerating['char_' + label];
+                      const cb = cacheBust[f.name];
+                      return (
+                        <div key={f.name + (cb || '')} className="flex flex-col items-center gap-1.5 group relative">
+                          <div className="relative w-full aspect-[3/4]">
+                            <img
+                              src={`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(f.name)}${cb ? '?ck=' + cb : ''}`}
+                              alt={f.name.split('/').pop()}
+                              className="w-full h-full object-cover rounded bg-ink-700"
+                              onError={e => { e.target.style.display = 'none'; }}
+                            />
+                            {isRegen && (
+                              <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
+                                <div className="w-6 h-6 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-xs text-stone-500 truncate max-w-full">{f.name.split('/').pop()?.replace(/\.(jpg|jpeg|png)$/, '')}</span>
+                          <button
+                            onClick={async () => {
+                              if (isRegen) return;
+                              setRegenerating(r => ({ ...r, ['char_' + label]: true }));
+                              try {
+                                await api(`/pipelines/${pipelineId}/regenerate`, {
+                                  method: 'POST',
+                                  body: JSON.stringify({ character_images: [label] }),
+                                });
+                                setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
+                              } catch (e) { /* ignore */ }
+                              setRegenerating(r => { const n = {...r}; delete n['char_' + label]; return n; });
+                            }}
+                            className="absolute top-1 right-1 w-7 h-7 rounded bg-ink-900/80 hover:bg-brass-500/80 text-stone-400 hover:text-ink-950 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-0"
+                            disabled={isRegen}
+                            title="重新生成此角色"
+                          >⟳</button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -314,17 +346,46 @@
                 <div>
                   <h4 className="text-sm font-semibold text-stone-300 mb-3">场景参考</h4>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {sceneImages.map(f => (
-                      <div key={f.name}>
-                        <img
-                          src={`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(f.name)}`}
-                          alt={f.name.split('/').pop()}
-                          className="w-full aspect-video object-cover rounded bg-ink-700"
-                          onError={e => { e.target.style.display = 'none'; }}
-                        />
-                        <span className="text-xs text-stone-500 mt-1 block">{f.name.split('/').pop()?.replace(/\.(jpg|jpeg|png)$/, '')}</span>
-                      </div>
-                    ))}
+                    {sceneImages.map(f => {
+                      const label = f.name.split('/')[1]?.replace(/\.(jpg|jpeg|png)$/, '');
+                      const isRegen = regenerating['scene_' + label];
+                      const cb = cacheBust[f.name];
+                      return (
+                        <div key={f.name + (cb || '')} className="group relative">
+                          <div className="relative w-full aspect-video">
+                            <img
+                              src={`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(f.name)}${cb ? '?ck=' + cb : ''}`}
+                              alt={f.name.split('/').pop()}
+                              className="w-full h-full object-cover rounded bg-ink-700"
+                              onError={e => { e.target.style.display = 'none'; }}
+                            />
+                            {isRegen && (
+                              <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
+                                <div className="w-6 h-6 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-xs text-stone-500 mt-1 block">{f.name.split('/').pop()?.replace(/\.(jpg|jpeg|png)$/, '')}</span>
+                          <button
+                            onClick={async () => {
+                              if (isRegen) return;
+                              setRegenerating(r => ({ ...r, ['scene_' + label]: true }));
+                              try {
+                                await api(`/pipelines/${pipelineId}/regenerate`, {
+                                  method: 'POST',
+                                  body: JSON.stringify({ scene_images: [label] }),
+                                });
+                                setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
+                              } catch (e) { /* ignore */ }
+                              setRegenerating(r => { const n = {...r}; delete n['scene_' + label]; return n; });
+                            }}
+                            className="absolute top-1 right-1 w-7 h-7 rounded bg-ink-900/80 hover:bg-brass-500/80 text-stone-400 hover:text-ink-950 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-0"
+                            disabled={isRegen}
+                            title="重新生成此场景"
+                          >⟳</button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -333,17 +394,46 @@
                 <div>
                   <h4 className="text-sm font-semibold text-stone-300 mb-3">镜头起始帧</h4>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                    {shotImages.map(f => (
-                      <div key={f.name} className="flex flex-col items-center gap-1.5">
-                        <img
-                          src={`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(f.name)}`}
-                          alt={f.name.split('/').pop()}
-                          className="w-full aspect-video object-cover rounded bg-ink-700"
-                          onError={e => { e.target.style.display = 'none'; }}
-                        />
-                        <span className="text-xs text-stone-500 truncate max-w-full">{f.name.split('/').slice(-2, -1)}</span>
-                      </div>
-                    ))}
+                    {shotImages.map(f => {
+                      const shotId = f.name.split('/')[1];
+                      const isRegen = regenerating['shot_' + shotId];
+                      const cb = cacheBust[f.name];
+                      return (
+                        <div key={f.name + (cb || '')} className="flex flex-col items-center gap-1.5 group relative">
+                          <div className="relative w-full aspect-video">
+                            <img
+                              src={`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(f.name)}${cb ? '?ck=' + cb : ''}`}
+                              alt={f.name.split('/').pop()}
+                              className="w-full h-full object-cover rounded bg-ink-700"
+                              onError={e => { e.target.style.display = 'none'; }}
+                            />
+                            {isRegen && (
+                              <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
+                                <div className="w-6 h-6 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-xs text-stone-500 truncate max-w-full">{f.name.split('/').slice(-2, -1)}</span>
+                          <button
+                            onClick={async () => {
+                              if (isRegen) return;
+                              setRegenerating(r => ({ ...r, ['shot_' + shotId]: true }));
+                              try {
+                                await api(`/pipelines/${pipelineId}/regenerate`, {
+                                  method: 'POST',
+                                  body: JSON.stringify({ shots: [shotId] }),
+                                });
+                                setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
+                              } catch (e) { /* ignore */ }
+                              setRegenerating(r => { const n = {...r}; delete n['shot_' + shotId]; return n; });
+                            }}
+                            className="absolute top-1 right-1 w-7 h-7 rounded bg-ink-900/80 hover:bg-brass-500/80 text-stone-400 hover:text-ink-950 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-0"
+                            disabled={isRegen}
+                            title="重新生成此镜头"
+                          >⟳</button>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

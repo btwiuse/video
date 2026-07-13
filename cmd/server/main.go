@@ -669,6 +669,117 @@ func handleCancelStep(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"status": "canceled"})
 }
 
+func handleRegenerateAsset(w http.ResponseWriter, r *http.Request) {
+	// /pipelines/{id}/regenerate
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 2 {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	id := parts[1]
+
+	mu.RLock()
+	_, exists := pipelines[id]
+	mu.RUnlock()
+	if !exists {
+		http.Error(w, "pipeline not found", http.StatusNotFound)
+		return
+	}
+
+	var params struct {
+		Characters      []string `json:"characters"`
+		CharacterImages []string `json:"character_images"`
+		Scenes          []string `json:"scenes"`
+		SceneImages     []string `json:"scene_images"`
+		Shots           []string `json:"shots"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		http.Error(w, fmt.Sprintf("bad request: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Validate step 2 has been run at least once
+	dir := outputDir(id)
+	if !fileExists(filepath.Join(dir, "storyboard.json")) {
+		http.Error(w, "missing storyboard.json (run step 1 first)", http.StatusConflict)
+		return
+	}
+	if !fileExists(filepath.Join(dir, "manifest.json")) {
+		http.Error(w, "missing manifest.json (run step 2 first)", http.StatusConflict)
+		return
+	}
+
+	if len(params.Characters) == 0 && len(params.CharacterImages) == 0 && len(params.Scenes) == 0 && len(params.SceneImages) == 0 && len(params.Shots) == 0 {
+		http.Error(w, "must specify at least one character, character_image, scene, scene_image, or shot to regenerate", http.StatusBadRequest)
+		return
+	}
+
+	// Build CLI args
+	args := []string{"run", "python", "main.py", "assets", filepath.Join(dir, "storyboard.json")}
+	for _, c := range params.Characters {
+		args = append(args, "--regenerate-char", c)
+	}
+	for _, c := range params.CharacterImages {
+		args = append(args, "--regenerate-char-image", c)
+	}
+	for _, s := range params.Scenes {
+		args = append(args, "--regenerate-scene", s)
+	}
+	for _, s := range params.SceneImages {
+		args = append(args, "--regenerate-scene-image", s)
+	}
+	for _, s := range params.Shots {
+		args = append(args, "--regenerate-shot", s)
+	}
+
+	vlog("pipeline %s regenerate assets: uv %s", id, strings.Join(args, " "))
+
+	// Run synchronously (single image should be fast)
+	cmd := exec.Command("uv", args...)
+	cmd.Dir = "."
+	outDir := outputDir(id)
+	dataDir := "."
+	if v := os.Getenv("DATA_DIR"); v != "" {
+		dataDir = v
+	}
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("DATA_DIR=%s", dataDir),
+		fmt.Sprintf("OUTPUT_DIR=%s", outDir),
+		fmt.Sprintf("PIPELINE_ID=%s", id),
+	)
+	logFile, err := os.OpenFile(logPath(id), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	var buf bytes.Buffer
+	if err == nil {
+		cmd.Stdout = io.MultiWriter(logFile, &buf)
+		cmd.Stderr = io.MultiWriter(logFile, &buf)
+		defer logFile.Close()
+	} else {
+		cmd.Stdout = &buf
+		cmd.Stderr = &buf
+	}
+
+	err = cmd.Run()
+	out := strings.TrimSpace(buf.String())
+	if err != nil {
+		vlog("pipeline %s regenerate failed: %v output=%s", id, err, out)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]any{
+			"status": "failed",
+			"error":  fmt.Sprintf("regeneration failed: %v", err),
+			"output": out,
+		})
+		return
+	}
+
+	vlog("pipeline %s regenerate done: %s", id, out)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"status": "done",
+		"output": out,
+	})
+}
+
 func serveHome(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -830,6 +941,10 @@ func main() {
 		}
 		if strings.HasSuffix(path, "/cancel") && r.Method == http.MethodPost {
 			handleCancelStep(w, r)
+			return
+		}
+		if strings.HasSuffix(path, "/regenerate") && r.Method == http.MethodPost {
+			handleRegenerateAsset(w, r)
 			return
 		}
 		if r.Method == http.MethodGet {

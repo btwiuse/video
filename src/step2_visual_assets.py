@@ -9,6 +9,7 @@ Architecture: Provider abstraction → easy swap between image models.
 from __future__ import annotations
 
 import asyncio
+import glob
 import logging
 import os
 from abc import ABC, abstractmethod
@@ -764,6 +765,313 @@ class Step2Pipeline:
         logger.info("Asset manifest saved: %d entries", len(manifest))
         return manifest
 
+    # ---- Regeneration: single-item granularity ----
+
+    async def regenerate_characters(self, storyboard: dict, ref_ids: list[str]) -> None:
+        """Regenerate specific characters' 3-angle portraits, replacing old files."""
+        logger.info("Regenerating characters: %s", ref_ids)
+        chars_dir = str(ensure_output_dir("characters"))
+        characters = storyboard.get("characters", [])
+        manifest_path = ensure_output_dir() / "manifest.json"
+        manifest = load_json(str(manifest_path)) if manifest_path.is_file() else {}
+
+        for char in characters:
+            ref_id = char.get("ref_id", char.get("id", ""))
+            if ref_id not in ref_ids:
+                continue
+
+            prompts = self._build_character_prompts(char)
+            all_prompts: list[tuple[str, str, str]] = []
+            for label_suffix, prompt in prompts:
+                all_prompts.append((prompt, f"{ref_id}_{label_suffix}", "3:4"))
+
+            results = await self.provider.generate_batch(all_prompts)
+            for i, r in enumerate(results):
+                suffix = all_prompts[i][1].rsplit("_", 1)[1]
+                if r.status == "done" and r.path:
+                    import shutil
+                    ext = os.path.splitext(r.path)[1]
+                    target = os.path.join(chars_dir, f"{ref_id}_{suffix}{ext}")
+                    # Remove old file if exists
+                    old_glob = glob.glob(os.path.join(chars_dir, f"{ref_id}_{suffix}.*"))
+                    for old in old_glob:
+                        os.remove(old)
+                    shutil.move(r.path, target)
+                    r.path = target
+                    logger.info("  %s_%s: regenerated -> %s", ref_id, suffix, target)
+                    # Update manifest
+                    manifest_key = f"{ref_id}_{suffix}"
+                    name = self._read_entity_name("characters", ref_id)
+                    manifest[manifest_key] = {
+                        "file": target,
+                        "type": "character",
+                        "character_id": ref_id,
+                        "character_name": name or ref_id,
+                        "prompt": r.prompt,
+                        "status": "done",
+                    }
+                else:
+                    logger.warning("  %s_%s: regeneration failed: %s", ref_id, suffix, r.error or "unknown")
+
+        save_json(manifest, str(manifest_path))
+        logger.info("Manifest updated after character regeneration")
+
+    async def regenerate_single_character_images(self, storyboard: dict, labels: list[str]) -> None:
+        """Regenerate specific character images by label (e.g. char1_front), one at a time."""
+        logger.info("Regenerating single character images: %s", labels)
+        chars_dir = str(ensure_output_dir("characters"))
+        characters = storyboard.get("characters", [])
+        manifest_path = ensure_output_dir() / "manifest.json"
+        manifest = load_json(str(manifest_path)) if manifest_path.is_file() else {}
+
+        # Build a lookup from storyboard characters
+        char_map = {c.get("ref_id", c.get("id", "")): c for c in characters}
+
+        for label in labels:
+            # label format: ref_id_suffix (e.g. char1_front)
+            *ref_parts, suffix = label.rsplit("_", 1)
+            ref_id = "_".join(ref_parts)
+            char = char_map.get(ref_id)
+            if char is None:
+                logger.warning("  %s: character not found in storyboard", ref_id)
+                continue
+
+            prompts = self._build_character_prompts(char)
+            prompt_for_suffix = dict(prompts).get(suffix)
+            if not prompt_for_suffix:
+                logger.warning("  %s: suffix '%s' not found in character prompts", label, suffix)
+                continue
+
+            logger.info("  %s: regenerating...", label)
+            r = await self.provider.generate(prompt_for_suffix, "3:4")
+            if r.status == "done" and r.path:
+                import shutil
+                ext = os.path.splitext(r.path)[1]
+                target = os.path.join(chars_dir, f"{label}{ext}")
+                old_glob = glob.glob(os.path.join(chars_dir, f"{label}.*"))
+                for old in old_glob:
+                    os.remove(old)
+                shutil.move(r.path, target)
+                r.path = target
+                logger.info("  %s: regenerated -> %s", label, target)
+                name = self._read_entity_name("characters", ref_id)
+                manifest[label] = {
+                    "file": target,
+                    "type": "character",
+                    "character_id": ref_id,
+                    "character_name": name or ref_id,
+                    "prompt": r.prompt,
+                    "status": "done",
+                }
+            else:
+                logger.warning("  %s: regeneration failed: %s", label, r.error or "unknown")
+
+        save_json(manifest, str(manifest_path))
+        logger.info("Manifest updated after single character image regeneration")
+
+    async def regenerate_scenes(self, storyboard: dict, scene_ids: list[str]) -> None:
+        """Regenerate specific scene reference images, replacing old files."""
+        logger.info("Regenerating scenes: %s", scene_ids)
+        scenes_dir = str(ensure_output_dir("scenes"))
+        scenes = storyboard.get("scenes", [])
+        manifest_path = ensure_output_dir() / "manifest.json"
+        manifest = load_json(str(manifest_path)) if manifest_path.is_file() else {}
+
+        for scene in scenes:
+            sid = scene.get("scene_id", scene.get("id", ""))
+            if sid not in scene_ids:
+                continue
+
+            prompts = self._build_scene_prompts(scene)
+            scene_prompts: list[tuple[str, str, str]] = []
+            for label_suffix, prompt in prompts:
+                scene_prompts.append((prompt, f"{sid}_{label_suffix}", "16:9"))
+
+            results = await self.provider.generate_batch(scene_prompts)
+            for i, r in enumerate(results):
+                suffix = scene_prompts[i][1].rsplit("_", 1)[1]
+                if r.status == "done" and r.path:
+                    import shutil
+                    ext = os.path.splitext(r.path)[1]
+                    target = os.path.join(scenes_dir, f"{sid}_{suffix}{ext}")
+                    old_glob = glob.glob(os.path.join(scenes_dir, f"{sid}_{suffix}.*"))
+                    for old in old_glob:
+                        os.remove(old)
+                    shutil.move(r.path, target)
+                    r.path = target
+                    logger.info("  %s_%s: regenerated -> %s", sid, suffix, target)
+                    manifest_key = f"{sid}_{suffix}"
+                    name = self._read_entity_name("scenes", sid)
+                    manifest[manifest_key] = {
+                        "file": target,
+                        "type": "scene",
+                        "scene_id": sid,
+                        "scene_name": name or sid,
+                        "prompt": r.prompt,
+                        "status": "done",
+                    }
+                else:
+                    logger.warning("  %s_%s: regeneration failed: %s", sid, suffix, r.error or "unknown")
+
+        save_json(manifest, str(manifest_path))
+        logger.info("Manifest updated after scene regeneration")
+
+    async def regenerate_single_scene_images(self, storyboard: dict, labels: list[str]) -> None:
+        """Regenerate specific scene images by label (e.g. SC_01_wide), one at a time."""
+        logger.info("Regenerating single scene images: %s", labels)
+        scenes_dir = str(ensure_output_dir("scenes"))
+        scenes = storyboard.get("scenes", [])
+        manifest_path = ensure_output_dir() / "manifest.json"
+        manifest = load_json(str(manifest_path)) if manifest_path.is_file() else {}
+
+        # Build a lookup from storyboard scenes
+        scene_map = {s.get("scene_id", s.get("id", "")): s for s in scenes}
+
+        for label in labels:
+            # label format: sid_suffix (e.g. SC_01_wide)
+            *sid_parts, suffix = label.rsplit("_", 1)
+            sid = "_".join(sid_parts)
+            scene = scene_map.get(sid)
+            if scene is None:
+                logger.warning("  %s: scene not found in storyboard", sid)
+                continue
+
+            prompts = self._build_scene_prompts(scene)
+            prompt_for_suffix = dict(prompts).get(suffix)
+            if not prompt_for_suffix:
+                logger.warning("  %s: suffix '%s' not found in scene prompts", label, suffix)
+                continue
+
+            logger.info("  %s: regenerating...", label)
+            r = await self.provider.generate(prompt_for_suffix, "16:9")
+            if r.status == "done" and r.path:
+                import shutil
+                ext = os.path.splitext(r.path)[1]
+                target = os.path.join(scenes_dir, f"{label}{ext}")
+                old_glob = glob.glob(os.path.join(scenes_dir, f"{label}.*"))
+                for old in old_glob:
+                    os.remove(old)
+                shutil.move(r.path, target)
+                r.path = target
+                logger.info("  %s: regenerated -> %s", label, target)
+                name = self._read_entity_name("scenes", sid)
+                manifest[label] = {
+                    "file": target,
+                    "type": "scene",
+                    "scene_id": sid,
+                    "scene_name": name or sid,
+                    "prompt": r.prompt,
+                    "status": "done",
+                }
+            else:
+                logger.warning("  %s: regeneration failed: %s", label, r.error or "unknown")
+
+        save_json(manifest, str(manifest_path))
+        logger.info("Manifest updated after single scene image regeneration")
+
+    async def regenerate_shots(self, storyboard: dict, shot_ids: list[str]) -> None:
+        """Regenerate specific shot start frames, replacing old files."""
+        logger.info("Regenerating shots: %s", shot_ids)
+        shots = storyboard.get("shots", [])
+        manifest_path = ensure_output_dir() / "manifest.json"
+        manifest = load_json(str(manifest_path)) if manifest_path.is_file() else {}
+
+        # Load existing char/scene maps for reference images
+        char_map: dict[str, list[ImageResult]] = {}
+        scene_map: dict[str, list[ImageResult]] = {}
+        for key, entry in manifest.items():
+            if entry.get("type") == "character":
+                ref_id = entry["character_id"]
+                r = ImageResult(label=key, path=entry["file"], prompt=entry.get("prompt", ""), status="done")
+                char_map.setdefault(ref_id, []).append(r)
+            elif entry.get("type") == "scene":
+                sid = entry["scene_id"]
+                r = ImageResult(label=key, path=entry["file"], prompt=entry.get("prompt", ""), status="done")
+                scene_map.setdefault(sid, []).append(r)
+
+        for shot in shots:
+            shot_id = shot.get("full_shot_id", "")
+            if shot_id not in shot_ids:
+                continue
+
+            logger.info("  %s: regenerating start frame...", shot_id)
+
+            # Read start frame prompt
+            sf_md_path = ensure_output_dir("shots", shot_id) / f"{shot_id}_startframe.md"
+            if sf_md_path.is_file():
+                sf_prompt = sf_md_path.read_text(encoding="utf-8").strip()
+            else:
+                sf_prompt = shot.get("start_frame_prompt", "")
+            if not sf_prompt:
+                logger.warning("  %s: no start frame prompt, skipping", shot_id)
+                continue
+
+            # Read deps for reference images
+            deps = load_json(str(ensure_output_dir("shots", shot_id) / "deps.json"))
+            char_ref_ids = deps.get("character_refs", [])
+            scene_ref_id = deps.get("scene_id", "")
+
+            ref_paths: list[str] = []
+            for ref_id in char_ref_ids:
+                if ref_id in char_map:
+                    for r in char_map[ref_id]:
+                        if r.status == "done" and os.path.isfile(r.path):
+                            ref_paths.append(r.path)
+                            break
+            if scene_ref_id in scene_map:
+                for r in scene_map[scene_ref_id]:
+                    if r.status == "done" and os.path.isfile(r.path):
+                        ref_paths.append(r.path)
+                        break
+
+            r = None
+            for attempt in range(3):
+                r = await self.provider.generate(sf_prompt, "16:9", reference_images=ref_paths or None)
+                if r.status == "done":
+                    break
+                logger.warning("  %s start frame attempt %d failed: %s", shot_id, attempt + 1, r.error or "unknown")
+                await asyncio.sleep(2 ** attempt)
+
+            if r is None or r.status != "done":
+                logger.warning("  %s: all start frame regeneration attempts failed", shot_id)
+                continue
+
+            if r.path:
+                import shutil
+                ext = os.path.splitext(r.path)[1]
+                shot_dir = str(ensure_output_dir("shots", shot_id))
+                target = os.path.join(shot_dir, f"{shot_id}_startframe{ext}")
+                old_glob = glob.glob(os.path.join(shot_dir, f"{shot_id}_startframe.*"))
+                for old in old_glob:
+                    os.remove(old)
+                shutil.move(r.path, target)
+                r.path = target
+                logger.info("  %s: start frame regenerated -> %s", shot_id, target)
+
+                # Update manifest
+                manifest[shot_id] = {
+                    "file": target,
+                    "type": "shot_start_frame",
+                    "shot_id": shot_id,
+                    "scene_id": deps.get("scene_id", ""),
+                    "shot_num": self._parse_shot_id(shot_id)[1],
+                    "prompt": sf_prompt,
+                    "status": "done",
+                }
+
+                # Update storyboard.json startframe_file
+                sb_path = ensure_output_dir() / "storyboard.json"
+                if sb_path.is_file():
+                    sb = load_json(str(sb_path))
+                    for s in sb.get("shots", []):
+                        if s.get("full_shot_id") == shot_id:
+                            s["startframe_file"] = os.path.relpath(target, str(ensure_output_dir()))
+                            break
+                    save_json(sb, str(sb_path))
+
+        save_json(manifest, str(manifest_path))
+        logger.info("Manifest updated after shot regeneration")
+
     # ---- Prompt builders: read from .md files (model data) ----
 
     def _build_character_prompts(self, char: dict) -> list[tuple[str, str]]:
@@ -946,3 +1254,46 @@ async def generate_assets(storyboard_path: str, provider_name: str | None = None
     provider = create_image_provider(provider_name)
     pipeline = Step2Pipeline(provider)
     return await pipeline.generate_all(storyboard)
+
+
+async def regenerate_assets(
+    storyboard_path: str,
+    char_ids: list[str] | None = None,
+    char_image_labels: list[str] | None = None,
+    scene_ids: list[str] | None = None,
+    scene_image_labels: list[str] | None = None,
+    shot_ids: list[str] | None = None,
+    provider_name: str | None = None,
+) -> dict:
+    """Regenerate specific assets from storyboard, preserving existing ones.
+
+    Args:
+        storyboard_path: Path to storyboard.json
+        char_ids: List of character ref_ids to regenerate (all 3 angles)
+        char_image_labels: List of specific character image labels (e.g. char1_front)
+        scene_ids: List of scene_ids to regenerate (all images)
+        scene_image_labels: List of specific scene image labels (e.g. SC_01_wide)
+        shot_ids: List of shot_ids to regenerate
+        provider_name: Optional provider override
+
+    Returns:
+        Updated manifest dict
+    """
+    storyboard = load_json(storyboard_path)
+    provider = create_image_provider(provider_name)
+    pipeline = Step2Pipeline(provider)
+
+    if char_ids:
+        await pipeline.regenerate_characters(storyboard, char_ids)
+    if char_image_labels:
+        await pipeline.regenerate_single_character_images(storyboard, char_image_labels)
+    if scene_ids:
+        await pipeline.regenerate_scenes(storyboard, scene_ids)
+    if scene_image_labels:
+        await pipeline.regenerate_single_scene_images(storyboard, scene_image_labels)
+    if shot_ids:
+        await pipeline.regenerate_shots(storyboard, shot_ids)
+
+    # Reload and return the updated manifest
+    manifest_path = ensure_output_dir() / "manifest.json"
+    return load_json(str(manifest_path))
