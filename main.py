@@ -214,8 +214,12 @@ def videos(storyboard_path, assets_path):
     from src.step3_video_generation import generate_videos
     clip_manifest = asyncio.run(generate_videos(storyboard_path, assets_path))
     done = sum(1 for c in clip_manifest if c.get("status") == "done")
-    print(f"Videos: {done}/{len(clip_manifest)} clips generated.")
+    total = len(clip_manifest)
+    print(f"Videos: {done}/{total} clips generated.")
     print(f"Output: {config.OUTPUT_DIR}/")
+    if done == 0 and total > 0:
+        print("ERROR: All video generations failed. See logs for details.", file=sys.stderr)
+        raise SystemExit(1)
 
 
 @cli.command()

@@ -154,6 +154,15 @@ func loadPipelineState(id string) *Pipeline {
 	if err := json.Unmarshal(data, &p); err != nil {
 		return nil
 	}
+	// Reset pipelines that were running when the server died
+	if p.Status == StatusRunning || p.Status == StatusPending {
+		if p.Cancel == nil {
+			p.Status = StatusFailed
+			p.Error = "server restarted while step was running"
+			p.UpdatedAt = time.Now()
+			savePipelineState(&p)
+		}
+	}
 	return &p
 }
 
@@ -779,8 +788,19 @@ func handleCancelStep(w http.ResponseWriter, r *http.Request) {
 
 	mu.Lock()
 	p, exists := pipelines[id]
-	if exists && p.Cancel != nil {
+	if !exists {
+		p = loadPipelineState(id)
+		if p == nil {
+			mu.Unlock()
+			http.Error(w, "pipeline not found", http.StatusNotFound)
+			return
+		}
+		pipelines[id] = p
+	}
+	if p.Cancel != nil {
 		p.Cancel()
+	}
+	if p.Status == StatusRunning {
 		p.Status = StatusCanceled
 		p.Error = "canceled by user"
 		p.UpdatedAt = time.Now()
