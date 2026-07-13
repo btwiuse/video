@@ -58,6 +58,11 @@ class PostProduction:
         """
         logger.info("Loading video clips...")
         video_clips = self._load_and_prepare_clips(clip_manifest)
+        if not video_clips:
+            raise RuntimeError(
+                "No video clips available — all shots failed generation. "
+                "Check Step 3 logs for details."
+            )
 
         logger.info("Applying transitions...")
         final_video = self._concatenate_with_transitions(video_clips, clip_manifest)
