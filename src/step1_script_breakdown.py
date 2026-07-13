@@ -192,6 +192,27 @@ SYSTEM_FILMMAKER = f"""你是一位资深电影导演和分镜师，精通视觉
 7. 对话场景严格遵守 180 度规则"""
 
 
+def _ensure_list(value: list | str | None) -> list[str]:
+    """Normalize character_refs to a list of strings.
+
+    The LLM sometimes returns a JSON string like '[\"小橘\"]' instead of
+    an actual list, which causes ', '.join() to iterate character-by-character.
+    """
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        import json as _json
+        try:
+            parsed = _json.loads(value)
+            if isinstance(parsed, list):
+                return parsed
+        except (_json.JSONDecodeError, TypeError):
+            pass
+        # Fallback: if it's a bare string, wrap it in a list
+        return [value]
+    return []
+
+
 class StoryboardGenerator:
     """Generate storyboard from screenplay using DeepSeek tool calling."""
 
@@ -913,7 +934,7 @@ class StoryboardGenerator:
             f"| 景别 | {shot.get('shot_size', '')} |",
             f"| 机位 | {shot.get('camera_position', '')} |",
             f"| 运镜 | {shot.get('camera_movement', '')} |",
-            f"| 角色 | {', '.join(shot.get('character_refs', []))} |",
+            f"| 角色 | {', '.join(_ensure_list(shot.get('character_refs', [])))} |",
             "",
             f"## 画面内容",
             f"- 前景：{shot.get('visual_foreground', '')}",
@@ -969,10 +990,10 @@ class StoryboardGenerator:
     def _save_shot_deps(shot: dict, out_dir, characters: list[dict], scenes: list[dict]) -> None:
         """Save program-readable dependency references (IDs only, not prompts)."""
         deps = {
-            "character_refs": shot.get("character_refs", []),
+            "character_refs": _ensure_list(shot.get("character_refs", [])),
             "character_md_files": [
                 f"characters/{c.get('ref_id')}.md"
-                for c in characters if c.get("ref_id") in shot.get("character_refs", [])
+                for c in characters if c.get("ref_id") in _ensure_list(shot.get("character_refs", []))
             ],
             "scene_id": shot.get("scene_id", ""),
             "scene_md_file": f"scenes/{shot.get('scene_id', '')}.md",

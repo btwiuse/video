@@ -287,5 +287,17 @@ def summarize(script_file, reasoning):
     print(json.dumps(result, ensure_ascii=False))
 
 
+@cli.command()
+@click.argument("storyboard_path", type=click.Path(exists=True))
+def reindex(storyboard_path):
+    """Rebuild storyboard.json from .md files (no AI calls)."""
+    from src.reindex import reindex_storyboard
+    t0 = time.monotonic()
+    storyboard = reindex_storyboard(storyboard_path)
+    elapsed = time.monotonic() - t0
+    shot_count = len(storyboard.get("shots", []))
+    print(f"Reindexed {shot_count} shots from .md files in {elapsed:.1f}s.")
+
+
 if __name__ == "__main__":
     cli()

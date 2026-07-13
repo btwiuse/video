@@ -623,6 +623,71 @@ func handleSummarize(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func handleReindex(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	id := strings.TrimPrefix(r.URL.Path, "/pipelines/")
+	id = strings.TrimSuffix(id, "/reindex")
+	parts := strings.Split(id, "/")
+	id = parts[0]
+
+	mu.RLock()
+	p, exists := pipelines[id]
+	mu.RUnlock()
+	if !exists {
+		http.Error(w, "pipeline not found", http.StatusNotFound)
+		return
+	}
+
+	sbPath := filepath.Join(outputDir(id), "storyboard.json")
+	if !fileExists(sbPath) {
+		http.Error(w, "storyboard.json not found; run step 1 first", http.StatusConflict)
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mu.Lock()
+	if p.Cancel != nil {
+		p.Cancel()
+	}
+	p.Cancel = cancel
+	mu.Unlock()
+
+	cmd := exec.CommandContext(ctx, "uv", "run", "python", "main.py", "reindex", sbPath)
+	cmd.Dir = "."
+	outDir := outputDir(id)
+	dataDir := "."
+	if v := os.Getenv("DATA_DIR"); v != "" {
+		dataDir = v
+	}
+	cmd.Env = append(os.Environ(), fmt.Sprintf("DATA_DIR=%s", dataDir), fmt.Sprintf("OUTPUT_DIR=%s", outDir))
+
+	logFile, err := os.OpenFile(logPath(id), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err == nil {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+		defer logFile.Close()
+	}
+
+	vlog("pipeline %s reindex starting", id)
+	err = cmd.Run()
+	vlog("pipeline %s reindex done (err=%v)", id, err)
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf("reindex failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"status": "ok",
+	})
+}
+
 func handleListPipelines(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -909,6 +974,24 @@ func handleArtifacts(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		vlog("pipeline %s artifact saved: %s (%d bytes)", pid, name, len(body))
+		// Auto-reindex storyboard.json after saving any .md file
+		if ext == ".md" {
+			sbPath := filepath.Join(outputDir(pid), "storyboard.json")
+			if fileExists(sbPath) {
+				reindexCmd := exec.Command("uv", "run", "python", "main.py", "reindex", sbPath)
+				reindexCmd.Dir = "."
+				dataDir := "."
+				if v := os.Getenv("DATA_DIR"); v != "" {
+					dataDir = v
+				}
+				reindexCmd.Env = append(os.Environ(), fmt.Sprintf("DATA_DIR=%s", dataDir), fmt.Sprintf("OUTPUT_DIR=%s", outputDir(pid)))
+				if err := reindexCmd.Run(); err != nil {
+					vlog("pipeline %s auto-reindex failed after .md save: %v", pid, err)
+				} else {
+					vlog("pipeline %s auto-reindexed after .md save", pid)
+				}
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{"status": "saved", "path": name, "size": len(body)})
 		return
@@ -1026,6 +1109,10 @@ func main() {
 		}
 	if strings.HasSuffix(path, "/summarize") {
 			handleSummarize(w, r)
+			return
+		}
+		if strings.HasSuffix(path, "/reindex") && r.Method == http.MethodPost {
+			handleReindex(w, r)
 			return
 		}
 		if strings.HasSuffix(path, "/cancel") && r.Method == http.MethodPost {
