@@ -1314,9 +1314,19 @@
       const [actionLoading, setActionLoading] = useState(false);
       const [summary, setSummary] = useState(null);
       const [summaryLoading, setSummaryLoading] = useState(false);
-      const [maxShotsPerScene, setMaxShotsPerScene] = useState(1);
-      const [totalShots, setTotalShots] = useState(1);
-      const [totalDuration, setTotalDuration] = useState(1);
+      const [maxShotsPerScene, setMaxShotsPerScene] = useState(() => {
+        try { const s = localStorage.getItem('pipelineSettings'); return s ? JSON.parse(s).maxShotsPerScene ?? 1 : 1; } catch { return 1; }
+      });
+      const [totalShots, setTotalShots] = useState(() => {
+        try { const s = localStorage.getItem('pipelineSettings'); return s ? JSON.parse(s).totalShots ?? 1 : 1; } catch { return 1; }
+      });
+      const [totalDuration, setTotalDuration] = useState(() => {
+        try { const s = localStorage.getItem('pipelineSettings'); return s ? JSON.parse(s).totalDuration ?? 1 : 1; } catch { return 1; }
+      });
+
+      useEffect(() => {
+        try { localStorage.setItem('pipelineSettings', JSON.stringify({ maxShotsPerScene, totalShots, totalDuration })); } catch {}
+      }, [maxShotsPerScene, totalShots, totalDuration]);
 
       useEffect(() => {
         let cancelled = false;
