@@ -30,7 +30,7 @@ class Config:
     VIDEO_MODEL: str = os.getenv("VIDEO_MODEL", "doubao-seedance-2-0-fast-260128")
     TOKENVOKE_MAX_DURATION_SEC: int = int(os.getenv("TOKENVOKE_MAX_DURATION_SEC", "15"))
     TOKENVOKE_MAX_IMAGES: int = int(os.getenv("TOKENVOKE_MAX_IMAGES", "9"))
-    PUBLIC_URL: str = os.getenv("PUBLIC_URL", "")  # e.g. https://example.com, for constructing image URLs
+    PUBLIC_URL: str = os.getenv("PUBLIC_URL", "")  # e.g. https://xxx.ufo.k0s.io, Go server behind ufo tunnel
 
     # Audio generation — see src/step4_audio.py for all providers
     AUDIO_PROVIDER: str = os.getenv("AUDIO_PROVIDER", "null")

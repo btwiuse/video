@@ -118,7 +118,7 @@ class TokenVokeProvider(VideoProvider):
         body: dict[str, Any] = {
             "model": self._model,
             "prompt": prompt,
-            "duration": self._normalize_duration(int(duration)),
+            "duration": self._normalize_duration(round(duration)),
             "metadata": {
                 "ratio": "16:9",
                 "resolution": "720p",
@@ -251,14 +251,14 @@ class TokenVokeProvider(VideoProvider):
             return None
 
     def _local_to_public_url(self, path: str) -> str | None:
-        """Convert a local file path to public URL via artifact endpoint.
+        """Convert a local file path to public URL via Go server artifacts endpoint.
 
-        Requires PUBLIC_URL env var (the server's public base, e.g. https://example.com).
-        The Go server serves artifacts at /pipelines/{pid}/artifacts/{relative_path}.
+        Requires PUBLIC_URL (ufo tunnel to Go server) and PIPELINE_ID.
+        Go server serves files from DATA_DIR/output/{pid}/ with correct
+        Content-Type based on extension.
         """
         if not self._public_url or not self._pipeline_id or not path or not os.path.isfile(path):
             return None
-        # Compute relative path from output dir
         out_dir = ensure_output_dir()
         try:
             rel = os.path.relpath(path, str(out_dir))
@@ -327,7 +327,7 @@ class SeedanceProvider(VideoProvider):
             "content": content,
             "resolution": "480p",
             "ratio": "16:9",
-            "duration": self._normalize_duration(int(duration)),
+            "duration": self._normalize_duration(round(duration)),
             "watermark": False,
         }
 
@@ -517,7 +517,8 @@ class VideoPipeline:
                 prompt = assemble_video_prompt(shot)
 
             start_frame, ref_images = self._resolve_image_refs(
-                shot_id, char_ref_ids, scene_id, transition, asset_manifest, i, shots
+                shot_id, char_ref_ids, scene_id, transition, asset_manifest, i, shots,
+                startframe_file=shot.get("startframe_file", ""),
             )
 
             result = await self._generate_single(
@@ -581,15 +582,25 @@ class VideoPipeline:
     def _resolve_image_refs(
         self, shot_id: str, char_ref_ids: list[str], scene_id: str,
         transition_type: str, manifest: dict, shot_index: int, all_shots: list,
+        startframe_file: str = "",
     ) -> tuple[str, list[str]]:
         """Resolve start frame and reference images. Returns (start_frame_path, ref_paths)."""
         refs: list[str] = []
         quota = self.max_images
 
-        # 1. This shot's start frame
-        sf_path = str(ensure_output_dir("shots", shot_id) / f"{shot_id}_startframe.png")
-        if not os.path.isfile(sf_path):
-            sf_path = ""
+        # 1. This shot's start frame — use storyboard path (Step 2 saves with correct ext)
+        sf_path = ""
+        if startframe_file:
+            sf_candidate = str(ensure_output_dir() / startframe_file)
+            if os.path.isfile(sf_candidate):
+                sf_path = sf_candidate
+        if not sf_path:
+            # Fallback: try common extensions
+            for ext in (".jpg", ".png", ".jpeg", ".webp"):
+                candidate = str(ensure_output_dir("shots", shot_id) / f"{shot_id}_startframe{ext}")
+                if os.path.isfile(candidate):
+                    sf_path = candidate
+                    break
 
         # 2. Character portraits
         char_entries = self._get_char_entries(char_ref_ids, manifest)
@@ -616,9 +627,20 @@ class VideoPipeline:
         # 4. Previous shot's start frame for Type A continuity
         if transition_type == "A" and shot_index > 0:
             prev_id = all_shots[shot_index - 1].get("full_shot_id", "")
-            prev_sf = str(ensure_output_dir("shots", prev_id) / f"{prev_id}_startframe.png")
-            if os.path.isfile(prev_sf):
-                refs.append(prev_sf)
+            prev_sf_path = ""
+            prev_sf_file = all_shots[shot_index - 1].get("startframe_file", "")
+            if prev_sf_file:
+                prev_candidate = str(ensure_output_dir() / prev_sf_file)
+                if os.path.isfile(prev_candidate):
+                    prev_sf_path = prev_candidate
+            if not prev_sf_path:
+                for ext in (".jpg", ".png", ".jpeg", ".webp"):
+                    candidate = str(ensure_output_dir("shots", prev_id) / f"{prev_id}_startframe{ext}")
+                    if os.path.isfile(candidate):
+                        prev_sf_path = candidate
+                        break
+            if prev_sf_path:
+                refs.append(prev_sf_path)
 
         return sf_path, refs[:quota]
 

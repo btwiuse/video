@@ -48,6 +48,7 @@ const (
 type Pipeline struct {
 	ID        string
 	Name      string
+	ScriptFile string   `json:"script_file"` // original uploaded filename
 	Status    PipelineStatus
 	Step      int           // current step 0-5
 	Error     string
@@ -291,7 +292,7 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, _, err := r.FormFile("script")
+	file, header, err := r.FormFile("script")
 	if err != nil {
 		http.Error(w, "missing 'script' file field", http.StatusBadRequest)
 		return
@@ -305,8 +306,12 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Save uploaded script
-	sp := scriptPath(id)
+	// Save uploaded file with original filename (preserves extension for correct Content-Type)
+	filename := header.Filename
+	if filename == "" {
+		filename = "script.txt"
+	}
+	sp := filepath.Join(dir, filename)
 	dst, err := os.Create(sp)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("cannot save script: %v", err), http.StatusInternalServerError)
@@ -319,12 +324,13 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p := &Pipeline{
-		ID:        id,
-		Name:      generatePipelineName(sp),
-		Status:    StatusPending,
-		Step:      0,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:         id,
+		Name:       generatePipelineName(sp),
+		ScriptFile: filename,
+		Status:     StatusPending,
+		Step:       0,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
 	}
 	mu.Lock()
 	pipelines[id] = p
@@ -439,7 +445,7 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 		p.Cancel()
 	}
 
-	sp := scriptPath(id)
+	sp := filepath.Join(dir, p.ScriptFile)
 	args := []string{"main.py"}
 	stepNames := []string{"", "storyboard", "assets", "videos", "audio", "compose"}
 	switch step {
@@ -497,7 +503,12 @@ func handleSummarize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sp := scriptPath(id)
+	p := loadPipelineState(id)
+	if p == nil || p.ScriptFile == "" {
+		http.Error(w, "script not found", http.StatusNotFound)
+		return
+	}
+	sp := filepath.Join(outputDir(id), p.ScriptFile)
 	if !fileExists(sp) {
 		http.Error(w, "script not found", http.StatusNotFound)
 		return

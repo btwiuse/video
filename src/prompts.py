@@ -205,7 +205,7 @@ def assemble_video_prompt(shot: dict) -> str:
         parts.append(shot["continuity_note"])
 
     # Aspect ratio
-    parts.append("16:9, 1080p, cinematic.")
+    parts.append("16:9, 1080p.")
 
     return " ".join(parts)
 
