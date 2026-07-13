@@ -334,6 +334,7 @@
       }, [storyboardData, sceneImages]);
       const allCharImages = [...charImages, ...charPlaceholders];
       const allSceneImages = [...sceneImages, ...scenePlaceholders];
+      const shotImages = artifacts.filter(f => f.name.startsWith('shots/') && /_startframe\.(jpg|jpeg|png|webp)$/i.test(f.name));
       const shotPlaceholders = React.useMemo(() => {
         if (!storyboardData) return [];
         const expected = [];
@@ -345,7 +346,6 @@
         return expected;
       }, [storyboardData, shotImages]);
       const allShotImages = [...shotImages, ...shotPlaceholders];
-      const shotImages = artifacts.filter(f => f.name.startsWith('shots/') && /_startframe\.(jpg|jpeg|png|webp)$/i.test(f.name));
       const videoFiles = artifacts.filter(f => f.name.startsWith('shots/') && /\.(mp4|webm|mov)$/i.test(f.name));
       const audioFiles = artifacts.filter(f => (f.name.startsWith('audio/') || f.name.startsWith('sfx/') || f.name.startsWith('bgm/')) && /\.(wav|mp3|m4a|flac)$/i.test(f.name));
       const finalVideo = artifacts.find(f => f.name === 'final.mp4');
