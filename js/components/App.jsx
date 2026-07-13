@@ -6,7 +6,7 @@ const [selected, setSelected] = useState(null);
 const [health, setHealth] = useState(null);
 const [currentView, setCurrentView] = useState('list');
 const [pipelineId, setPipelineId] = useState(null);
-const [theme, setTheme] = useState(() => { try { return localStorage.getItem('pipelineTheme') || 'default'; } catch { return 'default'; } });
+const [theme, setTheme] = useState(() => { try { return localStorage.getItem('pipelineTheme') || 'wave'; } catch { return 'wave'; } });
 const pollRef = useRef(null);
 
 const getHashView = () => {
@@ -85,13 +85,50 @@ return (
       <div className="flex items-center gap-3">
         <select value={theme} onChange={e => setTheme(e.target.value)}
           className="text-xs bg-ink-800 text-stone-400 border border-ink-700 rounded px-2 py-1 focus:outline-none focus:border-brass-500 cursor-pointer">
-          <option value="default">默认主题</option>
+          <option value="wave">波纹</option>
           <option value="carbon">碳纤维</option>
+          <option value="carbon-fibre">碳纤维纹</option>
           <option value="stripes">斜纹</option>
+          <option value="diag-stripes">斜条纹</option>
+          <option value="v-stripes">竖纹</option>
+          <option value="h-stripes">横纹</option>
           <option value="dots">波点</option>
           <option value="checker">棋盘</option>
+          <option value="diag-checker">斜棋盘</option>
           <option value="argyle">菱形</option>
-          <option value="wave">波纹</option>
+          <option value="half-rombos">半菱形</option>
+          <option value="stairs">阶梯</option>
+          <option value="arrows">箭头</option>
+          <option value="zigzag">之字形</option>
+          <option value="weave">编织</option>
+          <option value="seigaiha">青海波</option>
+          <option value="jp-cube">和风方块</option>
+          <option value="houndstooth">千鸟格</option>
+          <option value="tartan">苏格兰格</option>
+          <option value="madras">Madras 格</option>
+          <option value="bricks">砖墙</option>
+          <option value="hearts">爱心</option>
+          <option value="stars">星辰</option>
+          <option value="starry">星空</option>
+          <option value="marrakesh">马拉喀什</option>
+          <option value="rainbow">彩虹光斑</option>
+          <option value="waves">海浪</option>
+          <option value="yinyang">阴阳</option>
+          <option value="cross">十字</option>
+          <option value="cross-dots">十字波点</option>
+          <option value="shippo">七宝纹</option>
+          <option value="microbial">微生物垫</option>
+          <option value="brady">布雷迪</option>
+          <option value="upholstery">衬垫</option>
+          <option value="honeycomb">蜂巢</option>
+          <option value="pyramid">金字塔</option>
+          <option value="choco-weave">巧克力编织</option>
+          <option value="blueprint">蓝图网格</option>
+          <option value="lined">横线纸</option>
+          <option value="tablecloth">桌布</option>
+          <option value="cicada">蝉纹</option>
+          <option value="steps">阶梯花</option>
+          <option value="default">默认主题</option>
         </select>
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${health ? 'bg-leaf-400' : 'bg-clay-500'}`} />
