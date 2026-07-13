@@ -208,7 +208,7 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
   totalDuration={totalDuration} setTotalDuration={setTotalDuration} />
 
       <div className="flex justify-end">
-        {currentStep >= 5 ? (
+        {activeStep >= 5 ? (
           <button onClick={handleDownloadFinalVideo} className="nav-btn text-xs px-3 py-1.5 bg-brass-500 hover:bg-brass-400 text-ink-950 rounded transition-colors font-medium">
             ↓ 下载最终视频
           </button>
