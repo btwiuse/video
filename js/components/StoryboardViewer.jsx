@@ -43,7 +43,7 @@ function StoryboardViewer({ pipelineId, poll, reloadKey }) {
       const t = setInterval(() => {
         if (cancelled || document.hidden) return;
         load();
-      }, 10000);
+      }, 30000);
       return () => { cancelled = true; clearInterval(t); };
     }
     return () => { cancelled = true; };
@@ -53,47 +53,53 @@ function StoryboardViewer({ pipelineId, poll, reloadKey }) {
   useEffect(() => {
     if (!data) return;
     const chars = data.characters || [];
-    chars.forEach(async (c) => {
+    let cancelled = false;
+    Promise.all(chars.map(async (c) => {
       if (charPrompts[c.ref_id]) return;
       try {
         const res = await api(`/pipelines/${pipelineId}/artifacts/characters/${encodeURIComponent(c.ref_id)}.md`);
         if (res.ok) {
           const text = await res.text();
-          setCharPrompts(prev => ({ ...prev, [c.ref_id]: text }));
+          if (!cancelled) setCharPrompts(prev => ({ ...prev, [c.ref_id]: text }));
         }
       } catch (_) {}
-    });
+    }));
+    return () => { cancelled = true; };
   }, [data, pipelineId]);
 
   // Load shot prompts from .md files lazily
   useEffect(() => {
     if (!data) return;
     const shots = data.shots || [];
-    shots.forEach(async (s) => {
+    let cancelled = false;
+    Promise.all(shots.map(async (s) => {
       if (shotPrompts[s.full_shot_id]) return;
       if (!expandedShots[s.full_shot_id]) return;
       try {
         const res = await api(`/pipelines/${pipelineId}/artifacts/shots/${encodeURIComponent(s.full_shot_id)}/${encodeURIComponent(s.full_shot_id)}.md`);
         if (res.ok) {
           const text = await res.text();
-          setShotPrompts(prev => ({ ...prev, [s.full_shot_id]: text }));
+          if (!cancelled) setShotPrompts(prev => ({ ...prev, [s.full_shot_id]: text }));
         }
       } catch (_) {}
-    });
+    }));
+    return () => { cancelled = true; };
   }, [data, pipelineId, expandedShots]);
   useEffect(() => {
     if (!data) return;
     const scenes = data.scenes || [];
-    scenes.forEach(async (s) => {
+    let cancelled = false;
+    Promise.all(scenes.map(async (s) => {
       if (scenePrompts[s.scene_id]) return;
       try {
         const res = await api(`/pipelines/${pipelineId}/artifacts/scenes/${encodeURIComponent(s.scene_id)}.md`);
         if (res.ok) {
           const text = await res.text();
-          setScenePrompts(prev => ({ ...prev, [s.scene_id]: text }));
+          if (!cancelled) setScenePrompts(prev => ({ ...prev, [s.scene_id]: text }));
         }
       } catch (_) {}
-    });
+    }));
+    return () => { cancelled = true; };
   }, [data, pipelineId]);
 
   const toggleScene = useCallback((sceneId) => {
@@ -197,7 +203,7 @@ function StoryboardViewer({ pipelineId, poll, reloadKey }) {
                               </div>
                             </div>
                           ) : (
-                            <div className="markdown-body max-h-96 overflow-y-auto" dangerouslySetInnerHTML={{__html: marked.parse(md)}} />
+                            <div className="markdown-body max-h-96 overflow-y-auto" dangerouslySetInnerHTML={{__html: DOMPurify.sanitize(marked.parse(md))}} />
                           )}
                         </div>
                       )}
@@ -284,7 +290,7 @@ function StoryboardViewer({ pipelineId, poll, reloadKey }) {
                     </div>
                   ) : (
                     <div className="bg-ink-950 p-4 border-b border-ink-700 space-y-3 text-xs text-stone-300">
-                      <div className="markdown-body max-h-96 overflow-y-auto" dangerouslySetInnerHTML={{__html: scenePrompts[scene.scene_id] ? marked.parse(scenePrompts[scene.scene_id]) : ''}} />
+                      <div className="markdown-body max-h-96 overflow-y-auto" dangerouslySetInnerHTML={{__html: scenePrompts[scene.scene_id] ? DOMPurify.sanitize(marked.parse(scenePrompts[scene.scene_id])) : ''}} />
                     </div>
                   )}
                   {sceneShots.map((shot, i) => {
@@ -360,25 +366,25 @@ function StoryboardViewer({ pipelineId, poll, reloadKey }) {
                             ) : (
                               <div className="bg-ink-950 p-4 border-b border-ink-700 space-y-3 text-xs text-stone-300">
                                 {shotPrompts[shot.full_shot_id] ? (
-                                  <div className="markdown-body max-h-96 overflow-y-auto" dangerouslySetInnerHTML={{__html: marked.parse(shotPrompts[shot.full_shot_id])}} />
+                                  <div className="markdown-body max-h-96 overflow-y-auto" dangerouslySetInnerHTML={{__html: DOMPurify.sanitize(marked.parse(shotPrompts[shot.full_shot_id]))}} />
                                 ) : (
                                   <>
                                     {shot.action_description && (
                                       <div>
                                         <span className="text-stone-500 font-semibold">动作描述</span>
-                                        <div className="markdown-body mt-1" dangerouslySetInnerHTML={{__html: marked.parse(shot.action_description)}} />
+                                        <div className="markdown-body mt-1" dangerouslySetInnerHTML={{__html: DOMPurify.sanitize(marked.parse(shot.action_description))}} />
                                       </div>
                                     )}
                                     {shot.dialogue_line && (
                                       <div>
                                         <span className="text-stone-500 font-semibold">对白</span>
-                                        <div className="markdown-body mt-1 text-brass-400" dangerouslySetInnerHTML={{__html: marked.parse(shot.dialogue_line)}} />
+                                        <div className="markdown-body mt-1 text-brass-400" dangerouslySetInnerHTML={{__html: DOMPurify.sanitize(marked.parse(shot.dialogue_line) )}} />
                                       </div>
                                     )}
                                     {shot.positive_prompt && (
                                       <div>
                                         <span className="text-stone-500 font-semibold">视频 Prompt</span>
-                                        <div className="markdown-body mt-1" dangerouslySetInnerHTML={{__html: marked.parse(shot.positive_prompt)}} />
+                                        <div className="markdown-body mt-1" dangerouslySetInnerHTML={{__html: DOMPurify.sanitize(marked.parse(shot.positive_prompt))}} />
                                       </div>
                                     )}
                                   </>

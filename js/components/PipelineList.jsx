@@ -20,7 +20,7 @@ function PipelineList({ onSelect, onCreateNew }) {
 
   useEffect(() => { load(); const t = setInterval(() => { if (!document.hidden) load(); }, 10000); return () => clearInterval(t); }, []);
 
-  const sorted = [...items].sort((a, b) => {
+  const sorted = items.toSorted((a, b) => {
     const ta = new Date(a.created_at).getTime();
     const tb = new Date(b.created_at).getTime();
     return viewMode === 'list' ? ta - tb : tb - ta;

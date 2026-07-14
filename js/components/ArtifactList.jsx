@@ -1,5 +1,22 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
+function buildTree(files) {
+  const root = {};
+  for (const f of files) {
+    const parts = f.name.split('/');
+    let node = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const dir = parts[i];
+      if (!node.__children) node.__children = {};
+      if (!node.__children[dir]) node.__children[dir] = {};
+      node = node.__children[dir];
+    }
+    if (!node.__files) node.__files = [];
+    node.__files.push(f);
+  }
+  return root;
+}
+
 function FileRow({ file, level, pipelineId, expanded, onView, onDownload, onCopy, onToggle }) {
     const paddingLeft = 16 + level * 20;
     const isOpen = !!expanded[file.name];
@@ -103,8 +120,6 @@ function ArtifactList({ pipelineId }) {
 
   useEffect(() => {
     load();
-    const t = setInterval(() => { if (!document.hidden) load(); }, 10000);
-    return () => clearInterval(t);
   }, [load]);
 
   const download = useCallback(async (name) => {
@@ -159,23 +174,6 @@ function ArtifactList({ pipelineId }) {
   const copyToClipboard = useCallback((text, name) => {
     navigator.clipboard.writeText(text).then(() => toast('已复制: ' + name)).catch(() => toast.error('复制失败'));
   }, []);
-
-  function buildTree(files) {
-    const root = {};
-    for (const f of files) {
-      const parts = f.name.split('/');
-      let node = root;
-      for (let i = 0; i < parts.length - 1; i++) {
-        const dir = parts[i];
-        if (!node.__children) node.__children = {};
-        if (!node.__children[dir]) node.__children[dir] = {};
-        node = node.__children[dir];
-      }
-      if (!node.__files) node.__files = [];
-      node.__files.push(f);
-    }
-    return root;
-  }
 
   const tree = React.useMemo(() => buildTree(artifacts), [artifacts]);
   const topDirs = React.useMemo(() => Object.keys(tree.__children || {}).sort(), [tree]);

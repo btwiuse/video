@@ -37,7 +37,7 @@ function LogViewer({ pipelineId }) {
 
   useEffect(() => {
     if (done) return;
-    const t = setInterval(() => { if (!document.hidden) loadLogs(); }, 15000);
+    const t = setInterval(() => { if (!document.hidden) loadLogs(); }, 30000);
     return () => clearInterval(t);
   }, [loadLogs, done]);
 

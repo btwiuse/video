@@ -1,14 +1,5 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
-    function App() {
-const [pipelines, setPipelines] = useState([]);
-const [selected, setSelected] = useState(null);
-const [health, setHealth] = useState(null);
-const [currentView, setCurrentView] = useState('list');
-const [pipelineId, setPipelineId] = useState(null);
-const [theme, setTheme] = useState(() => { try { return localStorage.getItem('pipelineTheme') || 'wave'; } catch { return 'wave'; } });
-const pollRef = useRef(null);
-
 const getHashView = () => {
   const hash = window.location.hash.replace('#', '');
   if (hash.startsWith('/pipelines/')) return { view: 'detail', id: hash.split('/')[2] };
@@ -22,6 +13,19 @@ const navigateTo = (view, id = null) => {
   else { window.location.hash = '#'; }
 };
 
+    function App() {
+const [pipelines, setPipelines] = useState([]);
+const [selected, setSelected] = useState(null);
+const [health, setHealth] = useState(null);
+const [currentView, setCurrentView] = useState('list');
+const [pipelineId, setPipelineId] = useState(null);
+const [theme, setTheme] = useState(() => { try { return localStorage.getItem('pipelineTheme') || 'wave'; } catch { return 'wave'; } });
+const pollRef = useRef(null);
+const currentViewRef = useRef(currentView);
+currentViewRef.current = currentView;
+const pipelineIdRef = useRef(pipelineId);
+pipelineIdRef.current = pipelineId;
+
 const refreshSelected = useCallback(async () => {
   if (!pipelineId) return;
   try {
@@ -33,8 +37,10 @@ const refreshSelected = useCallback(async () => {
 useEffect(() => {
   const onHashChange = () => {
     const { view: v, id } = getHashView();
+    const cv = currentViewRef.current;
+    const pid = pipelineIdRef.current;
     if (v === 'detail' && id) {
-      if (currentView === 'detail' && pipelineId === id) return; // step nav only, don't re-fetch
+      if (cv === 'detail' && pid === id) return;
       api(`/pipelines/${id}`).then(res => {
         if (res.ok) {
           res.json().then(data => { setSelected(data); setCurrentView('detail'); setPipelineId(id); });
@@ -46,7 +52,7 @@ useEffect(() => {
   window.addEventListener('hashchange', onHashChange);
   onHashChange();
   return () => window.removeEventListener('hashchange', onHashChange);
-}, [currentView, pipelineId]);
+}, []);
 
 useEffect(() => {
   if (currentView !== 'detail' || !selected) return;
@@ -142,28 +148,30 @@ return (
     </header>
 
     <main className="flex-1 p-6 overflow-auto">
-      {currentView === 'create' && (
-        <div className="max-w-xl mx-auto">
-          <button onClick={() => navigateTo('list')} className="nav-btn text-sm text-stone-400 hover:text-brass-400 mb-4 transition-colors">← 返回列表</button>
-          <CreatePipeline onCreated={(id) => { selectPipeline(id); }} />
-        </div>
-      )}
-
-      {currentView === 'list' && (
-        <div>
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="font-heading text-lg font-semibold text-stone-100">Pipeline 列表</h2>
+      <ErrorBoundary>
+        {currentView === 'create' && (
+          <div className="max-w-xl mx-auto">
+            <button onClick={() => navigateTo('list')} className="nav-btn text-sm text-stone-400 hover:text-brass-400 mb-4 transition-colors">← 返回列表</button>
+            <CreatePipeline onCreated={(id) => { selectPipeline(id); }} />
           </div>
-          <PipelineList onSelect={selectPipeline} onCreateNew={() => navigateTo('create')} />
-        </div>
-      )}
+        )}
 
-      {currentView === 'detail' && selected && (
-        <div className="max-w-4xl mx-auto">
-          <button onClick={() => navigateTo('list')} className="nav-btn text-sm text-stone-400 hover:text-brass-400 mb-4 transition-colors">← 返回列表</button>
-          <PipelineDetail pipeline={selected} onRefresh={refreshSelected} onBack={() => navigateTo('list')} />
-        </div>
-      )}
+        {currentView === 'list' && (
+          <div>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="font-heading text-lg font-semibold text-stone-100">Pipeline 列表</h2>
+            </div>
+            <PipelineList onSelect={selectPipeline} onCreateNew={() => navigateTo('create')} />
+          </div>
+        )}
+
+        {currentView === 'detail' && selected && (
+          <div className="max-w-4xl mx-auto">
+            <button onClick={() => navigateTo('list')} className="nav-btn text-sm text-stone-400 hover:text-brass-400 mb-4 transition-colors">← 返回列表</button>
+            <PipelineDetail pipeline={selected} onRefresh={refreshSelected} onBack={() => navigateTo('list')} />
+          </div>
+        )}
+      </ErrorBoundary>
     </main>
 
     <footer className="bg-ink-900 border-t border-ink-700 px-6 py-4 text-center text-xs text-stone-500">

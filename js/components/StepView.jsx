@@ -1,5 +1,21 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
+const promptPathFromImage = (name) => {
+  if (name.startsWith('characters/')) {
+    const refId = name.split('/')[1]?.replace(/_(front|profile|fullbody)\.(jpg|jpeg|png)$/, '');
+    return refId ? `characters/${refId}.md` : null;
+  }
+  if (name.startsWith('scenes/')) {
+    const sid = name.split('/')[1]?.replace(/_(wide|detail)\.(jpg|jpeg|png)$/, '');
+    return sid ? `scenes/${sid}.md` : null;
+  }
+  if (name.startsWith('shots/')) {
+    const m = name.match(/shots\/([^/]+)\/\1_startframe\./);
+    return m ? `shots/${m[1]}/${m[1]}_startframe.md` : null;
+  }
+  return null;
+};
+
 function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                     maxShotsPerScene, setMaxShotsPerScene, totalShots, setTotalShots, totalDuration, setTotalDuration }) {
   const getCS = () => {
@@ -46,15 +62,15 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
       } catch (e) { /* ignore */ }
     };
     fetchArtifacts();
+    if (isStepRunning) {
+      t = setInterval(() => { if (!document.hidden) fetchArtifacts(); }, 15000);
+    }
     const prevStep = prevPipelineRef.current?.step;
     if (!storyboardData && step === 2 && !artLoading && (isStepDone || isStepRunning)) {
       api(`/pipelines/${pipelineId}/artifacts/storyboard.json`).then(r => r.ok && r.json().then(d => setStoryboardData(d)));
     }
-    if (isStepRunning || (!isStepDone && pipeline.status !== 'done' && pipeline.status !== 'failed')) {
-      t = setInterval(() => { if (!document.hidden) fetchArtifacts(); }, 15000);
-    }
     return () => { cancelled = true; if (t) clearInterval(t); };
-  }, [pipelineId, isStepDone, isStepRunning, pipeline.status]);
+  }, [pipelineId, isStepDone, isStepRunning, pipeline.status, stepReloadKey]);
 
   const previewUrl = async (name) => {
     if (previews[name]) { setPreviews(p => { const n = {...p}; delete n[name]; return n; }); return; }
@@ -70,22 +86,24 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
   const sceneImages = artifacts.filter(f => f.name.startsWith('scenes/') && /\.(jpg|jpeg|png|webp)$/i.test(f.name));
   const charPlaceholders = React.useMemo(() => {
     if (!storyboardData) return [];
+    const charImageNames = new Set(charImages.map(f => f.name));
     const expected = [];
     for (const c of storyboardData.characters || []) {
       for (const suffix of ['front', 'profile', 'fullbody']) {
         const name = `characters/${c.ref_id}_${suffix}.jpg`;
-        if (!charImages.find(f => f.name === name)) expected.push({ name, placeholder: true, ref_id: c.ref_id, angle: suffix });
+        if (!charImageNames.has(name)) expected.push({ name, placeholder: true, ref_id: c.ref_id, angle: suffix });
       }
     }
     return expected;
   }, [storyboardData, charImages]);
   const scenePlaceholders = React.useMemo(() => {
     if (!storyboardData) return [];
+    const sceneImageNames = new Set(sceneImages.map(f => f.name));
     const expected = [];
     for (const s of storyboardData.scenes || []) {
       for (const suffix of ['wide', 'detail']) {
         const name = `scenes/${s.scene_id}_${suffix}.jpg`;
-        if (!sceneImages.find(f => f.name === name)) expected.push({ name, placeholder: true, scene_id: s.scene_id, suffix });
+        if (!sceneImageNames.has(name)) expected.push({ name, placeholder: true, scene_id: s.scene_id, suffix });
       }
     }
     return expected;
@@ -95,11 +113,12 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
   const shotImages = artifacts.filter(f => f.name.startsWith('shots/') && /_startframe\.(jpg|jpeg|png|webp)$/i.test(f.name));
   const shotPlaceholders = React.useMemo(() => {
     if (!storyboardData) return [];
+    const shotImageNames = new Set(shotImages.map(f => f.name));
     const expected = [];
     for (const s of storyboardData.shots || []) {
       const sf = s.startframe_file;
       const name = sf || `shots/${s.full_shot_id}/${s.full_shot_id}_startframe.jpg`;
-      if (!shotImages.find(f => f.name === name)) expected.push({ name, placeholder: true, shot_id: s.full_shot_id });
+      if (!shotImageNames.has(name)) expected.push({ name, placeholder: true, shot_id: s.full_shot_id });
     }
     return expected;
   }, [storyboardData, shotImages]);
@@ -108,21 +127,6 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
   const audioFiles = artifacts.filter(f => (f.name.startsWith('audio/') || f.name.startsWith('sfx/') || f.name.startsWith('bgm/')) && /\.(wav|mp3|m4a|flac)$/i.test(f.name));
   const finalVideo = artifacts.find(f => f.name === 'final.mp4');
 
-  const promptPathFromImage = (name) => {
-    if (name.startsWith('characters/')) {
-      const refId = name.split('/')[1]?.replace(/_(front|profile|fullbody)\.(jpg|jpeg|png)$/, '');
-      return refId ? `characters/${refId}.md` : null;
-    }
-    if (name.startsWith('scenes/')) {
-      const sid = name.split('/')[1]?.replace(/_(wide|detail)\.(jpg|jpeg|png)$/, '');
-      return sid ? `scenes/${sid}.md` : null;
-    }
-    if (name.startsWith('shots/')) {
-      const m = name.match(/shots\/([^/]+)\/\1_startframe\./);
-      return m ? `shots/${m[1]}/${m[1]}_startframe.md` : null;
-    }
-    return null;
-  };
   const openLightbox = async (name) => {
     setLightboxName(name);
     setPromptText(null);
@@ -539,7 +543,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                   </div>
                 ) : (
                   <div className="markdown-body flex-1 min-h-0 overflow-y-auto">
-                    <div dangerouslySetInnerHTML={{__html: marked.parse(promptText)}} />
+                    <div dangerouslySetInnerHTML={{__html: DOMPurify.sanitize(marked.parse(promptText))}} />
                   </div>
                 )}
               </div>
