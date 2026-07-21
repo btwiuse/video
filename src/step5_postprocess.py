@@ -29,7 +29,7 @@ from moviepy.video.tools.subtitles import SubtitlesClip
 
 from config import config
 from src.utils import ensure_output_dir, save_json, load_json
-from src.prompts import SUBTITLE_STYLE
+from src.skills import get_skill_manager
 
 
 class PostProduction:
@@ -37,6 +37,28 @@ class PostProduction:
 
     def __init__(self):
         self.out_dir = ensure_output_dir()
+        self._prod_config = self._load_production_config()
+
+    @staticmethod
+    def _load_production_config() -> dict:
+        """Load production parameters from skills production config."""
+        sm = get_skill_manager()
+        cfg: dict[str, str] = {}
+        try:
+            text = sm.get_template("production", "config")
+        except KeyError:
+            text = ""
+        for line in text.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if ":" in line:
+                k, v = line.split(":", 1)
+                cfg[k.strip()] = v.strip()
+        return cfg
+
+    def _get_prod(self, key: str, default: str) -> str:
+        return self._prod_config.get(key, default)
 
     def compose(
         self,
@@ -87,12 +109,12 @@ class PostProduction:
         logger.info("Exporting to %s...", output_path)
         final_video.write_videofile(
             output_path,
-            fps=24,
-            codec="libx264",
-            audio_codec="aac",
+            fps=int(self._get_prod("output_fps", "24")),
+            codec=self._get_prod("output_codec", "libx264"),
+            audio_codec=self._get_prod("output_audio_codec", "aac"),
             temp_audiofile="temp-audio.m4a",
             remove_temp=True,
-            bitrate="8000k",
+            bitrate=self._get_prod("output_bitrate", "8000k"),
         )
 
         logger.info("Done: %s", output_path)
@@ -112,9 +134,11 @@ class PostProduction:
             if clip.duration is None:
                 clip.close()
                 continue
-            # Normalize to 864x480
-            if clip.w != 864 or clip.h != 480:
-                clip = clip.resized((864, 480))
+            # Normalize to output resolution
+            res_str = self._get_prod("output_resolution", "864x480")
+            res_w, res_h = (int(x) for x in res_str.split("x"))
+            if clip.w != res_w or clip.h != res_h:
+                clip = clip.resized((res_w, res_h))
             clips.append(clip)
 
         return clips
@@ -127,15 +151,17 @@ class PostProduction:
             return clips[0]
 
         result = clips[0]
+        cf_duration = float(self._get_prod("crossfade_duration", "0.5"))
+        cf_types_str = self._get_prod("crossfade_types", "C, D")
         for i in range(1, len(clips)):
             transition = "hard_cut"
             if i < len(clip_manifest):
                 trans_type = clip_manifest[i].get("transition_type", "B")
-                if trans_type in ("C", "D"):
+                if trans_type in cf_types_str.replace(" ", "").split(","):
                     transition = "crossfade"
 
             if transition == "crossfade":
-                fade_duration = 0.5
+                fade_duration = cf_duration
                 clip1 = result.crossfadeout(fade_duration)
                 clip2 = clips[i].crossfadein(fade_duration).with_start(result.duration - fade_duration)
                 result = CompositeVideoClip([clip1, clip2])
@@ -157,12 +183,18 @@ class PostProduction:
         """
         tracks = []
 
+        # Mixing levels from skills production config
+        dialogue_vol = float(self._get_prod("dialogue_volume", "0.7"))
+        ambience_vol = float(self._get_prod("ambience_volume", "0.12"))
+        sfx_vol = float(self._get_prod("sfx_volume", "0.5"))
+        bgm_vol = float(self._get_prod("bgm_volume", "0.17"))
+
         # Dialogue tracks
         for entry in audio_manifest.get("dialogue", []):
             path = entry.get("file", "")
             if path and os.path.exists(path):
                 clip = AudioFileClip(path)
-                clip = clip.with_effects([vfx.MultiplyVolume(0.7)])  # -3dB
+                clip = clip.with_effects([vfx.MultiplyVolume(dialogue_vol)])
                 tracks.append(clip)
 
         # Ambience tracks
@@ -170,7 +202,7 @@ class PostProduction:
             path = entry.get("file", "")
             if path and os.path.exists(path):
                 clip = AudioFileClip(path)
-                clip = clip.with_effects([vfx.MultiplyVolume(0.12)])  # -18dB
+                clip = clip.with_effects([vfx.MultiplyVolume(ambience_vol)])
                 if entry.get("loop"):
                     clip = clip.loop(duration=total_duration)
                 tracks.append(clip)
@@ -180,7 +212,7 @@ class PostProduction:
             path = entry.get("file", "")
             if path and os.path.exists(path):
                 clip = AudioFileClip(path)
-                clip = clip.with_effects([vfx.MultiplyVolume(0.5)])  # -6dB
+                clip = clip.with_effects([vfx.MultiplyVolume(sfx_vol)])  # -6dB
                 # Place at specific offset
                 offset = entry.get("offset_sec", 0)
                 if offset > 0:
@@ -192,7 +224,7 @@ class PostProduction:
             path = entry.get("file", "")
             if path and os.path.exists(path):
                 clip = AudioFileClip(path)
-                clip = clip.with_effects([vfx.MultiplyVolume(0.17)])  # -15dB
+                clip = clip.with_effects([vfx.MultiplyVolume(bgm_vol)])  # -15dB
                 tracks.append(clip)
 
         if not tracks:
@@ -207,11 +239,11 @@ class PostProduction:
         from moviepy import TextClip
         generator = lambda txt: TextClip(
             txt,
-            fontsize=48,
-            color='white',
-            font='Arial-Bold',
-            stroke_color='black',
-            stroke_width=2,
+            fontsize=int(self._get_prod("subtitle_fontsize", "48")),
+            color=self._get_prod("subtitle_color", "white"),
+            font=self._get_prod("subtitle_font", "Arial-Bold"),
+            stroke_color=self._get_prod("subtitle_stroke_color", "black"),
+            stroke_width=int(self._get_prod("subtitle_stroke_width", "2")),
         )
 
         subtitle_clips = SubtitlesClip(

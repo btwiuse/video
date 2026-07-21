@@ -24,6 +24,7 @@ from openai import OpenAI
 
 from config import config
 from src.utils import ensure_output_dir, save_json
+from src.skills import get_skill_manager
 
 logger = logging.getLogger("step1")
 
@@ -31,32 +32,19 @@ logger = logging.getLogger("step1")
 # Film grammar knowledge (shared across all phases)
 # ============================================================================
 
-FILM_GRAMMAR = """
-## 景别（Shot Size）
-ELS（极远景）WS（全景）FS（中全景）MS（中景）MCU（中近景）CU（特写）ECU（大特写）
-原则：对话以MS/MCU为主穿插CU；情绪高潮用CU/ECU；建立场景用WS/FS；同一场景内避免连续3个相同景别。
-
-## 机位与角度
-眼平（自然）、低角度（压迫/威胁）、高角度（脆弱）、过肩（对话）、俯拍（抽离）、荷兰角（不安）。
-
-## 运镜
-固定、缓推（增强情感）、缓拉（揭示语境）、跟拍、手持（真实感/紧张）、摇镜。
-
-## 180度规则
-对话场景中所有机位必须在角色轴线同一侧，标注屏幕方向和视线方向。
-
-## 光线
-定义主光方向/类型/色温、辅光、光比（2:1亮调/喜剧，3:1正常，4:1+暗调/惊悚）。
-
-## 色彩
-主导色+情感关联（暖=亲密/怀旧，冷=疏离/压抑），饱和度，质感参照。
-
-## 构图
-三分法、纵深层次（前景/中景/背景）、视线引导、负空间。
-
-## 衔接类型
-A类（连续动作，需起止帧对齐）、B类（视角切换，同一时空）、C类（时间跳跃）、D类（场景切换）。
-"""
+def _load_film_grammar() -> str:
+    """Load film knowledge from pipeline's own storyboard skill (with external skill as enhancement)."""
+    sm = get_skill_manager()
+    # Primary: pipeline's own Chinese film grammar (exact original content)
+    try:
+        return sm.get_template("storyboard", "film_grammar")
+    except KeyError:
+        pass
+    # Fallback: external skill
+    body = sm.inject("cinematic-audiovisual-language")
+    if body:
+        return body
+    return ""
 
 # ============================================================================
 # Tool definitions (JSON Schema for function calling)
@@ -168,10 +156,13 @@ TOOL_CREATE_SHOT = {
 # System prompts for each phase
 # ============================================================================
 
-SYSTEM_FILMMAKER = f"""你是一位资深电影导演和分镜师，精通视觉叙事和 AI 视频生成（Seedance 2.0）。
+def _build_system_filmmaker() -> str:
+    """Build the filmmaker system prompt with skill-injected knowledge."""
+    film_knowledge = _load_film_grammar()
+    return f"""你是一位资深电影导演和分镜师，精通视觉叙事和 AI 视频生成（Seedance 2.0）。
 
 ## 你的电影知识体系
-{FILM_GRAMMAR}
+{film_knowledge}
 
 ## 核心原则
 
@@ -188,8 +179,8 @@ SYSTEM_FILMMAKER = f"""你是一位资深电影导演和分镜师，精通视觉
 2. 16:9 画幅
 
 ### 通用
-6. 相邻镜头的光线、色彩、空间关系必须自洽
-7. 对话场景严格遵守 180 度规则"""
+- 相邻镜头的光线、色彩、空间关系必须自洽
+- 对话场景严格遵守 180 度规则"""
 
 
 def _ensure_list(value: list | str | None) -> list[str]:
@@ -259,7 +250,7 @@ class StoryboardGenerator:
                 for i, char_info in enumerate(char_infos):
                     future = executor.submit(
                         self._call_tool,
-                        SYSTEM_FILMMAKER,
+                        _build_system_filmmaker(),
                         self._build_character_prompt(script_text, char_info, overview),
                         TOOL_DEFINE_CHARACTER,
                         char_info["ref_id"],
@@ -286,7 +277,7 @@ class StoryboardGenerator:
                 for i, scene_info in enumerate(scene_infos):
                     future = executor.submit(
                         self._call_tool,
-                        SYSTEM_FILMMAKER,
+                        _build_system_filmmaker(),
                         self._build_scene_prompt(script_text, scene_info, overview),
                         TOOL_DEFINE_SCENE,
                         scene_info["scene_id"],
@@ -409,7 +400,8 @@ class StoryboardGenerator:
         for char in result.get("characters", []):
             if "ref_id" not in char:
                 char["ref_id"] = f"Image{result['characters'].index(char)+1}"
-            # Sanitize ref_id: use character name when LLM falls back to ImageN/numbers
+
+        # Sanitize ref_id: use character name when LLM falls back to ImageN/numbers
             rid = str(char["ref_id"]).strip()
             if rid.lower().startswith("see "):
                 rid = rid[4:]
@@ -774,7 +766,7 @@ class StoryboardGenerator:
                     scene_shots[-1]["is_scene_end"] = True
                 break
             shot_detail = self._call_tool(
-                SYSTEM_FILMMAKER,
+                _build_system_filmmaker(),
                 self._build_shot_prompt(script_text, scene_info, chars_in_scene,
                                          characters, scenes, shot_num, prev_shot),
                 TOOL_CREATE_SHOT,

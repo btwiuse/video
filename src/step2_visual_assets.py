@@ -19,13 +19,7 @@ from typing import Any, Protocol, runtime_checkable
 import httpx
 
 from config import config
-from src.prompts import (
-    CHARACTER_PORTRAIT_FRONT,
-    CHARACTER_PORTRAIT_PROFILE,
-    CHARACTER_FULL_BODY,
-    SCENE_REFERENCE_WIDE,
-    SCENE_REFERENCE_DETAIL,
-)
+from src.prompts import get_image_template
 from src.utils import ensure_output_dir, save_json, load_json
 
 logger = logging.getLogger("step2")
@@ -1116,18 +1110,21 @@ class Step2Pipeline:
             ]
 
         # Fallback (shouldn't happen with proper Step 1 output)
+        front_tpl = get_image_template("portrait_front")
+        profile_tpl = get_image_template("portrait_profile")
+        fullbody_tpl = get_image_template("fullbody")
         return [
-            ("front", CHARACTER_PORTRAIT_FRONT.format(
+            ("front", front_tpl.format(
                 name=ref_id, gender="", age="",
                 face_features="", hair="",
                 mood="neutral", clothing_collar="",
             )),
-            ("profile", CHARACTER_PORTRAIT_PROFILE.format(
+            ("profile", profile_tpl.format(
                 name=ref_id, gender="", age="",
                 face_features="", hair="",
                 clothing_upper="",
             )),
-            ("fullbody", CHARACTER_FULL_BODY.format(
+            ("fullbody", fullbody_tpl.format(
                 name=ref_id, gender="", age="",
                 face_features="", full_outfit="",
             )),
@@ -1145,7 +1142,8 @@ class Step2Pipeline:
             return result
 
         # Fallback
-        wide_prompt = SCENE_REFERENCE_WIDE.format(
+        wide_tpl = get_image_template("scene_wide")
+        wide_prompt = wide_tpl.format(
             location_description=sid,
             time_of_day="",
             spatial_description="",

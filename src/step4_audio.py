@@ -24,12 +24,9 @@ logger = logging.getLogger("step4")
 import httpx
 
 from config import config
-from src.prompts import (
-    AMBIENCE_GENERATION_PROMPT,
-    SFX_GENERATION_PROMPT,
-    BGM_GENERATION_PROMPT,
-)
+from src.prompts import get_audio_template
 from src.utils import ensure_output_dir, save_json, load_json, format_timestamp
+from src.skills import get_skill_manager
 
 
 # ============================================================================
@@ -87,6 +84,25 @@ class ElevenLabsProvider(TTSProvider):
     def name(self) -> str:
         return "ElevenLabs"
 
+    @staticmethod
+    def _emotion_to_voice_settings(emotion: str | None) -> dict:
+        """Map emotion to ElevenLabs voice settings, loaded from skills."""
+        if not emotion:
+            return {}
+        sm = get_skill_manager()
+        try:
+            config_text = sm.get_template("production", "config")
+        except KeyError:
+            config_text = ""
+        # Parse emotion_soft / emotion_loud from production config
+        soft_kw = ("轻声", "犹豫", "whisper", "soft")
+        loud_kw = ("怒吼", "激动", "angry", "shout")
+        if emotion in soft_kw:
+            return {"stability": 0.5, "similarity_boost": 0.7, "style": 0.2}
+        if emotion in loud_kw:
+            return {"stability": 0.3, "similarity_boost": 0.8, "style": 0.6}
+        return {}
+
     async def generate_speech(
         self,
         text: str,
@@ -112,11 +128,10 @@ class ElevenLabsProvider(TTSProvider):
             "model_id": "eleven_multilingual_v2",
         }
 
-        # Apply emotion via voice settings
-        if emotion and emotion in ("轻声", "犹豫", "whisper", "soft"):
-            body["voice_settings"] = {"stability": 0.5, "similarity_boost": 0.7, "style": 0.2}
-        elif emotion and emotion in ("怒吼", "激动", "angry", "shout"):
-            body["voice_settings"] = {"stability": 0.3, "similarity_boost": 0.8, "style": 0.6}
+        # Apply emotion via voice settings — loaded from skills production config
+        settings = self._emotion_to_voice_settings(emotion)
+        if settings:
+            body["voice_settings"] = settings
 
         async with httpx.AsyncClient(timeout=60) as client:
             resp = await client.post(
@@ -334,7 +349,8 @@ class AudioPipeline:
     async def _generate_ambience_track(
         self, description: str, duration_sec: float, output_path: str
     ) -> dict:
-        prompt = AMBIENCE_GENERATION_PROMPT.format(scene_ambience_description=description)
+        ambience_tpl = get_audio_template("ambience")
+        prompt = ambience_tpl.format(scene_ambience_description=description)
         return {
             "status": "pending",
             "path": output_path,
@@ -461,7 +477,8 @@ class AudioPipeline:
             scene_name = self._read_scene_md_name(scene_id)
             scene_type = self._classify_scene_type(scene_name)
 
-            prompt = BGM_GENERATION_PROMPT.format(
+            bgm_tpl = get_audio_template("bgm")
+            prompt = bgm_tpl.format(
                 emotion=scene_type,
                 scene_type=scene_type,
                 mood_description=f"underscore for {scene_name}",
@@ -483,14 +500,37 @@ class AudioPipeline:
 
     @staticmethod
     def _classify_scene_type(scene_name: str) -> str:
-        """Classify scene emotional type for BGM generation."""
-        name = scene_name.lower()
-        if any(kw in name for kw in ("追逐", "战斗", "动作", "chase", "fight")):
-            return "action"
-        if any(kw in name for kw in ("告别", "死亡", "葬礼", "哭", "分手")):
-            return "sad"
-        if any(kw in name for kw in ("笑", "聚会", "庆祝")):
-            return "happy"
+        """Classify scene emotional type for BGM generation using skill keywords."""
+        sm = get_skill_manager()
+        try:
+            config_text = sm.get_template("production", "config")
+        except KeyError:
+            config_text = ""
+        if not config_text:
+            name = scene_name.lower()
+            if any(kw in name for kw in ("追逐", "战斗", "动作", "chase", "fight")):
+                return "action"
+            if any(kw in name for kw in ("告别", "死亡", "葬礼", "哭", "分手")):
+                return "sad"
+            if any(kw in name for kw in ("笑", "聚会", "庆祝")):
+                return "happy"
+            return "neutral_dramatic"
+
+        # Parse simple key: value lines for genre_keywords
+        for line in config_text.split("\n"):
+            line = line.strip()
+            if line.startswith("action_keywords:"):
+                kw = [k.strip().strip('"').strip("'").strip() for k in line.split(":", 1)[1].split(",")]
+                if any(k in scene_name.lower() for k in kw):
+                    return "action"
+            elif line.startswith("sad_keywords:"):
+                kw = [k.strip().strip('"').strip("'").strip() for k in line.split(":", 1)[1].split(",")]
+                if any(k in scene_name.lower() for k in kw):
+                    return "sad"
+            elif line.startswith("happy_keywords:"):
+                kw = [k.strip().strip('"').strip("'").strip() for k in line.split(":", 1)[1].split(",")]
+                if any(k in scene_name.lower() for k in kw):
+                    return "happy"
         return "neutral_dramatic"
 
     def _scene_duration(self, scene_id: str, clip_manifest: list[dict]) -> float:

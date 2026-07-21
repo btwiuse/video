@@ -39,6 +39,9 @@ class Config:
     # Output
     OUTPUT_DIR: str = os.getenv("OUTPUT_DIR", "./output")
 
+    # Skills — external domain knowledge and prompt templates
+    SKILLS_DIR: str = os.getenv("SKILLS_DIR", "./skills")
+
     # Limits
     MAX_SCENE_DURATION_SEC: int = 600  # 10 min per scene
 
