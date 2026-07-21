@@ -1,0 +1,1 @@
+Cinematic wide shot of {location_description}, {time_of_day}. {spatial_description}. {lighting_description}. {color_mood}. {key_props_and_positions}. {window_exterior}. No characters in frame. Empty establishing shot. Architectural Digest photography meets Denis Villeneuve aesthetic. Shot on Arri Alexa 65, anamorphic lenses. Photorealistic, 8K, 16:9 aspect ratio.

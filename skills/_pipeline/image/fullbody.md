@@ -1,0 +1,1 @@
+Full body standing shot. {name}, {gender}, {age} y/o. {face_features}. {full_outfit}. Standing naturally, relaxed posture, facing slightly off-camera. In a softly lit neutral interior with warm ambient. Full body visible from head to toe. Cinematic lighting, Arri Alexa look, photorealistic, 8K.

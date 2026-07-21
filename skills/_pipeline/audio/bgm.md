@@ -1,0 +1,1 @@
+{emotion} instrumental background music for a {scene_type} scene. {mood_description}. {duration} seconds, gradual dynamic arc. Cinematic underscore style, {genre_reference}. No vocals, no percussion solos.

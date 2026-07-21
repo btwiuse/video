@@ -1,0 +1,1 @@
+Cinematic close-up detail of {object_description}, {position}. {lighting} falling across the surface. {texture_detail}. {condition}. Macro detail, shallow depth of field, cinematic color grading. Photorealistic, 8K, 16:9 aspect ratio.

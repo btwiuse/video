@@ -1,0 +1,1 @@
+direct eye contact with camera, breaking the fourth wall, smiling, laughing, bright daylight, high contrast, oversaturated, cartoon, anime, CGI, 3D render, smooth digital video, smartphone footage, text, watermark, logo, letterbox bars, blurry, low quality, distorted face, extra limbs, mutated hands, bad anatomy, mismatched lighting, inconsistent shadows

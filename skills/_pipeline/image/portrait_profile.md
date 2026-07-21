@@ -1,0 +1,1 @@
+Professional character portrait, 45-degree profile view. {name}, {gender}, {age} y/o. {face_features}. {hair} - full hairstyle visible from side. {clothing_upper}. Similar expression to front portrait, with subtle variation. Studio lighting matching front portrait: consistent color temperature and contrast ratio. Mid-grey background. Photorealistic, 8K.
