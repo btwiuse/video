@@ -758,9 +758,9 @@ class Step2Pipeline:
                                 break
 
                 r = None
+                enhanced_sf = apply_im2_clean(sf_prompt, "scene")
                 for attempt in range(3):
-                    sf_prompt = apply_im2_clean(sf_prompt, "scene")
-                    r = await self.provider.generate(sf_prompt, "16:9", reference_images=ref_paths or None)
+                    r = await self.provider.generate(enhanced_sf, "16:9", reference_images=ref_paths or None)
                     if r.status == "done":
                         break
                     logger.warning("  %s start frame attempt %d failed: %s", shot_id, attempt + 1, r.error or "unknown")
@@ -1102,8 +1102,8 @@ class Step2Pipeline:
                             break
 
             r = None
+            enhanced_sf = apply_im2_clean(sf_prompt, "scene")
             for attempt in range(3):
-                enhanced_sf = apply_im2_clean(sf_prompt, "scene")
                 r = await self.provider.generate(enhanced_sf, "16:9", reference_images=ref_paths or None)
                 if r.status == "done":
                     break
