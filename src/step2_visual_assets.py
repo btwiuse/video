@@ -58,7 +58,7 @@ class ImageProvider(ABC):
         """Human-readable provider name, e.g. 'Flux 1.1 Pro (Replicate)'."""
 
     @abstractmethod
-    async def generate(self, prompt: str, aspect_ratio: str = "4:3") -> ImageResult:
+    async def generate(self, prompt: str, aspect_ratio: str = "4:3", **kwargs: Any) -> ImageResult:
         """Generate one image. Returns ImageResult with path to downloaded file."""
 
     async def generate_batch(
@@ -95,7 +95,7 @@ class ReplicateProvider(ImageProvider):
     @abstractmethod
     def name(self) -> str: ...
 
-    async def generate(self, prompt: str, aspect_ratio: str = "") -> ImageResult:
+    async def generate(self, prompt: str, aspect_ratio: str = "", **kwargs: Any) -> ImageResult:
         ar = aspect_ratio or self.default_aspect
         os.makedirs(self._out_dir, exist_ok=True)
 
@@ -492,7 +492,7 @@ class ComfyUIProvider(ImageProvider):
     def name(self) -> str:
         return f"ComfyUI ({self._url})"
 
-    async def generate(self, prompt: str, aspect_ratio: str = "4:3") -> ImageResult:
+    async def generate(self, prompt: str, aspect_ratio: str = "4:3", **kwargs: Any) -> ImageResult:
         workflow = self._build_workflow(prompt, aspect_ratio)
         async with httpx.AsyncClient(timeout=600) as client:
             resp = await client.post(f"{self._url}/prompt", json={"prompt": workflow})
@@ -547,7 +547,7 @@ class NullImageProvider(ImageProvider):
     def name(self) -> str:
         return "Null (prompts only)"
 
-    async def generate(self, prompt: str, aspect_ratio: str = "4:3") -> ImageResult:
+    async def generate(self, prompt: str, aspect_ratio: str = "4:3", **kwargs: Any) -> ImageResult:
         import hashlib
         name_hash = hashlib.md5(prompt.encode()).hexdigest()[:12]
         filepath = os.path.join(str(ensure_output_dir()), f"{name_hash}_prompt.txt")
@@ -671,27 +671,56 @@ class Step2Pipeline:
             logger.info("  %s: %d/%d done", name, done, len(results))
 
         # ---- Scenes: 1-2 images each ----
-        logger.info("Generating %d scenes...", len(scenes))
-        scene_prompts: list[tuple[str, str, str]] = []
+        # Build scene→(chars,props) lookup from per-shot deps.json
+        scene_deps: dict[str, tuple[list[str], list[str]]] = {}
+        shots_in_storyboard = storyboard.get("shots", [])
+        for shot in shots_in_storyboard:
+            sid = shot.get("full_shot_id", "")
+            dep_path = ensure_output_dir("shots", sid) / "deps.json"
+            if dep_path.is_file():
+                deps = load_json(str(dep_path))
+                scene_id = deps.get("scene_id", "")
+                if scene_id:
+                    existing_chars, existing_props = scene_deps.get(scene_id, ([], []))
+                    chars = deps.get("character_refs", [])
+                    props_deps = deps.get("prop_refs", [])
+                    scene_deps[scene_id] = (
+                        list(dict.fromkeys(existing_chars + chars)),
+                        list(dict.fromkeys(existing_props + props_deps)),
+                    )
+        logger.info("Generating %d scenes (with character/prop refs)...", len(scenes))
+        scene_map: dict[str, list[ImageResult]] = {}
         for scene in scenes:
             sid = scene.get("scene_id", scene.get("id", "UNKNOWN"))
             prompts = self._build_scene_prompts(scene)
-            for label_suffix, prompt in prompts:
-                scene_prompts.append((prompt, f"{sid}_{label_suffix}", "16:9"))
+            char_ids, prop_ids = scene_deps.get(sid, ([], []))
 
-        scene_prompts = apply_im2_clean_to_prompts(scene_prompts, "scene")
-        scene_results = await self.provider.generate_batch(scene_prompts)
-        scene_map: dict[str, list[ImageResult]] = {}
-        for i, r in enumerate(scene_results):
-            sid = scene_prompts[i][1].rsplit("_", 1)[0]
-            suffix = scene_prompts[i][1].rsplit("_", 1)[1]
-            if r.status == "done" and r.path:
-                import shutil
-                ext = os.path.splitext(r.path)[1]
-                target = os.path.join(scenes_dir_str, f"{sid}_{suffix}{ext}")
-                shutil.move(r.path, target)
-                r.path = target
-            scene_map.setdefault(sid, []).append(r)
+            # Collect reference images (chars + props that appear in this scene)
+            ref_paths: list[str] = []
+            for ref_id in char_ids:
+                if ref_id in char_map:
+                    for r in char_map[ref_id]:
+                        if r.status == "done" and os.path.isfile(r.path):
+                            ref_paths.append(r.path)
+                            break
+            for ref_id in prop_ids:
+                if ref_id in prop_map:
+                    for r in prop_map[ref_id]:
+                        if r.status == "done" and os.path.isfile(r.path):
+                            ref_paths.append(r.path)
+                            break
+
+            for label_suffix, prompt in prompts:
+                prompt = apply_im2_clean(prompt, "scene")
+                r = await self.provider.generate(prompt, "16:9", reference_images=ref_paths or None)
+                r.label = f"{sid}_{label_suffix}"
+                if r.status == "done" and r.path:
+                    import shutil
+                    ext = os.path.splitext(r.path)[1]
+                    target = os.path.join(scenes_dir_str, f"{sid}_{label_suffix}{ext}")
+                    shutil.move(r.path, target)
+                    r.path = target
+                scene_map.setdefault(sid, []).append(r)
         for name, results in scene_map.items():
             done = sum(1 for r in results if r.status == "done")
             logger.info("  %s: %d/%d done", name, done, len(results))
