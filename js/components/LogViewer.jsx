@@ -1,6 +1,7 @@
 const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
 function LogViewer({ pipelineId }) {
+  const [open, setOpen] = useState(false);
   const [logs, setLogs] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
   const logContainerRef = useRef(null);
@@ -56,20 +57,25 @@ function LogViewer({ pipelineId }) {
 
   return (
     <div className="mt-10">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center gap-3 mb-4 cursor-pointer select-none" onClick={() => setOpen(!open)}>
+        <span className="text-stone-500 text-xs w-3 text-center transition-transform flex-shrink-0" style={{ transform: open ? 'rotate(90deg)' : 'none' }}>▶</span>
         <h3 className="font-heading text-lg font-semibold text-stone-100">运行日志</h3>
-        <label className="flex items-center gap-1.5 text-xs text-stone-400 cursor-pointer">
-          <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} className="accent-brass-500" />
-          自动滚动
-        </label>
+        {open && (
+          <label className="flex items-center gap-1.5 text-xs text-stone-400 cursor-pointer ml-auto" onClick={e => e.stopPropagation()}>
+            <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} className="accent-brass-500" />
+            自动滚动
+          </label>
+        )}
       </div>
-      <div
-        ref={logContainerRef}
-        onScroll={handleScroll}
-        className="log-viewer bg-ink-950 border border-ink-700 rounded p-4 h-96 overflow-auto font-mono text-xs text-stone-300 whitespace-pre-wrap"
-      >
-        {logs || <span className="text-stone-500">暂无日志</span>}
-      </div>
+      {open && (
+        <div
+          ref={logContainerRef}
+          onScroll={handleScroll}
+          className="log-viewer bg-ink-950 border border-ink-700 rounded p-4 h-96 overflow-auto font-mono text-xs text-stone-300 whitespace-pre-wrap"
+        >
+          {logs || <span className="text-stone-500">暂无日志</span>}
+        </div>
+      )}
     </div>
   );
 }

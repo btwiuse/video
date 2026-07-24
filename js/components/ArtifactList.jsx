@@ -100,6 +100,7 @@ function DirNode({ name, node, level, path, pipelineId, treeOpen, onToggleDir, e
 }
 
 function ArtifactList({ pipelineId }) {
+  const [open, setOpen] = useState(false);
   const [artifacts, setArtifacts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState({});
@@ -185,11 +186,14 @@ function ArtifactList({ pipelineId }) {
 
   return (
     <div className="mt-10">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center gap-3 mb-4 cursor-pointer select-none" onClick={() => setOpen(!open)}>
+        <span className="text-stone-500 text-xs w-3 text-center transition-transform flex-shrink-0" style={{ transform: open ? 'rotate(90deg)' : 'none' }}>▶</span>
         <h3 className="font-heading text-lg font-semibold text-stone-100">产物文件</h3>
       </div>
-      {artifacts.length === 0 && <p className="text-stone-500 text-sm">暂无产物文件</p>}
-      <div className="bg-ink-900 rounded border border-ink-700 overflow-hidden">
+      {open && (
+        <>
+          {artifacts.length === 0 && <p className="text-stone-500 text-sm">暂无产物文件</p>}
+          <div className="bg-ink-900 rounded border border-ink-700 overflow-hidden">
         {rootFiles.map(f => (
           <FileRow key={f.name} file={f} level={0}
             pipelineId={pipelineId} expanded={expanded}
@@ -200,7 +204,9 @@ function ArtifactList({ pipelineId }) {
             treeOpen={treeOpen} onToggleDir={toggleDir}
             expanded={expanded} onView={viewJson} onDownload={download} onCopy={copyToClipboard} onToggle={toggleExpand} pipelineId={pipelineId} />
         ))}
-      </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
