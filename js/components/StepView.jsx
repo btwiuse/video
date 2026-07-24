@@ -412,7 +412,8 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                 {allPropImages.map(f => {
                   const isPlaceholder = f.placeholder;
                   const cb = cacheBust[f.name];
-                  const label = f.prop_name || f.name.split('/').pop()?.replace(/_reference\.(jpg|jpeg|png|webp)$/, '');
+                  const label = f.prop_id || f.name.split('/').pop()?.replace(/_reference\.(jpg|jpeg|png|webp)$/, '');
+                  const displayName = f.prop_name || label;
                   const isRegen = regenerating['prop_' + label];
                   return (
                     <div key={f.name + (cb || '')} className="flex flex-col items-center gap-1.5 group relative">
@@ -440,7 +441,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                           </div>
                         )}
                       </div>
-                      <span className="text-xs text-stone-500 truncate max-w-full">{label}</span>
+                      <span className="text-xs text-stone-500 truncate max-w-full">{displayName}</span>
                       <button
                         onClick={async () => {
                           if (isRegen) return;
