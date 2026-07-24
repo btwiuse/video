@@ -882,7 +882,7 @@ class StoryboardGenerator:
             shot_detail["scene_id"] = scene_id
             shot_detail["shot_num"] = shot_num
             shot_detail["md_file"] = f"shots/{shot_id}/{shot_id}.md"
-            shot_detail["startframe_file"] = f"shots/{shot_id}/{shot_id}_startframe.png"
+            shot_detail["startframe_file"] = f"shots/{shot_id}/{shot_id}_startframe.jpg"
             shot_detail["video_file"] = f"shots/{shot_id}/{shot_id}.mp4"
             scene_shots.append(shot_detail)
             shot_dir = ensure_output_dir("shots", shot_id)

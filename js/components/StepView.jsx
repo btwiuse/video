@@ -170,7 +170,12 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
     for (const s of storyboardData.shots || []) {
       const sf = s.startframe_file;
       const name = sf || `shots/${s.full_shot_id}/${s.full_shot_id}_startframe.jpg`;
-      if (!shotImageNames.has(name)) expected.push({ name, placeholder: true, shot_id: s.full_shot_id });
+      if (!shotImageNames.has(name)) {
+        // Also check if any file with same shot_id prefix exists (extension might differ)
+        const prefix = `shots/${s.full_shot_id}/${s.full_shot_id}_startframe.`;
+        const exists = shotImages.some(f => f.name.startsWith(prefix));
+        if (!exists) expected.push({ name, placeholder: true, shot_id: s.full_shot_id });
+      }
     }
     return expected;
   }, [storyboardData, shotImages]);
