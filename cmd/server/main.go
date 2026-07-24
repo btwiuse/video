@@ -850,10 +850,6 @@ func handleRegenerateAsset(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing storyboard.json (run step 1 first)", http.StatusConflict)
 		return
 	}
-	if !fileExists(filepath.Join(dir, "manifest.json")) {
-		http.Error(w, "missing manifest.json (run step 2 first)", http.StatusConflict)
-		return
-	}
 
 	if len(params.Characters) == 0 && len(params.CharacterImages) == 0 && len(params.Scenes) == 0 && len(params.SceneImages) == 0 && len(params.Shots) == 0 && len(params.PropImages) == 0 {
 		http.Error(w, "must specify at least one character, character_image, scene, scene_image, shot, or prop to regenerate", http.StatusBadRequest)
