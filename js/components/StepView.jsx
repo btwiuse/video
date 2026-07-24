@@ -677,17 +677,22 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
           <div className="flex flex-col lg:flex-row gap-4 max-w-full max-h-full items-start cursor-default" onClick={e => e.stopPropagation()}>
             <div className="relative">
               <img
+                key={cacheBust[lightboxName] || ''}
                 src={artifactUrl(pipelineId, lightboxName, cacheBust[lightboxName])}
                 className="max-h-[70vh] max-w-full lg:max-w-[50vw] object-contain rounded"
                 alt="放大预览"
-                onError={e => { e.target.style.display = 'none'; }}
+                onError={e => { e.target.style.display = 'none'; e.target.nextElementSibling?.classList.remove('hidden'); }}
               />
+              <div className="max-h-[70vh] max-w-full lg:max-w-[50vw] flex flex-col items-center justify-center rounded bg-ink-800 border border-dashed border-ink-600 hidden" style={{ aspectRatio: '16/9' }}>
+                <span className="text-stone-600 text-2xl">?</span>
+                <span className="text-stone-600 text-xs mt-1">待生成</span>
+              </div>
               {regeneratingLightbox && (
                 <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
                   <div className="w-8 h-8 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
                 </div>
               )}
-              {lightboxName && !lightboxName.includes('placeholder') && (
+              {lightboxName && (
                 <button
                   onClick={regenerateFromLightbox}
                   disabled={regeneratingLightbox}
