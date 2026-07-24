@@ -318,6 +318,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
             <span className="text-xs text-stone-200 w-6 text-right">{totalDuration}s</span>
           </div>
         </div>
+      </>}
       )}
 
       {step === 1 && (isStepDone || isStepRunning) && <StoryboardViewer pipelineId={pipelineId} poll={isStepRunning} reloadKey={stepReloadKey} />}
