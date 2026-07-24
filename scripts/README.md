@@ -60,7 +60,7 @@ BASE=https://my-server.com SCRIPT=scripts/animation_test.txt bash scripts/test_a
 1. **Health check** — `GET /health`
 2. **Create pipeline** — `POST /pipelines`（上传剧本）
 3. **Get status** — `GET /pipelines/{id}`
-4. **Step 1** — `POST /pipelines/{id}/steps/1`（分镜生成）
+4. **Step 1** — `POST /pipelines/{id}/steps/1`（剧本分镜）
 5. **List artifacts** — `GET /pipelines/{id}/artifacts`
 6. **Download storyboard** — `GET /pipelines/{id}/artifacts/storyboard.json`
 7. **Step 2** — `POST /pipelines/{id}/steps/2`（视觉素材）

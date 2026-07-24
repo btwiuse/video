@@ -24,7 +24,7 @@ python main.py run test_script.txt
 剧本 (.txt)
   │
   ▼
-Step 1: 分镜生成 (DeepSeek)     → storyboard.json
+Step 1: 剧本分镜 (DeepSeek)     → storyboard.json
   │
   ▼
 Step 2: 视觉素材 (Flux/Seedream) → manifest.json

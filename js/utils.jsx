@@ -6,7 +6,7 @@ const formatDuration = (d) => {
 };
 
 const API_BASE = window.location.origin;
-const STEP_NAMES = ["", "分镜生成", "视觉素材", "视频生成", "音频生成", "后期合成"];
+const STEP_NAMES = ["", "剧本分镜", "视觉素材", "视频生成", "音频生成", "后期合成"];
 
 const STATUS_BADGE_STYLES = {
   pending:     'bg-ink-700 text-stone-400',

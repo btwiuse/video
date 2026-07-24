@@ -45,6 +45,9 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
   const [regeneratingLightbox, setRegeneratingLightbox] = useState(false);
   const [stepReloadKey, setStepReloadKey] = useState(0);
   const [storyboardData, setStoryboardData] = useState(null);
+  const [scriptText, setScriptText] = useState(null);
+  const [editingScript, setEditingScript] = useState(false);
+  const [savingScript, setSavingScript] = useState(false);
   const prevPipelineRef = useRef(pipeline);
   const textareaRef = useRef(null);
 
@@ -76,6 +79,19 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
     }
     return () => { cancelled = true; if (t) clearInterval(t); };
   }, [pipelineId, isStepDone, isStepRunning, pipeline.status, stepReloadKey]);
+
+  // Load script text
+  useEffect(() => {
+    if (!pipelineId || step !== 1) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api(`/pipelines/${pipelineId}/artifacts/script.txt`);
+        if (res.ok && !cancelled) setScriptText(await res.text());
+      } catch (_) {}
+    })();
+    return () => { cancelled = true; };
+  }, [pipelineId, step]);
 
   const previewUrl = async (name) => {
     if (previews[name]) { setPreviews(p => { const n = {...p}; delete n[name]; return n; }); return; }
@@ -231,8 +247,55 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
       </div>
 
       {step === 1 && canGenerate && !isStepRunning && (
-        <div className="mb-6 p-4 bg-ink-900/50 rounded border border-ink-700 space-y-3">
-          <p className="text-xs text-stone-400 font-medium">分镜参数</p>
+        <>
+          {scriptText !== null && (
+            <div className="mb-6 p-4 bg-ink-900/50 rounded border border-ink-700">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-stone-400 font-medium">剧本</p>
+                <button
+                  onClick={async () => {
+                    if (editingScript) {
+                      setEditingScript(false);
+                    } else {
+                      setEditingScript(true);
+                    }
+                  }}
+                  className="text-xs text-stone-500 hover:text-brass-400 transition-colors px-1.5 py-0.5 rounded cursor-pointer"
+                >{editingScript ? '✓' : '✎'}</button>
+              </div>
+              {editingScript ? (
+                <div className="space-y-2">
+                  <textarea
+                    className="w-full h-64 bg-ink-950 text-stone-300 text-xs p-3 rounded border border-ink-700 font-mono resize-y"
+                    value={scriptText}
+                    onChange={e => setScriptText(e.target.value)}
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={async () => {
+                        setSavingScript(true);
+                        try {
+                          const res = await api(`/pipelines/${pipelineId}/artifacts/script.txt`, {
+                            method: 'PUT', body: scriptText,
+                          });
+                          if (res.ok) setEditingScript(false);
+                        } catch (_) {}
+                        setSavingScript(false);
+                      }}
+                      disabled={savingScript}
+                      className="px-3 py-1.5 text-xs font-medium bg-leaf-500/20 text-leaf-400 rounded hover:bg-leaf-500/30 transition-colors cursor-pointer disabled:opacity-40"
+                    >{savingScript ? '保存中...' : '保存'}</button>
+                    <button onClick={() => { setEditingScript(false); setScriptText(scriptText); }}
+                      className="px-3 py-1.5 text-xs text-stone-500 hover:text-stone-300 transition-colors cursor-pointer">取消</button>
+                  </div>
+                </div>
+              ) : (
+                <pre className="text-xs text-stone-400 whitespace-pre-wrap max-h-48 overflow-y-auto">{scriptText}</pre>
+              )}
+            </div>
+          )}
+          <div className="mb-6 p-4 bg-ink-900/50 rounded border border-ink-700 space-y-3">
+            <p className="text-xs text-stone-400 font-medium">分镜参数</p>
           <div className="flex items-center gap-4">
             <label className="text-xs text-stone-400 w-28 flex-shrink-0">每场景最多镜头</label>
             <input type="range" min="1" max="20" value={maxShotsPerScene}
