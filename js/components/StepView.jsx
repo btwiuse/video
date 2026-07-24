@@ -60,7 +60,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
   }, [pipeline, pipeline.status]);
 
   useEffect(() => {
-    if (!isStepDone && !isStepRunning) { setArtifacts([]); return; }
+    if (!isStepDone && !isStepRunning && !(step === 2 && canGenerate)) { setArtifacts([]); return; }
     let cancelled = false;
     let t;
     const fetchArtifacts = async () => {
@@ -73,12 +73,11 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
     if (isStepRunning) {
       t = setInterval(() => { if (!document.hidden) fetchArtifacts(); }, 15000);
     }
-    const prevStep = prevPipelineRef.current?.step;
-    if (!storyboardData && step === 2 && !artLoading && (isStepDone || isStepRunning)) {
+    if (!storyboardData && step === 2 && !artLoading && (isStepDone || isStepRunning || canGenerate)) {
       api(`/pipelines/${pipelineId}/artifacts/storyboard.json`).then(r => r.ok && r.json().then(d => setStoryboardData(d)));
     }
     return () => { cancelled = true; if (t) clearInterval(t); };
-  }, [pipelineId, isStepDone, isStepRunning, pipeline.status, stepReloadKey]);
+  }, [pipelineId, isStepDone, isStepRunning, step, canGenerate, pipeline.status, stepReloadKey]);
 
   // Load script text
   useEffect(() => {
@@ -323,7 +322,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
 
       {step === 1 && (isStepDone || isStepRunning) && <StoryboardViewer pipelineId={pipelineId} poll={isStepRunning} reloadKey={stepReloadKey} />}
 
-      {step === 2 && (isStepDone || isStepRunning) && (
+      {step === 2 && (isStepDone || isStepRunning || canGenerate) && (
         <div className="space-y-6">
           {allCharImages.length > 0 && (
             <div>
@@ -627,7 +626,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
         </div>
       )}
 
-      {!isStepDone && !isStepRunning && (
+      {!isStepDone && !isStepRunning && !(step === 2 && canGenerate) && (
         <div className="text-center py-8 text-stone-500 text-sm border border-dashed border-ink-700 rounded">
           此步骤尚未执行
         </div>
