@@ -74,7 +74,15 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
       t = setInterval(() => { if (!document.hidden) fetchArtifacts(); }, 15000);
     }
     if (!storyboardData && step === 2 && !artLoading && (isStepDone || isStepRunning || canGenerate)) {
-      api(`/pipelines/${pipelineId}/artifacts/storyboard.json`).then(r => r.ok && r.json().then(d => setStoryboardData(d)));
+      let retries = 0;
+      const tryFetchStoryboard = () => {
+        if (cancelled) return;
+        api(`/pipelines/${pipelineId}/artifacts/storyboard.json`).then(r => {
+          if (r.ok) { r.json().then(d => setStoryboardData(d)); }
+          else if (retries++ < 15) { setTimeout(tryFetchStoryboard, 1500); }
+        });
+      };
+      tryFetchStoryboard();
     }
     return () => { cancelled = true; if (t) clearInterval(t); };
   }, [pipelineId, isStepDone, isStepRunning, step, canGenerate, pipeline.status, stepReloadKey]);
