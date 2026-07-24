@@ -1,0 +1,1 @@
+matte porous surfaces, chipped or worn edges only where exposed, contact shadows in seams, no random dirty speckle. Smooth dark tones, readable shadow floor, clean value separation, controlled rim light, no noisy bokeh

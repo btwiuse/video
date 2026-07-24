@@ -1,0 +1,1 @@
+natural facial planes, matte skin with soft specular highlights, subtle pores and peach fuzz only where visible, clean eye highlights, no waxy gloss, no dirty pore noise. Geometry-aware fabric weave or knit structure, fibers following folds, grazing light revealing raised texture, no flat printed texture

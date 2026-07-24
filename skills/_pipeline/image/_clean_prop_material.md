@@ -1,0 +1,1 @@
+roughness variation, worn edges catching narrow anisotropic highlights, oxidized or matte flats absorbing light, no uniform chrome gloss. Clean silhouette, polished spacing, smooth gradients, premium clean finish

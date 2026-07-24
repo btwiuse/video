@@ -19,6 +19,7 @@ from typing import Any, Protocol, runtime_checkable
 import httpx
 
 from config import config
+from src.im2_clean import apply_im2_clean, apply_im2_clean_to_prompts
 from src.prompts import get_image_template
 from src.utils import ensure_output_dir, save_json, load_json
 
@@ -627,6 +628,7 @@ class Step2Pipeline:
             for label_suffix, prompt in prompts:
                 all_prompts.append((prompt, f"{ref_id}_{label_suffix}", "3:4"))
 
+        all_prompts = apply_im2_clean_to_prompts(all_prompts, "character")
         char_results = await self.provider.generate_batch(all_prompts)
         char_map: dict[str, list[ImageResult]] = {}
         for i, r in enumerate(char_results):
@@ -652,6 +654,7 @@ class Step2Pipeline:
             for label_suffix, prompt in prompts:
                 scene_prompts.append((prompt, f"{sid}_{label_suffix}", "16:9"))
 
+        scene_prompts = apply_im2_clean_to_prompts(scene_prompts, "scene")
         scene_results = await self.provider.generate_batch(scene_prompts)
         scene_map: dict[str, list[ImageResult]] = {}
         for i, r in enumerate(scene_results):
@@ -676,6 +679,7 @@ class Step2Pipeline:
             for label_suffix, prompt in self._build_prop_prompts(prop):
                 prop_prompts.append((prompt, f"{ref_id}_{label_suffix}", "1:1"))
 
+        prop_prompts = apply_im2_clean_to_prompts(prop_prompts, "prop")
         prop_results = await self.provider.generate_batch(prop_prompts)
         prop_map: dict[str, list[ImageResult]] = {}
         for i, r in enumerate(prop_results):
@@ -755,6 +759,7 @@ class Step2Pipeline:
 
                 r = None
                 for attempt in range(3):
+                    sf_prompt = apply_im2_clean(sf_prompt, "scene")
                     r = await self.provider.generate(sf_prompt, "16:9", reference_images=ref_paths or None)
                     if r.status == "done":
                         break
@@ -826,6 +831,7 @@ class Step2Pipeline:
             for label_suffix, prompt in prompts:
                 all_prompts.append((prompt, f"{ref_id}_{label_suffix}", "3:4"))
 
+            all_prompts = apply_im2_clean_to_prompts(all_prompts, "character")
             results = await self.provider.generate_batch(all_prompts)
             for i, r in enumerate(results):
                 suffix = all_prompts[i][1].rsplit("_", 1)[1]
@@ -884,6 +890,7 @@ class Step2Pipeline:
                 continue
 
             logger.info("  %s: regenerating...", label)
+            prompt_for_suffix = apply_im2_clean(prompt_for_suffix, "character")
             r = await self.provider.generate(prompt_for_suffix, "3:4")
             if r.status == "done" and r.path:
                 import shutil
@@ -928,6 +935,7 @@ class Step2Pipeline:
             for label_suffix, prompt in prompts:
                 scene_prompts.append((prompt, f"{sid}_{label_suffix}", "16:9"))
 
+            scene_prompts = apply_im2_clean_to_prompts(scene_prompts, "scene")
             results = await self.provider.generate_batch(scene_prompts)
             for i, r in enumerate(results):
                 suffix = scene_prompts[i][1].rsplit("_", 1)[1]
@@ -984,6 +992,7 @@ class Step2Pipeline:
                 continue
 
             logger.info("  %s: regenerating...", label)
+            prompt_for_suffix = apply_im2_clean(prompt_for_suffix, "scene")
             r = await self.provider.generate(prompt_for_suffix, "16:9")
             if r.status == "done" and r.path:
                 import shutil
@@ -1094,7 +1103,8 @@ class Step2Pipeline:
 
             r = None
             for attempt in range(3):
-                r = await self.provider.generate(sf_prompt, "16:9", reference_images=ref_paths or None)
+                enhanced_sf = apply_im2_clean(sf_prompt, "scene")
+                r = await self.provider.generate(enhanced_sf, "16:9", reference_images=ref_paths or None)
                 if r.status == "done":
                     break
                 logger.warning("  %s start frame attempt %d failed: %s", shot_id, attempt + 1, r.error or "unknown")
@@ -1303,6 +1313,7 @@ class Step2Pipeline:
             for label_suffix, prompt in prompts:
                 all_prompts.append((prompt, f"{ref_id}_{label_suffix}", "1:1"))
 
+            all_prompts = apply_im2_clean_to_prompts(all_prompts, "prop")
             results = await self.provider.generate_batch(all_prompts)
             for i, r in enumerate(results):
                 suffix = all_prompts[i][1].rsplit("_", 1)[1]
