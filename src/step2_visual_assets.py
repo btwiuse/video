@@ -1285,6 +1285,53 @@ class Step2Pipeline:
         match = re.search(r"##\s*道具参考图\s*Prompt\s*\n```\n(.+?)\n```", text, re.DOTALL)
         return match.group(1).strip() if match else ""
 
+    async def regenerate_props(self, storyboard: dict, ref_ids: list[str]) -> None:
+        """Regenerate specific prop reference images, replacing old files."""
+        logger.info("Regenerating props: %s", ref_ids)
+        props_dir = str(ensure_output_dir("props"))
+        props = storyboard.get("props", [])
+        manifest_path = ensure_output_dir() / "manifest.json"
+        manifest = load_json(str(manifest_path)) if manifest_path.is_file() else {}
+
+        for prop in props:
+            ref_id = prop.get("ref_id", prop.get("id", ""))
+            if ref_id not in ref_ids:
+                continue
+
+            prompts = self._build_prop_prompts(prop)
+            all_prompts: list[tuple[str, str, str]] = []
+            for label_suffix, prompt in prompts:
+                all_prompts.append((prompt, f"{ref_id}_{label_suffix}", "1:1"))
+
+            results = await self.provider.generate_batch(all_prompts)
+            for i, r in enumerate(results):
+                suffix = all_prompts[i][1].rsplit("_", 1)[1]
+                if r.status == "done" and r.path:
+                    import shutil
+                    ext = os.path.splitext(r.path)[1]
+                    target = os.path.join(props_dir, f"{ref_id}_{suffix}{ext}")
+                    old_glob = glob.glob(os.path.join(props_dir, f"{ref_id}_{suffix}.*"))
+                    for old in old_glob:
+                        os.remove(old)
+                    shutil.move(r.path, target)
+                    r.path = target
+                    logger.info("  %s_%s: regenerated -> %s", ref_id, suffix, target)
+                    manifest_key = f"{ref_id}_{suffix}"
+                    name = self._read_entity_name("props", ref_id)
+                    manifest[manifest_key] = {
+                        "file": target,
+                        "type": "prop",
+                        "prop_id": ref_id,
+                        "prop_name": name or ref_id,
+                        "prompt": r.prompt,
+                        "status": "done",
+                    }
+                else:
+                    logger.warning("  %s_%s: regeneration failed: %s", ref_id, suffix, r.error or "unknown")
+
+        save_json(manifest, str(manifest_path))
+        logger.info("Manifest updated after prop regeneration")
+
     def _build_manifest(
         self,
         char_map: dict[str, list[ImageResult]],
@@ -1375,6 +1422,7 @@ async def regenerate_assets(
     scene_ids: list[str] | None = None,
     scene_image_labels: list[str] | None = None,
     shot_ids: list[str] | None = None,
+    prop_ids: list[str] | None = None,
     provider_name: str | None = None,
 ) -> dict:
     """Regenerate specific assets from storyboard, preserving existing ones.
@@ -1386,6 +1434,7 @@ async def regenerate_assets(
         scene_ids: List of scene_ids to regenerate (all images)
         scene_image_labels: List of specific scene image labels (e.g. SC_01_wide)
         shot_ids: List of shot_ids to regenerate
+        prop_ids: List of prop ref_ids to regenerate
         provider_name: Optional provider override
 
     Returns:
@@ -1405,6 +1454,8 @@ async def regenerate_assets(
         await pipeline.regenerate_single_scene_images(storyboard, scene_image_labels)
     if shot_ids:
         await pipeline.regenerate_shots(storyboard, shot_ids)
+    if prop_ids:
+        await pipeline.regenerate_props(storyboard, prop_ids)
 
     # Reload and return the updated manifest
     manifest_path = ensure_output_dir() / "manifest.json"

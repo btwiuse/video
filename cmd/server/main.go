@@ -500,7 +500,7 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 	// Also clear generated artifacts for this step
 	switch step {
 	case 1:
-		for _, pattern := range []string{"characters/*.md", "scenes/*.md", "shots/*/*.md", "shots/*/deps.json"} {
+		for _, pattern := range []string{"characters/*.md", "props/*.md", "scenes/*.md", "shots/*/*.md", "shots/*/deps.json"} {
 			matches, _ := filepath.Glob(filepath.Join(dir, pattern))
 			for _, m := range matches {
 				os.Remove(m)
@@ -508,7 +508,7 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 		}
 		vlog("pipeline %s cleared stale storyboard artifacts", id)
 	case 2:
-		for _, pattern := range []string{"characters/*.jpg", "characters/*.png", "scenes/*.jpg", "scenes/*.png", "shots/*/*_startframe.jpg", "shots/*/*_startframe.png"} {
+		for _, pattern := range []string{"characters/*.jpg", "characters/*.png", "scenes/*.jpg", "scenes/*.png", "props/*.jpg", "props/*.png", "props/*.webp", "shots/*/*_startframe.jpg", "shots/*/*_startframe.png"} {
 			matches, _ := filepath.Glob(filepath.Join(dir, pattern))
 			for _, m := range matches {
 				os.Remove(m)
@@ -837,6 +837,7 @@ func handleRegenerateAsset(w http.ResponseWriter, r *http.Request) {
 		Scenes          []string `json:"scenes"`
 		SceneImages     []string `json:"scene_images"`
 		Shots           []string `json:"shots"`
+		PropImages      []string `json:"prop_images"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
 		http.Error(w, fmt.Sprintf("bad request: %v", err), http.StatusBadRequest)
@@ -854,8 +855,8 @@ func handleRegenerateAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(params.Characters) == 0 && len(params.CharacterImages) == 0 && len(params.Scenes) == 0 && len(params.SceneImages) == 0 && len(params.Shots) == 0 {
-		http.Error(w, "must specify at least one character, character_image, scene, scene_image, or shot to regenerate", http.StatusBadRequest)
+	if len(params.Characters) == 0 && len(params.CharacterImages) == 0 && len(params.Scenes) == 0 && len(params.SceneImages) == 0 && len(params.Shots) == 0 && len(params.PropImages) == 0 {
+		http.Error(w, "must specify at least one character, character_image, scene, scene_image, shot, or prop to regenerate", http.StatusBadRequest)
 		return
 	}
 
@@ -875,6 +876,9 @@ func handleRegenerateAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, s := range params.Shots {
 		args = append(args, "--regenerate-shot", s)
+	}
+	for _, p := range params.PropImages {
+		args = append(args, "--regenerate-prop", p)
 	}
 
 	vlog("pipeline %s regenerate assets: uv %s", id, strings.Join(args, " "))

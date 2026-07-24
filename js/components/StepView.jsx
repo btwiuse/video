@@ -42,6 +42,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
   const [promptLoading, setPromptLoading] = useState(false);
   const [promptSaving, setPromptSaving] = useState(false);
   const [editingLightbox, setEditingLightbox] = useState(false);
+  const [regeneratingLightbox, setRegeneratingLightbox] = useState(false);
   const [stepReloadKey, setStepReloadKey] = useState(0);
   const [storyboardData, setStoryboardData] = useState(null);
   const prevPipelineRef = useRef(pipeline);
@@ -163,6 +164,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
   const regenerateFromLightbox = async () => {
     const name = lightboxName;
     if (!name) return;
+    setRegeneratingLightbox(true);
     let body = {};
     if (name.startsWith('characters/')) {
       const label = name.split('/')[1]?.replace(/\.(jpg|jpeg|png)$/, '');
@@ -170,6 +172,9 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
     } else if (name.startsWith('scenes/')) {
       const label = name.split('/')[1]?.replace(/\.(jpg|jpeg|png)$/, '');
       body = { scene_images: [label] };
+    } else if (name.startsWith('props/')) {
+      const label = name.split('/')[1]?.replace(/_reference\.(jpg|jpeg|png|webp)$/, '');
+      body = { prop_images: [label] };
     } else if (name.startsWith('shots/')) {
       const shotId = name.match(/shots\/([^/]+)\//)?.[1];
       if (shotId) body = { shots: [shotId] };
@@ -179,6 +184,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
       await api(`/pipelines/${pipelineId}/regenerate`, { method: 'POST', body: JSON.stringify(body) });
       setCacheBust(c => ({ ...c, [name]: Date.now() }));
     } catch (_) {}
+    setRegeneratingLightbox(false);
   };
 
   return (
@@ -314,12 +320,13 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                   const isPlaceholder = f.placeholder;
                   const cb = cacheBust[f.name];
                   const label = f.prop_name || f.name.split('/').pop()?.replace(/_reference\.(jpg|jpeg|png|webp)$/, '');
+                  const isRegen = regenerating['prop_' + label];
                   return (
-                    <div key={f.name + (cb || '')} className="flex flex-col items-center gap-1.5">
+                    <div key={f.name + (cb || '')} className="flex flex-col items-center gap-1.5 group relative">
                       <div className="relative w-full aspect-square">
                         {isPlaceholder ? (
                           <div className="w-full h-full rounded bg-ink-800 border border-dashed border-ink-600 flex flex-col items-center justify-center">
-                            <span className="text-stone-600 text-2xl">◇</span>
+                            <span className="text-stone-600 text-2xl">?</span>
                             <span className="text-stone-600 text-xs mt-1">待生成</span>
                           </div>
                         ) : (
@@ -331,8 +338,32 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                             onClick={() => openLightbox(f.name)}
                           />
                         )}
+                        {!isPlaceholder && isRegen && (
+                          <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
+                            <div className="w-6 h-6 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
+                          </div>
+                        )}
                       </div>
                       <span className="text-xs text-stone-500 truncate max-w-full">{label}</span>
+                      {!isPlaceholder && (
+                        <button
+                          onClick={async () => {
+                            if (isRegen) return;
+                            setRegenerating(r => ({ ...r, ['prop_' + label]: true }));
+                            try {
+                              await api(`/pipelines/${pipelineId}/regenerate`, {
+                                method: 'POST',
+                                body: JSON.stringify({ prop_images: [label] }),
+                              });
+                              setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
+                            } catch (e) { /* ignore */ }
+                            setRegenerating(r => { const n = {...r}; delete n['prop_' + label]; return n; });
+                          }}
+                          className="absolute top-1 right-1 w-7 h-7 rounded bg-ink-900/80 hover:bg-brass-500/80 text-stone-400 hover:text-ink-950 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-0"
+                          disabled={isRegen}
+                          title="重新生成此道具"
+                        >⟳</button>
+                      )}
                     </div>
                   );
                 })}
@@ -545,10 +576,16 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                 className="max-h-[70vh] max-w-full lg:max-w-[50vw] object-contain rounded"
                 alt="放大预览"
               />
+              {regeneratingLightbox && (
+                <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
+                  <div className="w-8 h-8 border-3 border-brass-400 border-t-transparent rounded-full animate-spin" />
+                </div>
+              )}
               {lightboxName && !lightboxName.includes('placeholder') && (
                 <button
                   onClick={regenerateFromLightbox}
-                  className="absolute top-2 right-2 w-8 h-8 rounded bg-ink-900/80 hover:bg-brass-500/80 text-stone-400 hover:text-ink-950 flex items-center justify-center text-sm transition-all cursor-pointer"
+                  disabled={regeneratingLightbox}
+                  className="absolute top-2 right-2 w-8 h-8 rounded bg-ink-900/80 hover:bg-brass-500/80 text-stone-400 hover:text-ink-950 flex items-center justify-center text-sm transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   title="重新生成"
                 >⟳</button>
               )}

@@ -175,9 +175,10 @@ def storyboard(ctx, script_file, reasoning):
 @click.option("--regenerate-scene", multiple=True, help="Regenerate specific scene(s) by scene_id")
 @click.option("--regenerate-scene-image", multiple=True, help="Regenerate a specific scene image by label (e.g. SC_01_wide)")
 @click.option("--regenerate-shot", multiple=True, help="Regenerate specific shot(s) by full_shot_id")
-def assets(storyboard_path, regenerate_char, regenerate_char_image, regenerate_scene, regenerate_scene_image, regenerate_shot):
+@click.option("--regenerate-prop", multiple=True, help="Regenerate specific prop(s) by ref_id")
+def assets(storyboard_path, regenerate_char, regenerate_char_image, regenerate_scene, regenerate_scene_image, regenerate_shot, regenerate_prop):
     """Generate visual assets only (Step 2)."""
-    if regenerate_char or regenerate_char_image or regenerate_scene or regenerate_scene_image or regenerate_shot:
+    if regenerate_char or regenerate_char_image or regenerate_scene or regenerate_scene_image or regenerate_shot or regenerate_prop:
         from src.step2_visual_assets import regenerate_assets
         manifest = asyncio.run(regenerate_assets(
             storyboard_path,
@@ -186,6 +187,7 @@ def assets(storyboard_path, regenerate_char, regenerate_char_image, regenerate_s
             scene_ids=list(regenerate_scene),
             scene_image_labels=list(regenerate_scene_image),
             shot_ids=list(regenerate_shot),
+            prop_ids=list(regenerate_prop),
         ))
         labels = []
         if regenerate_char:
@@ -198,6 +200,8 @@ def assets(storyboard_path, regenerate_char, regenerate_char_image, regenerate_s
             labels.append(f"{len(regenerate_scene_image)} scene image(s)")
         if regenerate_shot:
             labels.append(f"{len(regenerate_shot)} shot(s)")
+        if regenerate_prop:
+            labels.append(f"{len(regenerate_prop)} prop(s)")
         print(f"Regenerated: {', '.join(labels)}.")
     else:
         from src.step2_visual_assets import generate_assets
