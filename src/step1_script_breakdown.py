@@ -1,11 +1,12 @@
 """
 Step 1: Script parsing and storyboard generation via DeepSeek (Tool Calling).
 
-Four phases, each producing structured JSON via function calling:
-  Phase 1 — extract_script_overview  (1 call)  → character list + scene list
+Five phases, each producing structured JSON via function calling:
+  Phase 1 — extract_script_overview  (1 call)  → character, scene, and prop lists
   Phase 2 — define_character          (N calls) → per-character portrait + prompts
-  Phase 3 — define_scene              (M calls) → per-scene reference + prompts
-  Phase 4 — create_scene_shot         (N calls) → one call per shot, per-shot prompts
+  Phase 3 — define_prop               (P calls) → per-prop continuity definition
+  Phase 4 — define_scene              (M calls) → per-scene reference + prompts
+  Phase 5 — create_scene_shot         (N calls) → one call per shot, per-shot prompts
 
 Each tool call's output is saved directly as an individual file.
 """
@@ -106,6 +107,33 @@ TOOL_DEFINE_SCENE = {
     },
 }
 
+TOOL_DEFINE_PROP = {
+    "type": "function",
+    "function": {
+        "name": "define_prop",
+        "description": "为一个叙事关键道具生成可跨镜头复用的视觉与连续性设定。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ref_id": {"type": "string", "description": "道具引用 ID，使用 PROP_01、PROP_02 等稳定编号"},
+                "name": {"type": "string", "description": "道具名称"},
+                "category": {"type": "string", "description": "类别，如手持物、武器、信物、交通工具、关键陈设"},
+                "narrative_function": {"type": "string", "description": "叙事功能和重要性"},
+                "visual_description": {"type": "string", "description": "完整外观、形状、结构和可辨识细节"},
+                "material_and_condition": {"type": "string", "description": "材质、表面质感、新旧程度、磨损或污渍"},
+                "dimensions": {"type": "string", "description": "相对或实际尺寸、比例和重量感"},
+                "color_palette": {"type": "string", "description": "主色、辅色、反光或发光特征"},
+                "distinctive_features": {"type": "string", "description": "铭文、划痕、机关、标志、缺口等唯一特征"},
+                "handling_notes": {"type": "string", "description": "角色如何持握、佩戴、摆放或操作；无则说明"},
+                "continuity_rules": {"type": "string", "description": "跨镜头必须保持不变的外观、位置、状态；并标注剧本中发生的状态变化"},
+                "scene_appearances": {"type": "array", "items": {"type": "string"}, "description": "出现的场景 ID 列表"},
+                "reference_prompt": {"type": "string", "description": "道具参考图中文 prompt：孤立展示、清晰材质和全部关键特征、无人物"},
+            },
+            "required": ["ref_id", "name", "category", "visual_description", "material_and_condition", "continuity_rules", "reference_prompt"],
+        },
+    },
+}
+
 TOOL_CREATE_SHOT = {
     "type": "function",
     "function": {
@@ -143,6 +171,7 @@ TOOL_CREATE_SHOT = {
                 "dialogue_line": {"type": "string", "description": "台词（含角色名和语气标注），无则留空"},
                 "sfx_marks": {"type": "string", "description": "音效标记和时间点，无则留空"},
                 "character_refs": {"type": "array", "items": {"type": "string"}, "description": "本镜头涉及的角色 ref_id 列表"},
+                "prop_refs": {"type": "array", "items": {"type": "string"}, "description": "本镜头中实际可见、被持握或被操作的关键道具 ref_id 列表；无则为空数组。不要填写普通背景陈设"},
                 "positive_prompt": {"type": "string", "description": "视频生成正面 prompt，用中文描述，详细到景别/运镜/角色(Image引用)/动作/光影/色彩/质感/画幅"},
                 "negative_prompt": {"type": "string", "description": "视频生成负面 prompt，用中文描述"},
                 "start_frame_prompt": {"type": "string", "description": "起始帧图片 prompt，用于文生图模型生成该镜头的第一帧静止图片。与 positive_prompt 的唯一区别：(1) 16:9 画幅 (2) 去掉所有运镜/运动描述——只描述一个静止瞬间。"},
@@ -170,9 +199,10 @@ def _build_system_filmmaker() -> str:
 1. 动作描述是视频 prompt 的核心——视频是运动媒介，没有运动就没有视频。必须详细描述镜头内每一段时间内的动作：角色如何移动、做什么、肢体和表情如何变化
 2. 具体视觉细节，不要抽象情绪词
 3. 视频 prompt 中引用角色时用 "see {{角色ref_id}} for reference" 格式（ref_id 就是角色原名）
-4. 包含景别/运镜描述
-5. 光影/色彩/质感描述作为辅助，但不应占据超过 prompt 30% 的篇幅
-6. **用中文写 positive_prompt 和 negative_prompt（和剧本语言保持一致）**
+4. 出现关键道具时必须遵守道具设定中的材质、颜色、尺寸和状态；只在道具实际可见、被持握或被操作时写入 prop_refs
+5. 包含景别/运镜描述
+6. 光影/色彩/质感描述作为辅助，但不应占据超过 prompt 30% 的篇幅
+7. **用中文写 positive_prompt 和 negative_prompt（和剧本语言保持一致）**
 
 ### 起始帧 prompt（start_frame_prompt）
 1. 与 positive_prompt 的唯一区别：去掉运镜/运动描述，只描述静止瞬间
@@ -234,12 +264,13 @@ class StoryboardGenerator:
         # Phase 1: Overview (plain chat, no tool)
         # ================================================================
         overview = self._phase1_overview(script_text)
-        logger.info("Phase 1 done: %d characters, %d scenes",
+        logger.info("Phase 1 done: %d characters, %d scenes, %d props",
                      len(overview.get("characters", [])),
-                     len(overview.get("scenes", [])))
+                     len(overview.get("scenes", [])),
+                     len(overview.get("props", [])))
 
         # ================================================================
-        # Phase 2-4: Tool calling for structured output
+        # Phase 2-5: Tool calling for structured output
         # ================================================================
         char_infos = overview.get("characters", [])
         characters: list[dict] = [None] * len(char_infos)
@@ -266,12 +297,40 @@ class StoryboardGenerator:
                     logger.info("Phase 2: %s (%s) done", char_info["name"], ref_id)
 
         # Partial save: characters available
-        save_json(self._build_storyboard_index(characters, [], []), str(ensure_output_dir() / "storyboard.json"))
+        save_json(self._build_storyboard_index(characters, [], [], []), str(ensure_output_dir() / "storyboard.json"))
+
+        prop_infos = overview.get("props", [])
+        props: list[dict] = [None] * len(prop_infos)
+        if prop_infos:
+            logger.info("Phase 3: defining %d props (parallel)...", len(prop_infos))
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = {}
+                for i, prop_info in enumerate(prop_infos):
+                    future = executor.submit(
+                        self._call_tool,
+                        _build_system_filmmaker(),
+                        self._build_prop_prompt(script_text, prop_info, overview),
+                        TOOL_DEFINE_PROP,
+                        prop_info["ref_id"],
+                    )
+                    futures[future] = (i, prop_info)
+                for future in as_completed(futures):
+                    i, prop_info = futures[future]
+                    prop_detail = future.result()
+                    prop_detail["scene_appearances"] = _ensure_list(
+                        prop_detail.get("scene_appearances") or prop_info.get("scenes", [])
+                    )
+                    props[i] = prop_detail
+                    self._save_prop_file(prop_detail, ensure_output_dir("props"))
+                    logger.info("Phase 3: %s (%s) done", prop_info["name"], prop_info["ref_id"])
+
+        # Partial save: characters + props available
+        save_json(self._build_storyboard_index(characters, [], props, []), str(ensure_output_dir() / "storyboard.json"))
 
         scene_infos = overview.get("scenes", [])
         scenes: list[dict] = [None] * len(scene_infos)
         if scene_infos:
-            logger.info("Phase 3: defining %d scenes (parallel)...", len(scene_infos))
+            logger.info("Phase 4: defining %d scenes (parallel)...", len(scene_infos))
             with ThreadPoolExecutor(max_workers=5) as executor:
                 futures = {}
                 for i, scene_info in enumerate(scene_infos):
@@ -288,15 +347,15 @@ class StoryboardGenerator:
                     scene_detail = future.result()
                     scenes[i] = scene_detail
                     self._save_scene_file(scene_detail, ensure_output_dir("scenes"))
-                    logger.info("Phase 3: %s (%s) done", scene_info["name"], scene_info["scene_id"])
+                    logger.info("Phase 4: %s (%s) done", scene_info["name"], scene_info["scene_id"])
 
-        # Partial save: characters + scenes available
-        save_json(self._build_storyboard_index(characters, scenes, []), str(ensure_output_dir() / "storyboard.json"))
+        # Partial save: characters + scenes + props available
+        save_json(self._build_storyboard_index(characters, scenes, props, []), str(ensure_output_dir() / "storyboard.json"))
 
         all_shots: list[dict] = []
         scene_infos = overview.get("scenes", [])
         if scene_infos:
-            logger.info("Phase 4: generating shots for %d scenes (parallel per-scene)...", len(scene_infos))
+            logger.info("Phase 5: generating shots for %d scenes (parallel per-scene)...", len(scene_infos))
             # Compute per-scene shot budget from env
             total_shots_env = os.environ.get("TOTAL_SHOTS", "")
             max_per_scene_env = os.environ.get("MAX_SHOTS_PER_SCENE", "")
@@ -314,14 +373,14 @@ class StoryboardGenerator:
                         scene_info["_shot_budget"] = min(existing, int(max_per_scene_env))
                     future = executor.submit(
                         self._generate_scene_shots,
-                        script_text, scene_info, characters, scenes,
+                        script_text, scene_info, characters, scenes, props,
                     )
                     futures[future] = scene_info["scene_id"]
                 for future in as_completed(futures):
                     scene_shots = future.result()
                     all_shots.extend(scene_shots)
-                    save_json(self._build_storyboard_index(characters, scenes, all_shots), str(ensure_output_dir() / "storyboard.json"))
-                    logger.info("Phase 4: %s done (%d shots)", futures[future], len(scene_shots))
+                    save_json(self._build_storyboard_index(characters, scenes, props, all_shots), str(ensure_output_dir() / "storyboard.json"))
+                    logger.info("Phase 5: %s done (%d shots)", futures[future], len(scene_shots))
             # Restore original scene order
             scene_order = {s["scene_id"]: i for i, s in enumerate(scene_infos)}
             all_shots.sort(key=lambda s: (scene_order.get(s.get("scene_id", ""), 999), s.get("shot_num", 1)))
@@ -329,10 +388,10 @@ class StoryboardGenerator:
         elapsed = time.monotonic() - t0
         total_shots = len(all_shots)
         total_duration = sum(s.get("duration_sec", 0) for s in all_shots)
-        logger.info("All phases complete in %.1fs: %d characters, %d scenes, %d shots (~%.0fs)",
-                     elapsed, len(characters), len(scenes), total_shots, total_duration)
+        logger.info("All phases complete in %.1fs: %d characters, %d scenes, %d props, %d shots (~%.0fs)",
+                     elapsed, len(characters), len(scenes), len(props), total_shots, total_duration)
 
-        storyboard = self._build_storyboard_index(characters, scenes, all_shots)
+        storyboard = self._build_storyboard_index(characters, scenes, props, all_shots)
         save_json(storyboard, str(ensure_output_dir() / "storyboard.json"))
         return storyboard
 
@@ -340,7 +399,7 @@ class StoryboardGenerator:
     # Phase 1: Overview (plain chat, structured JSON output)
     # ========================================================================
 
-    PHASE1_SYSTEM = """你是一位资深影视剧本分析师。请分析以下剧本，提取角色清单和场景清单。
+    PHASE1_SYSTEM = """你是一位资深影视剧本分析师。请分析以下剧本，提取角色、场景和叙事关键道具清单。
 
 ## 输出格式
 
@@ -369,6 +428,16 @@ class StoryboardGenerator:
       "characters_present": ["安娜"],
       "emotion_tone": "场景情绪基调"
     }
+  ],
+  "props": [
+    {
+      "ref_id": "PROP_01",
+      "name": "道具名称",
+      "category": "手持物/武器/信物/关键陈设等",
+      "brief_description": "一句话外观和状态概述，包含材质、颜色、可辨识特征",
+      "narrative_function": "推动剧情、承载线索或需要跨镜头连续性的原因",
+      "scenes": ["SC_01"]
+    }
   ]
 }
 ```
@@ -380,7 +449,9 @@ class StoryboardGenerator:
 3. 每个场景按顺序，用 SC_01, SC_02... 编号
 4. scenes 字段列出该角色出场的所有场景编号
 5. characters_present 列出该场景出场的所有角色 ref_id
-6. 只输出 JSON，不要任何额外说明文字"""
+6. props 仅包含剧情关键、被角色持握/操作、需要特写，或需跨镜头保持一致的道具；不要把普通桌椅、墙面、泛化装饰等背景陈设列为道具
+7. 道具 ref_id 按出现顺序使用 PROP_01、PROP_02…；scenes 列出其实际出现、被使用或状态发生变化的场景
+8. 只输出 JSON，不要任何额外说明文字"""
 
     def _phase1_overview(self, script_text: str) -> dict:
         """Phase 1: Extract character/scene inventory via plain chat completion."""
@@ -418,6 +489,12 @@ class StoryboardGenerator:
             if "scene_id" not in scene:
                 scene["scene_id"] = f"SC_{i+1:02d}"
             scene.setdefault("characters_present", [])
+
+        for i, prop in enumerate(result.get("props", [])):
+            prop.setdefault("ref_id", f"PROP_{i+1:02d}")
+            prop["ref_id"] = f"PROP_{i+1:02d}" if not str(prop["ref_id"]).strip() else str(prop["ref_id"]).strip()
+            prop.setdefault("name", prop["ref_id"])
+            prop.setdefault("scenes", [])
 
         return result
 
@@ -516,9 +593,24 @@ class StoryboardGenerator:
 
 请调用 define_scene 工具。"""
 
+    def _build_prop_prompt(self, script: str, prop_info: dict, overview: dict) -> str:
+        name = prop_info["name"]
+        ref_id = prop_info["ref_id"]
+        scenes_context = self._describe_scenes_brief(prop_info.get("scenes", []), overview)
+        return f"""请为叙事关键道具“{name}”（{ref_id}）生成完整且可跨镜头复用的设定。
+
+道具概要：{prop_info.get('brief_description', '')}
+叙事功能：{prop_info.get('narrative_function', '')}
+出现/使用场景：{scenes_context}
+
+原始剧本：
+{script[:3000]}
+
+请调用 define_prop 工具。必须锁定道具的材质、颜色、尺寸比例、可辨识特征、磨损状态与持握/摆放方式；若剧本让道具发生状态变化，请明确说明变化发生前后各自的状态。"""
+
     def _build_shot_prompt(
         self, script: str, scene_info: dict, chars_in_scene: list[str],
-        characters: list[dict], scenes: list[dict],
+        characters: list[dict], scenes: list[dict], props: list[dict],
         shot_num: int, prev_shot: dict | None,
     ) -> str:
         sid = scene_info["scene_id"]
@@ -538,6 +630,15 @@ class StoryboardGenerator:
             if s.get("scene_id") == sid:
                 scene_detail = f"空间：{s.get('spatial_description', '')}\n光线：{s.get('lighting_primary', '')}"
                 break
+
+        prop_details = []
+        active_prop_ids = _ensure_list(scene_info.get("props_present", []))
+        for prop in props:
+            if prop.get("ref_id") in active_prop_ids or sid in _ensure_list(prop.get("scene_appearances", [])):
+                prop_details.append(
+                    f"  {prop.get('ref_id')}（{prop.get('name', '')}）：{prop.get('visual_description', '')}；"
+                    f"材质/状态：{prop.get('material_and_condition', '')}；连续性：{prop.get('continuity_rules', '')}"
+                )
 
         # Previous shot context for continuity
         prev_context = ""
@@ -572,6 +673,9 @@ class StoryboardGenerator:
 出场角色及其外貌：
 {chr(10).join(char_details) if char_details else '（空镜，无角色）'}
 
+本场景可能出现的关键道具：
+{chr(10).join(prop_details) if prop_details else '（无关键道具）'}
+
 场景情绪基调：{scene_info.get('emotion_tone', '')}
 
 {prev_context}
@@ -582,6 +686,7 @@ class StoryboardGenerator:
 请调用 create_scene_shot 工具，只生成第 {shot_num} 镜。
 判断 is_scene_end：如果这是本场景最后一个镜头（叙事/情绪/动作已完成），设为 true；否则设为 false。
 严格遵守 180 度规则和相邻镜头空间/光线连续性。
+只有道具实际可见、被持握或被操作时，才把其 ref_id 写入 prop_refs；并在画面描述、动作与视频 prompt 中准确体现其当前状态。
 注意：duration_sec 是单镜头时长，不能超过 10 秒；总时长 = 所有镜头 duration_sec 之和。不要被剧本中的"总长度"描述误导——那是整部影片的时长，不是单个镜头的时长。"""
 
     def _describe_scenes_brief(self, scene_labels: list[str], overview: dict) -> str:
@@ -750,7 +855,7 @@ class StoryboardGenerator:
     # ========================================================================
 
     def _generate_scene_shots(self, script_text: str, scene_info: dict,
-                                characters: list[dict], scenes: list[dict]) -> list[dict]:
+                                characters: list[dict], scenes: list[dict], props: list[dict]) -> list[dict]:
         """Generate all shots for one scene (sequential within scene)."""
         scene_id = scene_info["scene_id"]
         chars_in_scene = scene_info.get("characters_present", [])
@@ -768,7 +873,7 @@ class StoryboardGenerator:
             shot_detail = self._call_tool(
                 _build_system_filmmaker(),
                 self._build_shot_prompt(script_text, scene_info, chars_in_scene,
-                                         characters, scenes, shot_num, prev_shot),
+                                         characters, scenes, props, shot_num, prev_shot),
                 TOOL_CREATE_SHOT,
                 f"{scene_id}_SHOT{shot_num:02d}",
             )
@@ -782,7 +887,7 @@ class StoryboardGenerator:
             scene_shots.append(shot_detail)
             shot_dir = ensure_output_dir("shots", shot_id)
             self._save_shot_files(shot_detail, shot_dir)
-            self._save_shot_deps(shot_detail, shot_dir, characters, scenes)
+            self._save_shot_deps(shot_detail, shot_dir, characters, scenes, props)
             if shot_detail.get("is_scene_end", False):
                 logger.info("Scene %s complete: %d shots", scene_id, shot_num)
                 break
@@ -792,7 +897,7 @@ class StoryboardGenerator:
 
     @staticmethod
     def _build_storyboard_index(
-        characters: list[dict], scenes: list[dict], all_shots: list[dict],
+        characters: list[dict], scenes: list[dict], props: list[dict], all_shots: list[dict],
     ) -> dict:
         """Build a structural index with only non-derivable fields.
 
@@ -802,12 +907,21 @@ class StoryboardGenerator:
         - duration_sec: not derivable from any other file.
         - transition_type: not derivable from any other file.
 
-        Everything else (names, prompts, character_refs, scene_id per shot,
-        shot_num) is in .md or deps.json or derivable by parsing the ID.
+        Everything else (names, prompts, character/prop refs, scene_id per
+        shot, shot_num) is in .md or deps.json or derivable by parsing the ID.
         """
         return {
             "characters": [{"ref_id": c["ref_id"], "name": c.get("name", c["ref_id"])} for c in characters],
             "scenes": [{"scene_id": s["scene_id"]} for s in scenes],
+            "props": [
+                {
+                    "ref_id": p["ref_id"],
+                    "name": p.get("name", p["ref_id"]),
+                    "category": p.get("category", ""),
+                    "narrative_function": p.get("narrative_function", ""),
+                }
+                for p in props
+            ],
             "shots": [
                 {
                     "full_shot_id": s["full_shot_id"],
@@ -912,6 +1026,38 @@ class StoryboardGenerator:
         ]
         (out_dir / f"{sid}.md").write_text("\n".join(lines), encoding="utf-8")
 
+    def _save_prop_file(self, prop: dict, out_dir) -> None:
+        """Save a human-editable continuity card for one key prop."""
+        ref_id = prop.get("ref_id", "UNKNOWN")
+        name = prop.get("name", ref_id)
+        lines = [
+            f"# {ref_id} | {name}",
+            "",
+            "## 基本信息",
+            f"- 名称：{name}",
+            f"- 类别：{prop.get('category', '')}",
+            f"- 叙事功能：{prop.get('narrative_function', '')}",
+            "",
+            "## 视觉定义",
+            f"- 外观：{prop.get('visual_description', '')}",
+            f"- 材质与状态：{prop.get('material_and_condition', '')}",
+            f"- 尺寸与比例：{prop.get('dimensions', '')}",
+            f"- 色彩：{prop.get('color_palette', '')}",
+            f"- 识别特征：{prop.get('distinctive_features', '')}",
+            "",
+            "## 使用与连续性",
+            f"- 持握/摆放：{prop.get('handling_notes', '')}",
+            f"- 连续性规则：{prop.get('continuity_rules', '')}",
+            f"- 出现场景：{', '.join(_ensure_list(prop.get('scene_appearances', [])))}",
+            "",
+            "## 道具参考图 Prompt",
+            "```",
+            prop.get("reference_prompt", ""),
+            "```",
+            "",
+        ]
+        (out_dir / f"{ref_id}.md").write_text("\n".join(lines), encoding="utf-8")
+
     def _save_shot_files(self, shot: dict, out_dir) -> None:
         """Save one .md file per shot with start frame prompt + full shot breakdown."""
         shot_id = shot.get("full_shot_id", f"SHOT{shot.get('shot_num', '?')}")
@@ -930,6 +1076,7 @@ class StoryboardGenerator:
             ("机位", shot.get("camera_position", "")),
             ("运镜", shot.get("camera_movement", "")),
             ("角色", ', '.join(_ensure_list(shot.get("character_refs", [])))),
+            ("道具", ', '.join(_ensure_list(shot.get("prop_refs", [])))),
         ]
         for label, value in table_rows:
             if value.strip():
@@ -989,7 +1136,9 @@ class StoryboardGenerator:
             (out_dir / f"{shot_id}_startframe.md").write_text(sf_prompt, encoding="utf-8")
 
     @staticmethod
-    def _save_shot_deps(shot: dict, out_dir, characters: list[dict], scenes: list[dict]) -> None:
+    def _save_shot_deps(
+        shot: dict, out_dir, characters: list[dict], scenes: list[dict], props: list[dict],
+    ) -> None:
         """Save program-readable dependency references (IDs only, not prompts)."""
         deps = {
             "character_refs": _ensure_list(shot.get("character_refs", [])),
@@ -999,6 +1148,11 @@ class StoryboardGenerator:
             ],
             "scene_id": shot.get("scene_id", ""),
             "scene_md_file": f"scenes/{shot.get('scene_id', '')}.md",
+            "prop_refs": _ensure_list(shot.get("prop_refs", [])),
+            "prop_md_files": [
+                f"props/{p.get('ref_id')}.md"
+                for p in props if p.get("ref_id") in _ensure_list(shot.get("prop_refs", []))
+            ],
             "startframe_md_file": f"shots/{shot.get('full_shot_id', '')}/{shot.get('full_shot_id', '')}_startframe.md",
         }
         save_json(deps, str(out_dir / "deps.json"))

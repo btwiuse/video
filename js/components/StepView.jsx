@@ -9,6 +9,10 @@ const promptPathFromImage = (name) => {
     const sid = name.split('/')[1]?.replace(/_(wide|detail)\.(jpg|jpeg|png)$/, '');
     return sid ? `scenes/${sid}.md` : null;
   }
+  if (name.startsWith('props/')) {
+    const refId = name.split('/')[1]?.replace(/_reference\.(jpg|jpeg|png|webp)$/, '');
+    return refId ? `props/${refId}.md` : null;
+  }
   if (name.startsWith('shots/')) {
     const m = name.match(/shots\/([^/]+)\/\1_startframe\./);
     return m ? `shots/${m[1]}/${m[1]}_startframe.md` : null;
@@ -84,6 +88,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
 
   const charImages = artifacts.filter(f => f.name.startsWith('characters/') && /\.(jpg|jpeg|png|webp)$/i.test(f.name));
   const sceneImages = artifacts.filter(f => f.name.startsWith('scenes/') && /\.(jpg|jpeg|png|webp)$/i.test(f.name));
+  const propImages = artifacts.filter(f => f.name.startsWith('props/') && /_reference\.(jpg|jpeg|png|webp)$/i.test(f.name));
   const charPlaceholders = React.useMemo(() => {
     if (!storyboardData) return [];
     const charImageNames = new Set(charImages.map(f => f.name));
@@ -108,8 +113,19 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
     }
     return expected;
   }, [storyboardData, sceneImages]);
+  const propPlaceholders = React.useMemo(() => {
+    if (!storyboardData) return [];
+    const propImageNames = new Set(propImages.map(f => f.name));
+    const expected = [];
+    for (const p of storyboardData.props || []) {
+      const name = `props/${p.ref_id}_reference.jpg`;
+      if (!propImageNames.has(name)) expected.push({ name, placeholder: true, prop_id: p.ref_id, prop_name: p.name });
+    }
+    return expected;
+  }, [storyboardData, propImages]);
   const allCharImages = [...charImages, ...charPlaceholders];
   const allSceneImages = [...sceneImages, ...scenePlaceholders];
+  const allPropImages = [...propImages, ...propPlaceholders];
   const shotImages = artifacts.filter(f => f.name.startsWith('shots/') && /_startframe\.(jpg|jpeg|png|webp)$/i.test(f.name));
   const shotPlaceholders = React.useMemo(() => {
     if (!storyboardData) return [];
@@ -290,6 +306,39 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
               </div>
             </div>
           )}
+          {allPropImages.length > 0 && (
+            <div>
+              <h4 className="text-sm font-semibold text-stone-300 mb-3">道具参考图</h4>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {allPropImages.map(f => {
+                  const isPlaceholder = f.placeholder;
+                  const cb = cacheBust[f.name];
+                  const label = f.prop_name || f.name.split('/').pop()?.replace(/_reference\.(jpg|jpeg|png|webp)$/, '');
+                  return (
+                    <div key={f.name + (cb || '')} className="flex flex-col items-center gap-1.5">
+                      <div className="relative w-full aspect-square">
+                        {isPlaceholder ? (
+                          <div className="w-full h-full rounded bg-ink-800 border border-dashed border-ink-600 flex flex-col items-center justify-center">
+                            <span className="text-stone-600 text-2xl">◇</span>
+                            <span className="text-stone-600 text-xs mt-1">待生成</span>
+                          </div>
+                        ) : (
+                          <img
+                            src={artifactUrl(pipelineId, f.name, cb)}
+                            alt={label}
+                            className="w-full h-full object-cover rounded bg-ink-700 cursor-pointer"
+                            onError={e => { e.target.style.display = 'none'; }}
+                            onClick={() => openLightbox(f.name)}
+                          />
+                        )}
+                      </div>
+                      <span className="text-xs text-stone-500 truncate max-w-full">{label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {allSceneImages.length > 0 && (
             <div>
               <h4 className="text-sm font-semibold text-stone-300 mb-3">场景参考</h4>
@@ -348,7 +397,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
               </div>
             </div>
           )}
-          {allCharImages.length === 0 && allSceneImages.length === 0 && <p className="text-stone-500 text-sm">暂无视觉素材</p>}
+          {allCharImages.length === 0 && allPropImages.length === 0 && allSceneImages.length === 0 && <p className="text-stone-500 text-sm">暂无视觉素材</p>}
           {allShotImages.length > 0 && (
             <div>
               <h4 className="text-sm font-semibold text-stone-300 mb-3">镜头起始帧</h4>

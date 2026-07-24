@@ -160,12 +160,13 @@ output/
 ├── final.mp4                 # Step 5 产出：最终影片
 ├── characters/               # 角色定妆照 (front/profile/fullbody)
 ├── scenes/                   # 场景参考图 (wide/detail)
+├── props/                    # 关键道具连续性定义（每件一个 Markdown 卡）
 ├── shots/
 │   ├── SC01_SHOT01/
 │   │   ├── SC01_SHOT01.md           # 分镜详情
 │   │   ├── SC01_SHOT01_startframe.png  # 首帧图
 │   │   ├── SC01_SHOT01.mp4          # 视频片段
-│   │   └── deps.json                # 角色/场景依赖
+│   │   └── deps.json                # 角色/场景/道具依赖
 │   ├── SC01_SHOT02/
 │   └── ...
 └── _debug/                   # DeepSeek 原始响应（调试用）
@@ -196,11 +197,12 @@ python main.py videos output/storyboard.json output/manifest.json
 
 项目采用 **Provider 抽象模式**：每个生成步骤（图片/视频/音频）定义了抽象基类和工厂函数，添加新引擎只需实现一个子类并注册到 registry dict。
 
-Step 1 使用 4 阶段工具调用流水线：
-1. 纯对话提取角色列表 + 场景概览
+Step 1 使用 5 阶段工具调用流水线：
+1. 纯对话提取角色、场景与叙事关键道具清单
 2. 按角色调用 function calling 生成详细人设
-3. 按场景调用 function calling 生成场景详情
-4. 循环按镜头调用 function calling，直到 `is_scene_end=true`
+3. 按道具调用 function calling 生成材质、状态与跨镜头连续性定义
+4. 按场景调用 function calling 生成场景详情
+5. 循环按镜头调用 function calling，直到 `is_scene_end=true`
 
 DeepSeek thinking 模式默认关闭，可通过 `--reasoning` 标志或 `.env` 中的 `DEEPSEEK_USE_REASONING=true` 启用。
 

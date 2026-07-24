@@ -510,6 +510,7 @@ class VideoPipeline:
             deps = load_json(str(ensure_output_dir("shots", shot_id) / "deps.json"))
             char_ref_ids = deps.get("character_refs", [])
             scene_id = deps.get("scene_id", self._get_scene_id(shot))
+            prop_ref_ids = deps.get("prop_refs", [])
 
             # Read full .md as the complete prompt
             prompt = self._read_shot_md(shot_id)
@@ -517,7 +518,7 @@ class VideoPipeline:
                 prompt = assemble_video_prompt(shot)
 
             start_frame, ref_images = self._resolve_image_refs(
-                shot_id, char_ref_ids, scene_id, transition, asset_manifest, i, shots,
+                shot_id, char_ref_ids, prop_ref_ids, scene_id, transition, asset_manifest, i, shots,
                 startframe_file=shot.get("startframe_file", ""),
             )
 
@@ -580,7 +581,7 @@ class VideoPipeline:
     # ========================================================================
 
     def _resolve_image_refs(
-        self, shot_id: str, char_ref_ids: list[str], scene_id: str,
+        self, shot_id: str, char_ref_ids: list[str], prop_ref_ids: list[str], scene_id: str,
         transition_type: str, manifest: dict, shot_index: int, all_shots: list,
         startframe_file: str = "",
     ) -> tuple[str, list[str]]:
@@ -624,7 +625,15 @@ class VideoPipeline:
         if len(refs) >= quota:
             return sf_path, refs[:quota]
 
-        # 4. Previous shot's start frame for Type A continuity
+        # 4. Key props visible in this shot
+        for prop_ref_id in prop_ref_ids:
+            label = f"{prop_ref_id}_reference"
+            if label in manifest and manifest[label].get("file"):
+                refs.append(manifest[label]["file"])
+            if len(refs) >= quota:
+                return sf_path, refs[:quota]
+
+        # 5. Previous shot's start frame for Type A continuity
         if transition_type == "A" and shot_index > 0:
             prev_id = all_shots[shot_index - 1].get("full_shot_id", "")
             prev_sf_path = ""

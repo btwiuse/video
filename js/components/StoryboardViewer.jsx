@@ -5,12 +5,17 @@ function StoryboardViewer({ pipelineId, poll, reloadKey }) {
   const [loading, setLoading] = useState(false);
   const [charPrompts, setCharPrompts] = useState({});
   const [scenePrompts, setScenePrompts] = useState({});
+  const [propPrompts, setPropPrompts] = useState({});
   const [expandedScenes, setExpandedScenes] = useState({ _all: true });
   const [expandedShots, setExpandedShots] = useState({});
   const [expandedChars, setExpandedChars] = useState({ _all: true });
+  const [expandedProps, setExpandedProps] = useState({ _all: true });
   const [editCharMd, setEditCharMd] = useState({});
   const [editingChar, setEditingChar] = useState({});
   const [savingChar, setSavingChar] = useState({});
+  const [editPropMd, setEditPropMd] = useState({});
+  const [editingProp, setEditingProp] = useState({});
+  const [savingProp, setSavingProp] = useState({});
   const [editSceneMd, setEditSceneMd] = useState({});
   const [editingScene, setEditingScene] = useState({});
   const [savingScene, setSavingScene] = useState({});
@@ -36,6 +41,7 @@ function StoryboardViewer({ pipelineId, poll, reloadKey }) {
       setData(null);
       setCharPrompts({});
       setScenePrompts({});
+      setPropPrompts({});
       setShotPrompts({});
     }
     load();
@@ -61,6 +67,24 @@ function StoryboardViewer({ pipelineId, poll, reloadKey }) {
         if (res.ok) {
           const text = await res.text();
           if (!cancelled) setCharPrompts(prev => ({ ...prev, [c.ref_id]: text }));
+        }
+      } catch (_) {}
+    }));
+    return () => { cancelled = true; };
+  }, [data, pipelineId]);
+
+  // Load prop continuity cards from .md files
+  useEffect(() => {
+    if (!data) return;
+    const props = data.props || [];
+    let cancelled = false;
+    Promise.all(props.map(async (p) => {
+      if (propPrompts[p.ref_id]) return;
+      try {
+        const res = await api(`/pipelines/${pipelineId}/artifacts/props/${encodeURIComponent(p.ref_id)}.md`);
+        if (res.ok) {
+          const text = await res.text();
+          if (!cancelled) setPropPrompts(prev => ({ ...prev, [p.ref_id]: text }));
         }
       } catch (_) {}
     }));
@@ -115,6 +139,7 @@ function StoryboardViewer({ pipelineId, poll, reloadKey }) {
 
   const scenes = data.scenes || [];
   const characters = data.characters || [];
+  const props = data.props || [];
   const shots = data.shots || [];
 
   return (
@@ -122,7 +147,7 @@ function StoryboardViewer({ pipelineId, poll, reloadKey }) {
       <h3 className="font-heading text-lg font-semibold text-stone-100 mb-4">
         分镜概览
         <span className="text-stone-400 text-sm font-normal ml-2">
-          {characters.length} 角色 · {scenes.length} 场景 · {shots.length} 镜头
+          {characters.length} 角色 · {scenes.length} 场景 · {props.length} 道具 · {shots.length} 镜头
         </span>
       </h3>
       <div className="space-y-3">
@@ -200,6 +225,83 @@ function StoryboardViewer({ pipelineId, poll, reloadKey }) {
                                   onClick={() => setEditingChar(prev => { const n = {...prev}; delete n[c.ref_id]; return n; })}
                                   className="px-3 py-1.5 text-xs text-stone-500 hover:text-stone-300 transition-colors cursor-pointer"
                                 >取消</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="markdown-body max-h-96 overflow-y-auto" dangerouslySetInnerHTML={{__html: DOMPurify.sanitize(marked.parse(md))}} />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+        {props.length > 0 && (
+          <div className="bg-ink-900 rounded border border-ink-700 overflow-hidden">
+            <div
+              className="flex items-center gap-3 p-3 cursor-pointer hover:bg-ink-800 transition-colors"
+              onClick={() => setExpandedProps(prev => ({ ...prev, _all: !prev._all }))}
+            >
+              <span className="text-stone-500 text-xs w-3 text-center transition-transform flex-shrink-0" style={{ transform: expandedProps._all ? 'rotate(90deg)' : 'none' }}>▶</span>
+              <h4 className="text-sm font-semibold text-stone-300">道具</h4>
+              <span className="text-xs text-stone-500">{props.length}</span>
+            </div>
+            {expandedProps._all && (
+              <div className="border-t border-ink-700">
+                {props.map((prop) => {
+                  const open = !!expandedProps[prop.ref_id];
+                  const md = propPrompts[prop.ref_id] || '';
+                  return (
+                    <div key={prop.ref_id}>
+                      <div
+                        className="flex items-center gap-3 p-3 bg-ink-950/50 border-b border-ink-700 last:border-b-0 cursor-pointer hover:bg-ink-800/30 transition-colors"
+                        onClick={() => setExpandedProps(prev => ({ ...prev, [prop.ref_id]: !prev[prop.ref_id] }))}
+                      >
+                        <span className="text-stone-500 text-xs w-3 text-center transition-transform flex-shrink-0" style={{ transform: open ? 'rotate(90deg)' : 'none' }}>▶</span>
+                        <div className="w-10 h-10 rounded bg-ink-700 ring-1 ring-ink-600 flex items-center justify-center text-brass-400 text-lg flex-shrink-0">◇</div>
+                        <div className="min-w-0">
+                          <span className="text-sm text-stone-200 font-medium">{prop.name || prop.ref_id}</span>
+                          {prop.category && <span className="text-xs text-stone-500 ml-2">{prop.category}</span>}
+                          {prop.narrative_function && <div className="text-xs text-stone-500 truncate mt-0.5">{prop.narrative_function}</div>}
+                        </div>
+                        <button
+                          onClick={e => { e.stopPropagation(); setEditPropMd(prev => ({ ...prev, [prop.ref_id]: md })); setEditingProp(prev => ({ ...prev, [prop.ref_id]: !prev[prop.ref_id] })); }}
+                          className="ml-auto text-stone-500 hover:text-brass-400 transition-colors text-xs px-1.5 py-0.5 rounded cursor-pointer"
+                          title={editingProp[prop.ref_id] ? '退出编辑' : '编辑 .md'}
+                        >{editingProp[prop.ref_id] ? '✓' : '✎'}</button>
+                      </div>
+                      {open && (
+                        <div className="bg-ink-950 p-4 border-b border-ink-700 space-y-3 text-xs text-stone-300">
+                          {editingProp[prop.ref_id] ? (
+                            <div className="space-y-2">
+                              <textarea
+                                className="w-full h-64 bg-ink-900 text-stone-200 text-xs p-3 rounded border border-ink-700 font-mono resize-y"
+                                value={editPropMd[prop.ref_id] ?? md}
+                                onChange={e => setEditPropMd(prev => ({ ...prev, [prop.ref_id]: e.target.value }))}
+                              />
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={async () => {
+                                    setSavingProp(prev => ({ ...prev, [prop.ref_id]: true }));
+                                    try {
+                                      const res = await api(`/pipelines/${pipelineId}/artifacts/props/${encodeURIComponent(prop.ref_id)}.md`, {
+                                        method: 'PUT', body: editPropMd[prop.ref_id] ?? md,
+                                      });
+                                      if (res.ok) {
+                                        setPropPrompts(prev => ({ ...prev, [prop.ref_id]: editPropMd[prop.ref_id] ?? md }));
+                                        setEditingProp(prev => { const n = {...prev}; delete n[prop.ref_id]; return n; });
+                                        load();
+                                      }
+                                    } catch (_) {}
+                                    setSavingProp(prev => ({ ...prev, [prop.ref_id]: false }));
+                                  }}
+                                  className="px-3 py-1.5 text-xs font-medium bg-leaf-500/20 text-leaf-400 rounded hover:bg-leaf-500/30 transition-colors cursor-pointer"
+                                >{savingProp[prop.ref_id] ? '保存中...' : '保存'}</button>
+                                <button onClick={() => setEditingProp(prev => { const n = {...prev}; delete n[prop.ref_id]; return n; })}
+                                  className="px-3 py-1.5 text-xs text-stone-500 hover:text-stone-300 transition-colors cursor-pointer">取消</button>
                               </div>
                             </div>
                           ) : (
@@ -415,7 +517,7 @@ function StoryboardViewer({ pipelineId, poll, reloadKey }) {
         >
           <span className="text-stone-500 text-xs w-3 text-center transition-transform flex-shrink-0" style={{ transform: expandedSb ? 'rotate(90deg)' : 'none' }}>▶</span>
           <h4 className="text-sm font-semibold text-stone-300">storyboard.json</h4>
-          <span className="text-xs text-stone-500 ml-2">{shots.length} 镜 · {characters.length} 角色 · {scenes.length} 场景</span>
+          <span className="text-xs text-stone-500 ml-2">{shots.length} 镜 · {characters.length} 角色 · {scenes.length} 场景 · {props.length} 道具</span>
         </div>
         {expandedSb && (
           <div className="border-t border-ink-700 p-4 bg-ink-950">
