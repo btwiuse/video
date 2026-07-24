@@ -93,13 +93,6 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
     return () => { cancelled = true; };
   }, [pipelineId, step]);
 
-  // Auto-run step 2 when user switches to it and it's ready
-  useEffect(() => {
-    if (step === 2 && canGenerate && !isStepRunning && !isStepDone) {
-      onRun(step);
-    }
-  }, [step, canGenerate, isStepRunning, isStepDone, onRun]);
-
   const previewUrl = async (name) => {
     if (previews[name]) { setPreviews(p => { const n = {...p}; delete n[name]; return n; }); return; }
     try {
