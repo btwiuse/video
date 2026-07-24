@@ -689,44 +689,14 @@ class Step2Pipeline:
             logger.info("  %s: %d/%d done", name, done, len(results))
 
         # ---- Scenes: 1-2 images each ----
-        # Build scene→(chars,props) lookup from per-shot deps.json
-        scene_deps: dict[str, tuple[list[str], list[str]]] = {}
-        shots_in_storyboard = storyboard.get("shots", [])
-        for shot in shots_in_storyboard:
-            sid = shot.get("full_shot_id", "")
-            dep_path = ensure_output_dir("shots", sid) / "deps.json"
-            if dep_path.is_file():
-                deps = load_json(str(dep_path))
-                scene_id = deps.get("scene_id", "")
-                if scene_id:
-                    existing_chars, existing_props = scene_deps.get(scene_id, ([], []))
-                    chars = deps.get("character_refs", [])
-                    props_deps = deps.get("prop_refs", [])
-                    scene_deps[scene_id] = (
-                        list(dict.fromkeys(existing_chars + chars)),
-                        list(dict.fromkeys(existing_props + props_deps)),
-                    )
+        scene_deps = self._build_scene_deps_map(storyboard)
         logger.info("Generating %d scenes (with character/prop refs)...", len(scenes))
         scene_map: dict[str, list[ImageResult]] = {}
         for scene in scenes:
             sid = scene.get("scene_id", scene.get("id", "UNKNOWN"))
             prompts = self._build_scene_prompts(scene)
             char_ids, prop_ids = scene_deps.get(sid, ([], []))
-
-            # Collect reference images (chars + props that appear in this scene)
-            ref_paths: list[str] = []
-            for ref_id in char_ids:
-                if ref_id in char_map:
-                    for r in char_map[ref_id]:
-                        if r.status == "done" and os.path.isfile(r.path):
-                            ref_paths.append(r.path)
-                            break
-            for ref_id in prop_ids:
-                if ref_id in prop_map:
-                    for r in prop_map[ref_id]:
-                        if r.status == "done" and os.path.isfile(r.path):
-                            ref_paths.append(r.path)
-                            break
+            ref_paths = self._collect_ref_paths(char_ids, prop_ids, char_map, prop_map)
 
             for label_suffix, prompt in prompts:
                 prompt = apply_im2_clean(prompt, "scene")
@@ -978,25 +948,25 @@ class Step2Pipeline:
                 continue
 
             prompts = self._build_scene_prompts(scene)
-            scene_prompts: list[tuple[str, str, str]] = []
-            for label_suffix, prompt in prompts:
-                scene_prompts.append((prompt, f"{sid}_{label_suffix}", "16:9"))
+            scene_deps = self._build_scene_deps_map(storyboard)
+            char_ids, prop_ids = scene_deps.get(sid, ([], []))
+            ref_paths = self._collect_ref_paths(char_ids, prop_ids)
 
-            scene_prompts = apply_im2_clean_to_prompts(scene_prompts, "scene")
-            results = await self.provider.generate_batch(scene_prompts)
-            for i, r in enumerate(results):
-                suffix = scene_prompts[i][1].rsplit("_", 1)[1]
+            for label_suffix, prompt in prompts:
+                prompt = apply_im2_clean(prompt, "scene")
+                r = await self.provider.generate(prompt, "16:9", reference_images=ref_paths or None)
+                r.label = f"{sid}_{label_suffix}"
                 if r.status == "done" and r.path:
                     import shutil
                     ext = os.path.splitext(r.path)[1]
-                    target = os.path.join(scenes_dir, f"{sid}_{suffix}{ext}")
-                    old_glob = glob.glob(os.path.join(scenes_dir, f"{sid}_{suffix}.*"))
+                    target = os.path.join(scenes_dir, f"{sid}_{label_suffix}{ext}")
+                    old_glob = glob.glob(os.path.join(scenes_dir, f"{sid}_{label_suffix}.*"))
                     for old in old_glob:
                         os.remove(old)
                     shutil.move(r.path, target)
                     r.path = target
-                    logger.info("  %s_%s: regenerated -> %s", sid, suffix, target)
-                    manifest_key = f"{sid}_{suffix}"
+                    logger.info("  %s_%s: regenerated -> %s", sid, label_suffix, target)
+                    manifest_key = f"{sid}_{label_suffix}"
                     name = self._read_entity_name("scenes", sid)
                     manifest[manifest_key] = {
                         "file": target,
@@ -1007,7 +977,7 @@ class Step2Pipeline:
                         "status": "done",
                     }
                 else:
-                    logger.warning("  %s_%s: regeneration failed: %s", sid, suffix, r.error or "unknown")
+                    logger.warning("  %s_%s: regeneration failed: %s", sid, label_suffix, r.error or "unknown")
 
         save_json(manifest, str(manifest_path))
         logger.info("Manifest updated after scene regeneration")
@@ -1021,13 +991,26 @@ class Step2Pipeline:
         manifest = load_json(str(manifest_path)) if manifest_path.is_file() else {}
 
         # Build a lookup from storyboard scenes
-        scene_map = {s.get("scene_id", s.get("id", "")): s for s in scenes}
+        storyboard_scenes = {s.get("scene_id", s.get("id", "")): s for s in scenes}
+
+        # Load existing character and prop maps from manifest for reference images
+        manifest_char_map: dict[str, list[ImageResult]] = {}
+        manifest_prop_map: dict[str, list[ImageResult]] = {}
+        for key, entry in manifest.items():
+            if entry.get("type") == "character":
+                ref_id = entry["character_id"]
+                r = ImageResult(label=key, path=entry["file"], prompt=entry.get("prompt", ""), status="done")
+                manifest_char_map.setdefault(ref_id, []).append(r)
+            elif entry.get("type") == "prop":
+                ref_id = entry["prop_id"]
+                r = ImageResult(label=key, path=entry["file"], prompt=entry.get("prompt", ""), status="done")
+                manifest_prop_map.setdefault(ref_id, []).append(r)
 
         for label in labels:
             # label format: sid_suffix (e.g. SC_01_wide)
             *sid_parts, suffix = label.rsplit("_", 1)
             sid = "_".join(sid_parts)
-            scene = scene_map.get(sid)
+            scene = storyboard_scenes.get(sid)
             if scene is None:
                 logger.warning("  %s: scene not found in storyboard", sid)
                 continue
@@ -1039,8 +1022,11 @@ class Step2Pipeline:
                 continue
 
             logger.info("  %s: regenerating...", label)
+            scene_deps = self._build_scene_deps_map(storyboard)
+            char_ids, prop_ids = scene_deps.get(sid, ([], []))
+            ref_paths = self._collect_ref_paths(char_ids, prop_ids, manifest_char_map, manifest_prop_map)
             prompt_for_suffix = apply_im2_clean(prompt_for_suffix, "scene")
-            r = await self.provider.generate(prompt_for_suffix, "16:9")
+            r = await self.provider.generate(prompt_for_suffix, "16:9", reference_images=ref_paths or None)
             if r.status == "done" and r.path:
                 import shutil
                 ext = os.path.splitext(r.path)[1]
@@ -1389,6 +1375,56 @@ class Step2Pipeline:
 
         save_json(manifest, str(manifest_path))
         logger.info("Manifest updated after prop regeneration")
+
+    # ---- Scene ref helpers (shared by generate_all and regenerate_scenes) ----
+
+    @staticmethod
+    def _build_scene_deps_map(storyboard: dict) -> dict[str, tuple[list[str], list[str]]]:
+        """Build scene→(character_refs, prop_refs) lookup from per-shot deps.json."""
+        scene_deps: dict[str, tuple[list[str], list[str]]] = {}
+        for shot in storyboard.get("shots", []):
+            sid = shot.get("full_shot_id", "")
+            dep_path = ensure_output_dir("shots", sid) / "deps.json"
+            if dep_path.is_file():
+                deps = load_json(str(dep_path))
+                scene_id = deps.get("scene_id", "")
+                if scene_id:
+                    existing_chars, existing_props = scene_deps.get(scene_id, ([], []))
+                    scene_deps[scene_id] = (
+                        list(dict.fromkeys(existing_chars + deps.get("character_refs", []))),
+                        list(dict.fromkeys(existing_props + deps.get("prop_refs", []))),
+                    )
+        return scene_deps
+
+    def _collect_ref_paths(
+        self,
+        char_ids: list[str],
+        prop_ids: list[str],
+        char_map: dict[str, list[ImageResult]],
+        prop_map: dict[str, list[ImageResult]],
+        scene_map: dict[str, list[ImageResult]] | None = None,
+        scene_ref_id: str | None = None,
+    ) -> list[str]:
+        """Collect file paths of generated reference images for a scene or shot."""
+        ref_paths: list[str] = []
+        for ref_id in char_ids:
+            if ref_id in char_map:
+                for r in char_map[ref_id]:
+                    if r.status == "done" and os.path.isfile(r.path):
+                        ref_paths.append(r.path)
+                        break
+        for ref_id in prop_ids:
+            if ref_id in prop_map:
+                for r in prop_map[ref_id]:
+                    if r.status == "done" and os.path.isfile(r.path):
+                        ref_paths.append(r.path)
+                        break
+        if scene_map and scene_ref_id and scene_ref_id in scene_map:
+            for r in scene_map[scene_ref_id]:
+                if r.status == "done" and os.path.isfile(r.path):
+                    ref_paths.append(r.path)
+                    break
+        return ref_paths
 
     def _build_manifest(
         self,
