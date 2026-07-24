@@ -73,19 +73,24 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
     if (isStepRunning) {
       t = setInterval(() => { if (!document.hidden) fetchArtifacts(); }, 15000);
     }
-    if (!storyboardData && step === 2 && !artLoading && (isStepDone || isStepRunning || canGenerate)) {
-      let retries = 0;
-      const tryFetchStoryboard = () => {
-        if (cancelled) return;
-        api(`/pipelines/${pipelineId}/artifacts/storyboard.json`).then(r => {
-          if (r.ok) { r.json().then(d => setStoryboardData(d)); }
-          else if (retries++ < 15) { setTimeout(tryFetchStoryboard, 1500); }
-        });
-      };
-      tryFetchStoryboard();
-    }
     return () => { cancelled = true; if (t) clearInterval(t); };
   }, [pipelineId, isStepDone, isStepRunning, step, canGenerate, pipeline.status, stepReloadKey]);
+
+  // Load storyboard data for step 2 placeholders (independent of actionLoading)
+  useEffect(() => {
+    if (step !== 2 || storyboardData || artLoading) return;
+    let cancelled = false;
+    let retries = 0;
+    const tryFetch = () => {
+      if (cancelled) return;
+      api(`/pipelines/${pipelineId}/artifacts/storyboard.json`).then(r => {
+        if (r.ok) { r.json().then(d => setStoryboardData(d)); }
+        else if (retries++ < 20) { setTimeout(tryFetch, 1500); }
+      });
+    };
+    tryFetch();
+    return () => { cancelled = true; };
+  }, [step, pipelineId, storyboardData, artLoading]);
 
   // Load script text
   useEffect(() => {
