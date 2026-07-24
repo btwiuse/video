@@ -63,18 +63,25 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
     if (!isStepDone && !isStepRunning && !(step === 2 && canGenerate)) { setArtifacts([]); return; }
     let cancelled = false;
     let t;
-    const fetchArtifacts = async () => {
+    const doFetch = async () => {
       try {
         const res = await api(`/pipelines/${pipelineId}/artifacts`);
         if (res.ok && !cancelled) setArtifacts((await res.json()).files || []);
       } catch (e) { /* ignore */ }
     };
-    fetchArtifacts();
+    doFetch();
     if (isStepRunning) {
-      t = setInterval(() => { if (!document.hidden) fetchArtifacts(); }, 15000);
+      t = setInterval(() => { if (!document.hidden) doFetch(); }, 15000);
     }
     return () => { cancelled = true; if (t) clearInterval(t); };
   }, [pipelineId, isStepDone, isStepRunning, step, canGenerate, pipeline.status, stepReloadKey]);
+  const refreshArtifacts = useCallback(async () => {
+    try {
+      setStepReloadKey(k => k + 1);
+      const res = await api(`/pipelines/${pipelineId}/artifacts`);
+      if (res.ok) setArtifacts((await res.json()).files || []);
+    } catch (e) { /* ignore */ }
+  }, [pipelineId]);
 
   // Load storyboard data for step 2 placeholders (independent of actionLoading)
   useEffect(() => {
@@ -217,6 +224,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
     try {
       await api(`/pipelines/${pipelineId}/regenerate`, { method: 'POST', body: JSON.stringify(body) });
       setCacheBust(c => ({ ...c, [name]: Date.now() }));
+      await refreshArtifacts();
     } catch (_) {}
     setRegeneratingLightbox(false);
     if (regenKey) setRegenerating(r => { const n = {...r}; delete n[regenKey]; return n; });
@@ -383,6 +391,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                               body: JSON.stringify({ character_images: [label] }),
                             });
                             setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
+                            await refreshArtifacts();
                           } catch (e) { /* ignore */ }
                           setRegenerating(r => { const n = {...r}; delete n['char_' + label]; return n; });
                         }}
@@ -442,6 +451,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                                 body: JSON.stringify({ prop_images: [label] }),
                               });
                               setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
+                              await refreshArtifacts();
                             } catch (e) { /* ignore */ }
                             setRegenerating(r => { const n = {...r}; delete n['prop_' + label]; return n; });
                           }}
@@ -501,6 +511,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                                 body: JSON.stringify({ scene_images: [label] }),
                               });
                               setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
+                              await refreshArtifacts();
                             } catch (e) { /* ignore */ }
                             setRegenerating(r => { const n = {...r}; delete n['scene_' + label]; return n; });
                           }}
@@ -561,6 +572,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                                 body: JSON.stringify({ shots: [shotId] }),
                               });
                               setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
+                              await refreshArtifacts();
                             } catch (e) { /* ignore */ }
                             setRegenerating(r => { const n = {...r}; delete n['shot_' + shotId]; return n; });
                           }}
