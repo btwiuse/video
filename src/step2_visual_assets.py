@@ -645,6 +645,31 @@ class Step2Pipeline:
             done = sum(1 for r in results if r.status == "done")
             logger.info("  %s: %d/%d done", name, done, len(results))
 
+        # ---- Props: one isolated reference image each ----
+        logger.info("Generating %d prop reference images...", len(props))
+        prop_prompts: list[tuple[str, str, str]] = []
+        for prop in props:
+            ref_id = prop.get("ref_id", prop.get("id", "UNKNOWN"))
+            for label_suffix, prompt in self._build_prop_prompts(prop):
+                prop_prompts.append((prompt, f"{ref_id}_{label_suffix}", "1:1"))
+
+        prop_prompts = apply_im2_clean_to_prompts(prop_prompts, "prop")
+        prop_results = await self.provider.generate_batch(prop_prompts)
+        prop_map: dict[str, list[ImageResult]] = {}
+        for i, r in enumerate(prop_results):
+            ref_id = prop_prompts[i][1].rsplit("_", 1)[0]
+            suffix = prop_prompts[i][1].rsplit("_", 1)[1]
+            if r.status == "done" and r.path:
+                import shutil
+                ext = os.path.splitext(r.path)[1]
+                target = os.path.join(props_dir_str, f"{ref_id}_{suffix}{ext}")
+                shutil.move(r.path, target)
+                r.path = target
+            prop_map.setdefault(ref_id, []).append(r)
+        for name, results in prop_map.items():
+            done = sum(1 for r in results if r.status == "done")
+            logger.info("  %s: %d/%d done", name, done, len(results))
+
         # ---- Scenes: 1-2 images each ----
         logger.info("Generating %d scenes...", len(scenes))
         scene_prompts: list[tuple[str, str, str]] = []
@@ -668,31 +693,6 @@ class Step2Pipeline:
                 r.path = target
             scene_map.setdefault(sid, []).append(r)
         for name, results in scene_map.items():
-            done = sum(1 for r in results if r.status == "done")
-            logger.info("  %s: %d/%d done", name, done, len(results))
-
-        # ---- Props: one isolated reference image each ----
-        logger.info("Generating %d prop reference images...", len(props))
-        prop_prompts: list[tuple[str, str, str]] = []
-        for prop in props:
-            ref_id = prop.get("ref_id", prop.get("id", "UNKNOWN"))
-            for label_suffix, prompt in self._build_prop_prompts(prop):
-                prop_prompts.append((prompt, f"{ref_id}_{label_suffix}", "1:1"))
-
-        prop_prompts = apply_im2_clean_to_prompts(prop_prompts, "prop")
-        prop_results = await self.provider.generate_batch(prop_prompts)
-        prop_map: dict[str, list[ImageResult]] = {}
-        for i, r in enumerate(prop_results):
-            ref_id = prop_prompts[i][1].rsplit("_", 1)[0]
-            suffix = prop_prompts[i][1].rsplit("_", 1)[1]
-            if r.status == "done" and r.path:
-                import shutil
-                ext = os.path.splitext(r.path)[1]
-                target = os.path.join(props_dir_str, f"{ref_id}_{suffix}{ext}")
-                shutil.move(r.path, target)
-                r.path = target
-            prop_map.setdefault(ref_id, []).append(r)
-        for name, results in prop_map.items():
             done = sum(1 for r in results if r.status == "done")
             logger.info("  %s: %d/%d done", name, done, len(results))
 
