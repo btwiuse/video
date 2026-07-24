@@ -248,7 +248,7 @@ class SeedreamProvider(ImageProvider):
         }
 
         if reference_images:
-            data_urls = [self._to_data_url(p) for p in reference_images]
+            data_urls = [_file_to_data_url(p) for p in reference_images]
             data_urls = [u for u in data_urls if u]  # filter out failures
             if data_urls:
                 body["image"] = data_urls if len(data_urls) > 1 else data_urls[0]
@@ -306,25 +306,6 @@ class SeedreamProvider(ImageProvider):
                     "output_tokens": usage.get("output_tokens", 0),
                 },
             )
-
-    @staticmethod
-    def _to_data_url(path: str) -> str | None:
-        """Convert local file path to base64 data URL. Returns input unchanged if already a URL."""
-        if not path:
-            return None
-        if path.startswith("http://") or path.startswith("https://") or path.startswith("data:"):
-            return path
-        if not os.path.isfile(path):
-            return None
-        try:
-            import base64
-            ext = os.path.splitext(path)[1].lower().lstrip(".")
-            mime = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "webp": "webp"}.get(ext, "png")
-            with open(path, "rb") as f:
-                b64 = base64.b64encode(f.read()).decode()
-            return f"data:image/{mime};base64,{b64}"
-        except Exception:
-            return None
 
     def _aspect_to_size(self, aspect_ratio: str) -> str:
         """Map aspect ratio to Seedream size string."""
@@ -394,6 +375,7 @@ class StepFunProvider(ImageProvider):
         self,
         prompt: str,
         aspect_ratio: str = "4:3",
+        reference_images: list[str] | None = None,
         **kwargs: Any,
     ) -> ImageResult:
         # Rate limit: ensure ~6s gap between requests (10 RPM ceiling)
@@ -413,6 +395,19 @@ class StepFunProvider(ImageProvider):
             "size": size,
             "response_format": "url",
         }
+
+        # StepFun image2image: send first reference image via source_url
+        # (API only supports single image, not multiple)
+        source_url = None
+        if reference_images:
+            for p in reference_images:
+                url = _file_to_data_url(p)
+                if url:
+                    source_url = url
+                    break
+        if source_url:
+            body["source_url"] = source_url
+            body["source_weight"] = 0.7  # moderate reference influence
 
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.post(self.endpoint, headers=self._headers, json=body)
@@ -557,6 +552,29 @@ class NullImageProvider(ImageProvider):
             label="", path=filepath, prompt=prompt, status="pending",
             metadata={"note": "Prompt saved. Generate manually or configure an image provider."},
         )
+
+
+# ============================================================================
+# Module-level helpers
+# ============================================================================
+
+def _file_to_data_url(path: str) -> str | None:
+    """Convert local file path to base64 data URL. Returns input unchanged if already a URL."""
+    if not path:
+        return None
+    if path.startswith("http://") or path.startswith("https://") or path.startswith("data:"):
+        return path
+    if not os.path.isfile(path):
+        return None
+    try:
+        import base64
+        ext = os.path.splitext(path)[1].lower().lstrip(".")
+        mime = {"jpg": "jpeg", "jpeg": "jpeg", "png": "png", "webp": "webp"}.get(ext, "png")
+        with open(path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+        return f"data:image/{mime};base64,{b64}"
+    except Exception:
+        return None
 
 
 # ============================================================================
