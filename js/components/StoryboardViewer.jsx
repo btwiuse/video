@@ -261,7 +261,21 @@ function StoryboardViewer({ pipelineId, poll, reloadKey }) {
                         onClick={() => setExpandedProps(prev => ({ ...prev, [prop.ref_id]: !prev[prop.ref_id] }))}
                       >
                         <span className="text-stone-500 text-xs w-3 text-center transition-transform flex-shrink-0" style={{ transform: open ? 'rotate(90deg)' : 'none' }}>▶</span>
-                        <div className="w-10 h-10 rounded bg-ink-700 ring-1 ring-ink-600 flex items-center justify-center text-brass-400 text-lg flex-shrink-0">◇</div>
+                        <div className="relative w-10 h-10 flex-shrink-0">
+                          <img
+                            src={`/pipelines/${pipelineId}/artifacts/props/${encodeURIComponent(prop.ref_id)}_reference.jpg`}
+                            alt={prop.ref_id}
+                            className="w-10 h-10 object-cover rounded bg-ink-700 ring-1 ring-ink-600"
+                            onError={e => {
+                              const el = e.target;
+                              if (el.src.endsWith('.jpg')) { el.src = el.src.replace('.jpg', '.png'); return; }
+                              if (el.src.endsWith('.png')) { el.src = el.src.replace('.png', '.webp'); return; }
+                              el.style.display = 'none';
+                              el.nextElementSibling?.classList.remove('hidden');
+                            }}
+                          />
+                          <div className="w-10 h-10 rounded bg-ink-700 ring-1 ring-ink-600 flex items-center justify-center text-brass-400 text-lg hidden absolute inset-0">◇</div>
+                        </div>
                         <div className="min-w-0">
                           <span className="text-sm text-stone-200 font-medium">{prop.name || prop.ref_id}</span>
                           {prop.category && <span className="text-xs text-stone-500 ml-2">{prop.category}</span>}
