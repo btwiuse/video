@@ -166,25 +166,32 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
     if (!name) return;
     setRegeneratingLightbox(true);
     let body = {};
+    let regenKey = null;
     if (name.startsWith('characters/')) {
       const label = name.split('/')[1]?.replace(/\.(jpg|jpeg|png)$/, '');
       body = { character_images: [label] };
+      regenKey = 'char_' + label;
     } else if (name.startsWith('scenes/')) {
       const label = name.split('/')[1]?.replace(/\.(jpg|jpeg|png)$/, '');
       body = { scene_images: [label] };
+      regenKey = 'scene_' + label;
     } else if (name.startsWith('props/')) {
       const label = name.split('/')[1]?.replace(/_reference\.(jpg|jpeg|png|webp)$/, '');
       body = { prop_images: [label] };
+      regenKey = 'prop_' + label;
     } else if (name.startsWith('shots/')) {
       const shotId = name.match(/shots\/([^/]+)\//)?.[1];
       if (shotId) body = { shots: [shotId] };
+      regenKey = 'shot_' + shotId;
     }
-    if (!Object.keys(body).length) return;
+    if (!Object.keys(body).length) { setRegeneratingLightbox(false); return; }
+    if (regenKey) setRegenerating(r => ({ ...r, [regenKey]: true }));
     try {
       await api(`/pipelines/${pipelineId}/regenerate`, { method: 'POST', body: JSON.stringify(body) });
       setCacheBust(c => ({ ...c, [name]: Date.now() }));
     } catch (_) {}
     setRegeneratingLightbox(false);
+    if (regenKey) setRegenerating(r => { const n = {...r}; delete n[regenKey]; return n; });
   };
 
   return (
@@ -578,7 +585,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
               />
               {regeneratingLightbox && (
                 <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
-                  <div className="w-8 h-8 border-3 border-brass-400 border-t-transparent rounded-full animate-spin" />
+                  <div className="w-8 h-8 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
                 </div>
               )}
               {lightboxName && !lightboxName.includes('placeholder') && (
