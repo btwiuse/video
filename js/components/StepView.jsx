@@ -338,7 +338,10 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                     <div key={f.name + (cb || '')} className="flex flex-col items-center gap-1.5 group relative">
                       <div className="relative w-full aspect-[3/4]">
                         {isPlaceholder ? (
-                          <div className="w-full h-full rounded bg-ink-800 border border-dashed border-ink-600 flex flex-col items-center justify-center">
+                          <div
+                            className="w-full h-full rounded bg-ink-800 border border-dashed border-ink-600 flex flex-col items-center justify-center cursor-pointer hover:bg-ink-700/50 transition-colors"
+                            onClick={() => openLightbox(f.name)}
+                          >
                             <span className="text-stone-600 text-2xl">?</span>
                             <span className="text-stone-600 text-xs mt-1">待生成</span>
                           </div>
@@ -351,32 +354,30 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                             onClick={() => openLightbox(f.name)}
                           />
                         )}
-                        {!isPlaceholder && isRegen && (
+                        {isRegen && (
                           <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
                             <div className="w-6 h-6 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
                           </div>
                         )}
                       </div>
                       <span className="text-xs text-stone-500 truncate max-w-full">{f.name.split('/').pop()?.replace(/\.(jpg|jpeg|png)$/, '')}</span>
-                      {!isPlaceholder && (
-                        <button
-                          onClick={async () => {
-                            if (isRegen) return;
-                            setRegenerating(r => ({ ...r, ['char_' + label]: true }));
-                            try {
-                              await api(`/pipelines/${pipelineId}/regenerate`, {
-                                method: 'POST',
-                                body: JSON.stringify({ character_images: [label] }),
-                              });
-                              setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
-                            } catch (e) { /* ignore */ }
-                            setRegenerating(r => { const n = {...r}; delete n['char_' + label]; return n; });
-                          }}
-                          className="absolute top-1 right-1 w-7 h-7 rounded bg-ink-900/80 hover:bg-brass-500/80 text-stone-400 hover:text-ink-950 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-0"
-                          disabled={isRegen}
-                          title="重新生成此角色"
-                        >⟳</button>
-                      )}
+                      <button
+                        onClick={async () => {
+                          if (isRegen) return;
+                          setRegenerating(r => ({ ...r, ['char_' + label]: true }));
+                          try {
+                            await api(`/pipelines/${pipelineId}/regenerate`, {
+                              method: 'POST',
+                              body: JSON.stringify({ character_images: [label] }),
+                            });
+                            setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
+                          } catch (e) { /* ignore */ }
+                          setRegenerating(r => { const n = {...r}; delete n['char_' + label]; return n; });
+                        }}
+                        className="absolute top-1 right-1 w-7 h-7 rounded bg-ink-900/80 hover:bg-brass-500/80 text-stone-400 hover:text-ink-950 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-0"
+                        disabled={isRegen}
+                        title="重新生成此角色"
+                      >⟳</button>
                     </div>
                   );
                 })}
@@ -396,7 +397,10 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                     <div key={f.name + (cb || '')} className="flex flex-col items-center gap-1.5 group relative">
                       <div className="relative w-full aspect-square">
                         {isPlaceholder ? (
-                          <div className="w-full h-full rounded bg-ink-800 border border-dashed border-ink-600 flex flex-col items-center justify-center">
+                          <div
+                            className="w-full h-full rounded bg-ink-800 border border-dashed border-ink-600 flex flex-col items-center justify-center cursor-pointer hover:bg-ink-700/50 transition-colors"
+                            onClick={() => openLightbox(f.name)}
+                          >
                             <span className="text-stone-600 text-2xl">?</span>
                             <span className="text-stone-600 text-xs mt-1">待生成</span>
                           </div>
@@ -409,17 +413,16 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                             onClick={() => openLightbox(f.name)}
                           />
                         )}
-                        {!isPlaceholder && isRegen && (
+                        {isRegen && (
                           <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
                             <div className="w-6 h-6 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
                           </div>
                         )}
                       </div>
                       <span className="text-xs text-stone-500 truncate max-w-full">{label}</span>
-                      {!isPlaceholder && (
-                        <button
-                          onClick={async () => {
-                            if (isRegen) return;
+                      <button
+                        onClick={async () => {
+                          if (isRegen) return;
                             setRegenerating(r => ({ ...r, ['prop_' + label]: true }));
                             try {
                               await api(`/pipelines/${pipelineId}/regenerate`, {
@@ -434,7 +437,6 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                           disabled={isRegen}
                           title="重新生成此道具"
                         >⟳</button>
-                      )}
                     </div>
                   );
                 })}
@@ -454,7 +456,10 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                     <div key={f.name + (cb || '')} className="group relative">
                       <div className="relative w-full aspect-video">
                         {isPlaceholder ? (
-                          <div className="w-full h-full rounded bg-ink-800 border border-dashed border-ink-600 flex flex-col items-center justify-center">
+                          <div
+                            className="w-full h-full rounded bg-ink-800 border border-dashed border-ink-600 flex flex-col items-center justify-center cursor-pointer hover:bg-ink-700/50 transition-colors"
+                            onClick={() => openLightbox(f.name)}
+                          >
                             <span className="text-stone-600 text-2xl">?</span>
                             <span className="text-stone-600 text-xs mt-1">待生成</span>
                           </div>
@@ -467,17 +472,16 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                             onClick={() => openLightbox(f.name)}
                           />
                         )}
-                        {!isPlaceholder && isRegen && (
+                        {isRegen && (
                           <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
                             <div className="w-6 h-6 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
                           </div>
                         )}
                       </div>
                       <span className="text-xs text-stone-500 mt-1 block">{f.name.split('/').pop()?.replace(/\.(jpg|jpeg|png)$/, '')}</span>
-                      {!isPlaceholder && (
-                        <button
-                          onClick={async () => {
-                            if (isRegen) return;
+                      <button
+                        onClick={async () => {
+                          if (isRegen) return;
                             setRegenerating(r => ({ ...r, ['scene_' + label]: true }));
                             try {
                               await api(`/pipelines/${pipelineId}/regenerate`, {
@@ -492,7 +496,6 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                           disabled={isRegen}
                           title="重新生成此场景"
                         >⟳</button>
-                      )}
                     </div>
                   );
                 })}
@@ -513,7 +516,10 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                     <div key={f.name + (cb || '')} className="flex flex-col items-center gap-1.5 group relative">
                       <div className="relative w-full aspect-video">
                         {isPlaceholder ? (
-                          <div className="w-full h-full rounded bg-ink-800 border border-dashed border-ink-600 flex flex-col items-center justify-center">
+                          <div
+                            className="w-full h-full rounded bg-ink-800 border border-dashed border-ink-600 flex flex-col items-center justify-center cursor-pointer hover:bg-ink-700/50 transition-colors"
+                            onClick={() => openLightbox(f.name)}
+                          >
                             <span className="text-stone-600 text-2xl">?</span>
                             <span className="text-stone-600 text-xs mt-1">待生成</span>
                           </div>
@@ -526,17 +532,16 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                             onClick={() => openLightbox(f.name)}
                           />
                         )}
-                        {!isPlaceholder && isRegen && (
+                        {isRegen && (
                           <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
                             <div className="w-6 h-6 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
                           </div>
                         )}
                       </div>
                       <span className="text-xs text-stone-500 truncate max-w-full">{shotId}</span>
-                      {!isPlaceholder && (
-                        <button
-                          onClick={async () => {
-                            if (isRegen) return;
+                      <button
+                        onClick={async () => {
+                          if (isRegen) return;
                             setRegenerating(r => ({ ...r, ['shot_' + shotId]: true }));
                             try {
                               await api(`/pipelines/${pipelineId}/regenerate`, {
@@ -551,7 +556,6 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                           disabled={isRegen}
                           title="重新生成此镜头"
                         >⟳</button>
-                      )}
                     </div>
                   );
                 })}
@@ -646,6 +650,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                 src={artifactUrl(pipelineId, lightboxName, cacheBust[lightboxName])}
                 className="max-h-[70vh] max-w-full lg:max-w-[50vw] object-contain rounded"
                 alt="放大预览"
+                onError={e => { e.target.style.display = 'none'; }}
               />
               {regeneratingLightbox && (
                 <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
