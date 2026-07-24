@@ -376,6 +376,10 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                       <button
                         onClick={async () => {
                           if (isRegen) return;
+                          if (isPlaceholder && !isStepDone) {
+                            onRun(2);
+                            return;
+                          }
                           setRegenerating(r => ({ ...r, ['char_' + label]: true }));
                           try {
                             await api(`/pipelines/${pipelineId}/regenerate`, {
@@ -435,6 +439,10 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                       <button
                         onClick={async () => {
                           if (isRegen) return;
+                          if (isPlaceholder && !isStepDone) {
+                            onRun(2);
+                            return;
+                          }
                             setRegenerating(r => ({ ...r, ['prop_' + label]: true }));
                             try {
                               await api(`/pipelines/${pipelineId}/regenerate`, {
@@ -494,6 +502,10 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                       <button
                         onClick={async () => {
                           if (isRegen) return;
+                          if (isPlaceholder && !isStepDone) {
+                            onRun(2);
+                            return;
+                          }
                             setRegenerating(r => ({ ...r, ['scene_' + label]: true }));
                             try {
                               await api(`/pipelines/${pipelineId}/regenerate`, {
@@ -554,6 +566,10 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                       <button
                         onClick={async () => {
                           if (isRegen) return;
+                          if (isPlaceholder && !isStepDone) {
+                            onRun(2);
+                            return;
+                          }
                             setRegenerating(r => ({ ...r, ['shot_' + shotId]: true }));
                             try {
                               await api(`/pipelines/${pipelineId}/regenerate`, {
@@ -669,12 +685,14 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
                   <div className="w-8 h-8 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
                 </div>
               )}
-              {lightboxName && !lightboxName.includes('placeholder') && (
+              const isPlaceholderInLb = Boolean(storyboardData && lightboxName &&
+                !artifacts.some(a => a.name === lightboxName));
+              {lightboxName && (
                 <button
                   onClick={regenerateFromLightbox}
                   disabled={regeneratingLightbox}
                   className="absolute top-2 right-2 w-8 h-8 rounded bg-ink-900/80 hover:bg-brass-500/80 text-stone-400 hover:text-ink-950 flex items-center justify-center text-sm transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                  title="重新生成"
+                  title="生成"
                 >⟳</button>
               )}
             </div>
