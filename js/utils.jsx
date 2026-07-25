@@ -5,6 +5,13 @@ const formatDuration = (d) => {
   return d.replace(/(\d+)\.\d+(s)/g, '$1$2');
 };
 
+const formatDateTime = (value) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}, ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+};
+
 const API_BASE = window.location.origin;
 const STEP_NAMES = ["", "剧本分镜", "视觉素材", "视频生成", "音频生成", "后期合成"];
 
@@ -119,4 +126,3 @@ function StatusBadge({ status }) {
     </span>
   );
 }
-

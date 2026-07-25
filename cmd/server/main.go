@@ -10,6 +10,7 @@ import (
 	"log"
 	"mime"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,19 +48,19 @@ const (
 )
 
 type Pipeline struct {
-	ID        string
-	Name      string
-	ScriptFile string   `json:"script_file"` // original uploaded filename
-	Status    PipelineStatus
-	Step      int           // current step 0-5
-	Error     string
-	Cmd       *exec.Cmd     `json:"-"` // not serializable
-	Ctx       context.Context `json:"-"` // not serializable
-	Cancel    context.CancelFunc `json:"-"` // not serializable
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	StartedAt time.Time
-	Duration  string
+	ID         string
+	Name       string
+	ScriptFile string `json:"script_file"` // original uploaded filename
+	Status     PipelineStatus
+	Step       int // current step 0-5
+	Error      string
+	Cmd        *exec.Cmd          `json:"-"` // not serializable
+	Ctx        context.Context    `json:"-"` // not serializable
+	Cancel     context.CancelFunc `json:"-"` // not serializable
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	StartedAt  time.Time
+	Duration   string
 }
 
 var (
@@ -212,6 +213,85 @@ func detectStatus(id string) PipelineStatus {
 		}
 	}
 	return StatusStep5
+}
+
+func hasImageMatching(pattern string) bool {
+	matches, _ := filepath.Glob(pattern)
+	for _, path := range matches {
+		switch strings.ToLower(filepath.Ext(path)) {
+		case ".jpg", ".jpeg", ".png", ".webp":
+			return true
+		}
+	}
+	return false
+}
+
+// visualAssetsComplete verifies the actual asset files rather than relying on
+// manifest.json alone. This lets manually generated and uploaded assets finish
+// step 2 just like the initial batch generator does.
+func visualAssetsComplete(id string) bool {
+	data, err := os.ReadFile(filepath.Join(outputDir(id), "storyboard.json"))
+	if err != nil {
+		return false
+	}
+	var storyboard map[string]any
+	if json.Unmarshal(data, &storyboard) != nil {
+		return false
+	}
+	entities := func(key string) []any {
+		items, _ := storyboard[key].([]any)
+		return items
+	}
+	value := func(item any, key string) string {
+		if entity, ok := item.(map[string]any); ok {
+			value, _ := entity[key].(string)
+			return value
+		}
+		return ""
+	}
+	dir := outputDir(id)
+	for _, character := range entities("characters") {
+		refID := value(character, "ref_id")
+		if refID == "" || !hasImageMatching(filepath.Join(dir, "characters", refID+"_front.*")) || !hasImageMatching(filepath.Join(dir, "characters", refID+"_profile.*")) || !hasImageMatching(filepath.Join(dir, "characters", refID+"_fullbody.*")) {
+			return false
+		}
+	}
+	for _, prop := range entities("props") {
+		refID := value(prop, "ref_id")
+		if refID == "" || !hasImageMatching(filepath.Join(dir, "props", refID+"_reference.*")) {
+			return false
+		}
+	}
+	for _, scene := range entities("scenes") {
+		sceneID := value(scene, "scene_id")
+		if sceneID == "" || !hasImageMatching(filepath.Join(dir, "scenes", sceneID+"_*")) {
+			return false
+		}
+	}
+	for _, shot := range entities("shots") {
+		shotID := value(shot, "full_shot_id")
+		if shotID == "" || !hasImageMatching(filepath.Join(dir, "shots", shotID, shotID+"_startframe.*")) {
+			return false
+		}
+	}
+	return true
+}
+
+func markVisualAssetsComplete(id string) {
+	if !visualAssetsComplete(id) {
+		return
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	p, exists := pipelines[id]
+	if !exists || p.Status == StatusRunning || p.Step > 2 || p.Status == StatusDone {
+		return
+	}
+	p.Step = 2
+	p.Status = StatusStep2
+	p.Error = ""
+	savePipelineState(p)
+	vlog("pipeline %s visual assets complete", id)
 }
 
 func runPythonAsync(p *Pipeline, args []string, stepNum int, maxShotsPerScene, totalShots, totalDuration int) {
@@ -397,6 +477,12 @@ func handleGetPipeline(w http.ResponseWriter, r *http.Request) {
 		p.Status = detectStatus(id)
 		p.UpdatedAt = time.Now()
 		savePipelineState(p)
+	}
+	// Manual asset generation can finish after the original Step 2 run. Recheck
+	// the actual files whenever the detail view polls so existing projects are
+	// promoted without requiring another image generation request.
+	if p.Step <= 2 && p.Status != StatusRunning {
+		markVisualAssetsComplete(id)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -814,6 +900,459 @@ func handleCancelStep(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"status": "canceled"})
 }
 
+func handleAddCharacter(w http.ResponseWriter, r *http.Request) {
+	// POST /pipelines/{id}/characters
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 3 || parts[0] != "pipelines" || parts[2] != "characters" {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+	id := parts[1]
+
+	mu.RLock()
+	_, exists := pipelines[id]
+	mu.RUnlock()
+	if !exists {
+		if p := loadPipelineState(id); p != nil {
+			mu.Lock()
+			pipelines[id] = p
+			mu.Unlock()
+		} else {
+			http.Error(w, "pipeline not found", http.StatusNotFound)
+			return
+		}
+	}
+
+	var params struct {
+		Name       string `json:"name"`
+		Identity   string `json:"identity"`
+		Appearance string `json:"appearance"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&params); err != nil {
+		http.Error(w, fmt.Sprintf("bad request: %v", err), http.StatusBadRequest)
+		return
+	}
+	params.Name = strings.TrimSpace(params.Name)
+	params.Identity = strings.TrimSpace(params.Identity)
+	params.Appearance = strings.TrimSpace(params.Appearance)
+	if params.Name == "" || params.Appearance == "" {
+		http.Error(w, "name and appearance are required", http.StatusBadRequest)
+		return
+	}
+	if len(params.Name) > 240 || len(params.Identity) > 480 || len(params.Appearance) > 8000 {
+		http.Error(w, "character fields are too long", http.StatusBadRequest)
+		return
+	}
+
+	sbPath := filepath.Join(outputDir(id), "storyboard.json")
+	sbData, err := os.ReadFile(sbPath)
+	if err != nil {
+		http.Error(w, "storyboard.json not found; run step 1 first", http.StatusConflict)
+		return
+	}
+	var storyboard map[string]any
+	if err := json.Unmarshal(sbData, &storyboard); err != nil {
+		http.Error(w, "invalid storyboard.json", http.StatusInternalServerError)
+		return
+	}
+
+	characters, _ := storyboard["characters"].([]any)
+	existing := make(map[string]bool)
+	for _, raw := range characters {
+		if character, ok := raw.(map[string]any); ok {
+			if refID, ok := character["ref_id"].(string); ok {
+				existing[refID] = true
+			}
+		}
+	}
+	refID := ""
+	for n := 1; ; n++ {
+		candidate := fmt.Sprintf("MANUAL_%02d", n)
+		if !existing[candidate] {
+			refID = candidate
+			break
+		}
+	}
+	character := map[string]string{"ref_id": refID, "name": params.Name}
+	characters = append(characters, character)
+	storyboard["characters"] = characters
+
+	clean := func(value string) string {
+		return strings.ReplaceAll(value, "```", "")
+	}
+	identity := clean(params.Identity)
+	if identity == "" {
+		identity = "未设定"
+	}
+	appearance := clean(params.Appearance)
+	md := fmt.Sprintf(
+		"# %s | %s\n\n"+
+			"## 基本信息\n"+
+			"- 姓名：%s\n"+
+			"- 身份：%s\n\n"+
+			"## 外貌与人物设定\n"+
+			"%s\n\n"+
+			"## 定妆照 Prompt — 正面胸像\n"+
+			"\x60\x60\x60\n"+
+			"%s，%s，正面胸像，视线看向镜头，干净的中性背景，柔和电影棚拍光，85mm portrait lens，photorealistic，cinematic，8K\n"+
+			"\x60\x60\x60\n\n"+
+			"## 定妆照 Prompt — 45°侧面\n"+
+			"\x60\x60\x60\n"+
+			"%s，%s，45度侧面胸像，保留人物标志性外貌与服装，电影感侧光，85mm portrait lens，photorealistic，cinematic，8K\n"+
+			"\x60\x60\x60\n\n"+
+			"## 定妆照 Prompt — 全身\n"+
+			"\x60\x60\x60\n"+
+			"%s，%s，全身立姿，完整展示服装与体态，干净场景，电影感自然光，35mm lens，photorealistic，cinematic，8K\n"+
+			"\x60\x60\x60\n",
+		refID, clean(params.Name), clean(params.Name), identity, appearance,
+		clean(params.Name), appearance, clean(params.Name), appearance, clean(params.Name), appearance,
+	)
+
+	charsDir := filepath.Join(outputDir(id), "characters")
+	if err := os.MkdirAll(charsDir, 0755); err != nil {
+		http.Error(w, fmt.Sprintf("cannot create character directory: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if err := os.WriteFile(filepath.Join(charsDir, refID+".md"), []byte(md), 0644); err != nil {
+		http.Error(w, fmt.Sprintf("cannot save character prompt: %v", err), http.StatusInternalServerError)
+		return
+	}
+	updated, err := json.MarshalIndent(storyboard, "", "  ")
+	if err != nil {
+		http.Error(w, "cannot encode storyboard", http.StatusInternalServerError)
+		return
+	}
+	if err := os.WriteFile(sbPath, updated, 0644); err != nil {
+		http.Error(w, fmt.Sprintf("cannot update storyboard: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	vlog("pipeline %s added manual character %s", id, refID)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]any{"status": "created", "character": character})
+}
+
+func handleEntities(w http.ResponseWriter, r *http.Request) {
+	// POST /pipelines/{id}/entities, DELETE /pipelines/{id}/entities/{kind}/{entity},
+	// POST /pipelines/{id}/entities/{kind}/{entity}/upload
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 || parts[0] != "pipelines" || parts[2] != "entities" {
+		http.Error(w, "invalid entity path", http.StatusBadRequest)
+		return
+	}
+	id := parts[1]
+	mu.RLock()
+	_, exists := pipelines[id]
+	mu.RUnlock()
+	if !exists {
+		p := loadPipelineState(id)
+		if p == nil {
+			http.Error(w, "pipeline not found", http.StatusNotFound)
+			return
+		}
+		mu.Lock()
+		pipelines[id] = p
+		mu.Unlock()
+	}
+	sbPath := filepath.Join(outputDir(id), "storyboard.json")
+	loadStoryboard := func() (map[string]any, error) {
+		data, err := os.ReadFile(sbPath)
+		if err != nil {
+			return nil, err
+		}
+		var storyboard map[string]any
+		err = json.Unmarshal(data, &storyboard)
+		return storyboard, err
+	}
+	saveStoryboard := func(storyboard map[string]any) error {
+		data, err := json.MarshalIndent(storyboard, "", "  ")
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(sbPath, data, 0644)
+	}
+
+	if len(parts) == 3 && r.Method == http.MethodPost {
+		var params struct {
+			Kind           string   `json:"kind"`
+			Name           string   `json:"name"`
+			Identity       string   `json:"identity"`
+			Appearance     string   `json:"appearance"`
+			Prompt         string   `json:"prompt"`
+			Gender         string   `json:"gender"`
+			Age            string   `json:"age"`
+			GenerationMode string   `json:"generation_mode"`
+			CharacterRefs  []string `json:"character_refs"`
+			PropRefs       []string `json:"prop_refs"`
+			SceneID        string   `json:"scene_id"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&params); err != nil {
+			http.Error(w, fmt.Sprintf("bad request: %v", err), http.StatusBadRequest)
+			return
+		}
+		params.Kind = strings.TrimSpace(params.Kind)
+		params.Name = strings.TrimSpace(params.Name)
+		params.Appearance = strings.TrimSpace(params.Appearance)
+		if (params.Kind != "characters" && params.Kind != "props" && params.Kind != "scenes" && params.Kind != "shots") || params.Name == "" || params.Appearance == "" {
+			http.Error(w, "kind, name and appearance are required", http.StatusBadRequest)
+			return
+		}
+		storyboard, err := loadStoryboard()
+		if err != nil {
+			http.Error(w, "storyboard.json not found; run step 1 first", http.StatusConflict)
+			return
+		}
+		idKey, prefix, directory := "", "", ""
+		switch params.Kind {
+		case "characters":
+			idKey, prefix, directory = "ref_id", "MANUAL", "characters"
+		case "props":
+			idKey, prefix, directory = "ref_id", "PROP_MANUAL", "props"
+		case "scenes":
+			idKey, prefix, directory = "scene_id", "SC_MANUAL", "scenes"
+		case "shots":
+			idKey, prefix, directory = "full_shot_id", "SHOT_MANUAL", "shots"
+		}
+		existing, _ := storyboard[params.Kind].([]any)
+		used := map[string]bool{}
+		for _, raw := range existing {
+			if item, ok := raw.(map[string]any); ok {
+				if value, ok := item[idKey].(string); ok {
+					used[value] = true
+				}
+			}
+		}
+		entityID := ""
+		for n := 1; ; n++ {
+			candidate := fmt.Sprintf("%s_%02d", prefix, n)
+			if !used[candidate] {
+				entityID = candidate
+				break
+			}
+		}
+		clean := func(value string) string { return strings.ReplaceAll(strings.TrimSpace(value), "```", "") }
+		prompt := clean(params.Prompt)
+		if prompt == "" {
+			prompt = clean(params.Appearance)
+		}
+		filterRefs := func(refs []string, collection, key string) []string {
+			valid, seen, filtered := map[string]bool{}, map[string]bool{}, []string{}
+			for _, raw := range storyboard[collection].([]any) {
+				if item, ok := raw.(map[string]any); ok {
+					if value, ok := item[key].(string); ok {
+						valid[value] = true
+					}
+				}
+			}
+			for _, ref := range refs {
+				ref = strings.TrimSpace(ref)
+				if valid[ref] && !seen[ref] {
+					filtered = append(filtered, ref)
+					seen[ref] = true
+				}
+			}
+			return filtered
+		}
+		characterRefs := filterRefs(params.CharacterRefs, "characters", "ref_id")
+		propRefs := filterRefs(params.PropRefs, "props", "ref_id")
+		sceneID := ""
+		for _, raw := range storyboard["scenes"].([]any) {
+			if scene, ok := raw.(map[string]any); ok && scene["scene_id"] == strings.TrimSpace(params.SceneID) {
+				sceneID = strings.TrimSpace(params.SceneID)
+				break
+			}
+		}
+		entity := map[string]any{idKey: entityID, "name": params.Name, "description": clean(params.Appearance)}
+		if params.Kind == "characters" {
+			entity["identity"] = clean(params.Identity)
+			entity["gender"] = clean(params.Gender)
+			entity["age"] = clean(params.Age)
+		} else if params.Kind == "props" {
+			entity["category"] = "手动添加"
+			entity["narrative_function"] = clean(params.Appearance)
+		} else if params.Kind == "scenes" {
+			entity["character_refs"] = characterRefs
+			entity["prop_refs"] = propRefs
+		} else if params.Kind == "shots" {
+			entity["start_frame_prompt"] = prompt
+			entity["duration_sec"] = 5
+			entity["transition_type"] = "B"
+			entity["startframe_file"] = filepath.Join("shots", entityID, entityID+"_startframe.jpg")
+			entity["character_refs"] = characterRefs
+			entity["prop_refs"] = propRefs
+			entity["scene_id"] = sceneID
+		}
+		storyboard[params.Kind] = append(existing, entity)
+		if err := os.MkdirAll(filepath.Join(outputDir(id), directory), 0755); err != nil {
+			http.Error(w, "cannot create entity directory", http.StatusInternalServerError)
+			return
+		}
+		md := ""
+		switch params.Kind {
+		case "characters":
+			md = fmt.Sprintf("# %s | %s\n\n## 基本信息\n- 姓名：%s\n- 性别：%s\n- 年龄：%s\n- 身份：%s\n\n## 外貌与人物设定\n%s\n\n## 定妆照 Prompt — 正面胸像\n\x60\x60\x60\n%s，正面胸像，电影棚拍光，85mm portrait lens，photorealistic，cinematic，8K\n\x60\x60\x60\n\n## 定妆照 Prompt — 45°侧面\n\x60\x60\x60\n%s，45度侧面胸像，电影感侧光，photorealistic，cinematic，8K\n\x60\x60\x60\n\n## 定妆照 Prompt — 全身\n\x60\x60\x60\n%s，全身立姿，完整展示服装与体态，photorealistic，cinematic，8K\n\x60\x60\x60\n", entityID, clean(params.Name), clean(params.Name), clean(params.Gender), clean(params.Age), clean(params.Identity), clean(params.Appearance), prompt, prompt, prompt)
+		case "props":
+			md = fmt.Sprintf("# %s | %s\n\n## 道具设定\n%s\n\n## 道具参考图 Prompt\n\x60\x60\x60\n%s，isolated product reference image，clean background，photorealistic，8K，1:1\n\x60\x60\x60\n", entityID, clean(params.Name), clean(params.Appearance), prompt)
+		case "scenes":
+			md = fmt.Sprintf("# %s | %s\n\n## 场景设定\n%s\n\n## 场景参考图 Prompt — 广角\n\x60\x60\x60\n%s，wide establishing shot，cinematic lighting，photorealistic，16:9\n\x60\x60\x60\n\n## 场景参考图 Prompt — 细节特写\n\x60\x60\x60\n%s，detail close-up，cinematic lighting，photorealistic，16:9\n\x60\x60\x60\n", entityID, clean(params.Name), clean(params.Appearance), prompt, prompt)
+		case "shots":
+			md = prompt
+		}
+		mdPath := filepath.Join(outputDir(id), directory, entityID+".md")
+		if params.Kind == "shots" {
+			if err := os.MkdirAll(filepath.Join(outputDir(id), directory, entityID), 0755); err != nil {
+				http.Error(w, "cannot create shot directory", http.StatusInternalServerError)
+				return
+			}
+			mdPath = filepath.Join(outputDir(id), directory, entityID, entityID+"_startframe.md")
+		}
+		if err := os.WriteFile(mdPath, []byte(md), 0644); err != nil {
+			http.Error(w, "cannot save entity prompt", http.StatusInternalServerError)
+			return
+		}
+		if params.Kind == "shots" {
+			// Step 2 and Step 3 use deps.json to resolve linked visual assets.
+			// A hand-created start frame has no such links, but still needs the
+			// same file so it can be generated like every other shot.
+			deps := map[string]any{
+				"character_refs":     characterRefs,
+				"character_md_files": []string{},
+				"scene_id":           sceneID,
+				"scene_md_file":      filepath.Join("scenes", sceneID+".md"),
+				"prop_refs":          propRefs,
+				"prop_md_files":      []string{},
+				"startframe_md_file": filepath.Join("shots", entityID, entityID+"_startframe.md"),
+			}
+			depsData, err := json.MarshalIndent(deps, "", "  ")
+			if err != nil {
+				http.Error(w, "cannot encode shot dependencies", http.StatusInternalServerError)
+				return
+			}
+			depsPath := filepath.Join(outputDir(id), directory, entityID, "deps.json")
+			if err := os.WriteFile(depsPath, depsData, 0644); err != nil {
+				http.Error(w, "cannot save shot dependencies", http.StatusInternalServerError)
+				return
+			}
+		}
+		if err := saveStoryboard(storyboard); err != nil {
+			http.Error(w, "cannot save storyboard", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{"status": "created", "entity": entity})
+		return
+	}
+
+	if len(parts) < 5 || (r.Method != http.MethodDelete && !(r.Method == http.MethodPost && len(parts) == 6 && parts[5] == "upload")) {
+		http.Error(w, "unsupported entity operation", http.StatusBadRequest)
+		return
+	}
+	kind, entityID := parts[3], parts[4]
+	decodedEntityID, err := url.PathUnescape(entityID)
+	if err != nil {
+		http.Error(w, "invalid entity id", http.StatusBadRequest)
+		return
+	}
+	entityID = decodedEntityID
+	if (kind != "characters" && kind != "props" && kind != "scenes" && kind != "shots") || entityID != filepath.Base(entityID) || entityID == "." || entityID == "" {
+		http.Error(w, "invalid entity", http.StatusBadRequest)
+		return
+	}
+	if r.Method == http.MethodPost {
+		if err := r.ParseMultipartForm(12 << 20); err != nil {
+			http.Error(w, "invalid upload", http.StatusBadRequest)
+			return
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, "missing image file", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		ext := strings.ToLower(filepath.Ext(header.Filename))
+		if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".webp" {
+			http.Error(w, "only jpg, png, and webp images are supported", http.StatusBadRequest)
+			return
+		}
+		dir, name := "", ""
+		switch kind {
+		case "characters":
+			dir, name = "characters", entityID+"_front"+ext
+		case "props":
+			dir, name = "props", entityID+"_reference"+ext
+		case "scenes":
+			dir, name = "scenes", entityID+"_wide"+ext
+		case "shots":
+			dir, name = filepath.Join("shots", entityID), entityID+"_startframe"+ext
+		}
+		if err := os.MkdirAll(filepath.Join(outputDir(id), dir), 0755); err != nil {
+			http.Error(w, "cannot create asset directory", http.StatusInternalServerError)
+			return
+		}
+		destination, err := os.Create(filepath.Join(outputDir(id), dir, name))
+		if err != nil {
+			http.Error(w, "cannot save image", http.StatusInternalServerError)
+			return
+		}
+		defer destination.Close()
+		if _, err := io.Copy(destination, io.LimitReader(file, 10<<20)); err != nil {
+			http.Error(w, "cannot write image", http.StatusInternalServerError)
+			return
+		}
+		markVisualAssetsComplete(id)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"status": "uploaded"})
+		return
+	}
+
+	storyboard, err := loadStoryboard()
+	if err != nil {
+		http.Error(w, "storyboard.json not found", http.StatusConflict)
+		return
+	}
+	collection, idKey := kind, "ref_id"
+	if kind == "scenes" {
+		idKey = "scene_id"
+	}
+	if kind == "shots" {
+		collection, idKey = "shots", "full_shot_id"
+	}
+	items, _ := storyboard[collection].([]any)
+	updated := make([]any, 0, len(items))
+	deleted := false
+	for _, item := range items {
+		if object, ok := item.(map[string]any); ok && object[idKey] == entityID {
+			deleted = true
+			continue
+		}
+		updated = append(updated, item)
+	}
+	if !deleted {
+		http.Error(w, "entity not found or already deleted", http.StatusNotFound)
+		return
+	}
+	storyboard[collection] = updated
+	if err := saveStoryboard(storyboard); err != nil {
+		http.Error(w, "cannot save storyboard", http.StatusInternalServerError)
+		return
+	}
+	patterns := map[string][]string{"characters": {"characters/" + entityID + "_*"}, "props": {"props/" + entityID + "_*"}, "scenes": {"scenes/" + entityID + "_*"}, "shots": {"shots/" + entityID + "/*"}}
+	for _, pattern := range patterns[kind] {
+		matches, _ := filepath.Glob(filepath.Join(outputDir(id), pattern))
+		for _, match := range matches {
+			os.RemoveAll(match)
+		}
+	}
+	if kind == "characters" || kind == "props" || kind == "scenes" {
+		os.Remove(filepath.Join(outputDir(id), kind, entityID+".md"))
+	}
+	vlog("pipeline %s deleted %s entity %s", id, kind, entityID)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"status": "deleted", "entity_id": entityID})
+}
+
 func handleRegenerateAsset(w http.ResponseWriter, r *http.Request) {
 	// /pipelines/{id}/regenerate
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
@@ -918,6 +1457,7 @@ func handleRegenerateAsset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vlog("pipeline %s regenerate done: %s", id, out)
+	markVisualAssetsComplete(id)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"status": "done",
@@ -1134,7 +1674,15 @@ func main() {
 			handleArtifacts(w, r)
 			return
 		}
-	if strings.HasSuffix(path, "/summarize") {
+		if strings.HasSuffix(path, "/characters") && r.Method == http.MethodPost {
+			handleAddCharacter(w, r)
+			return
+		}
+		if strings.Contains(path, "/entities") {
+			handleEntities(w, r)
+			return
+		}
+		if strings.HasSuffix(path, "/summarize") {
 			handleSummarize(w, r)
 			return
 		}

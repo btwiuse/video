@@ -745,8 +745,11 @@ class Step2Pipeline:
                 if not sf_prompt:
                     return None
 
-                # Read deps.json to find character/scene dependencies
-                deps = load_json(str(ensure_output_dir("shots", shot_id) / "deps.json"))
+                # Manual start frames have no linked entities.  Their deps.json is
+                # created by the web UI, but tolerate older manually-added shots
+                # that predate that file as well.
+                deps_path = ensure_output_dir("shots", shot_id) / "deps.json"
+                deps = load_json(str(deps_path)) if deps_path.is_file() else {}
                 char_ref_ids = deps.get("character_refs", [])
                 scene_ref_id = deps.get("scene_id", "")
                 prop_ref_ids = deps.get("prop_refs", [])
@@ -941,6 +944,18 @@ class Step2Pipeline:
         scenes = storyboard.get("scenes", [])
         manifest_path = ensure_output_dir() / "manifest.json"
         manifest = load_json(str(manifest_path)) if manifest_path.is_file() else {}
+        char_map: dict[str, list[ImageResult]] = {}
+        prop_map: dict[str, list[ImageResult]] = {}
+        for key, entry in manifest.items():
+            if entry.get("type") == "character" and entry.get("character_id"):
+                char_map.setdefault(entry["character_id"], []).append(
+                    ImageResult(label=key, path=entry["file"], prompt=entry.get("prompt", ""), status="done")
+                )
+            elif entry.get("type") == "prop" and entry.get("prop_id"):
+                prop_map.setdefault(entry["prop_id"], []).append(
+                    ImageResult(label=key, path=entry["file"], prompt=entry.get("prompt", ""), status="done")
+                )
+        scene_deps = self._build_scene_deps_map(storyboard)
 
         for scene in scenes:
             sid = scene.get("scene_id", scene.get("id", ""))
@@ -948,9 +963,8 @@ class Step2Pipeline:
                 continue
 
             prompts = self._build_scene_prompts(scene)
-            scene_deps = self._build_scene_deps_map(storyboard)
             char_ids, prop_ids = scene_deps.get(sid, ([], []))
-            ref_paths = self._collect_ref_paths(char_ids, prop_ids)
+            ref_paths = self._collect_ref_paths(char_ids, prop_ids, char_map, prop_map)
 
             for label_suffix, prompt in prompts:
                 prompt = apply_im2_clean(prompt, "scene")
@@ -1109,8 +1123,11 @@ class Step2Pipeline:
                 logger.warning("  %s: no start frame prompt, skipping", shot_id)
                 continue
 
-            # Read deps for reference images
-            deps = load_json(str(ensure_output_dir("shots", shot_id) / "deps.json"))
+            # A manually-created start frame may not reference any other asset.
+            # Fall back to an empty dependency set for older cards that were
+            # created before the UI began saving deps.json.
+            deps_path = ensure_output_dir("shots", shot_id) / "deps.json"
+            deps = load_json(str(deps_path)) if deps_path.is_file() else {}
             char_ref_ids = deps.get("character_refs", [])
             scene_ref_id = deps.get("scene_id", "")
             prop_ref_ids = deps.get("prop_refs", [])
@@ -1380,8 +1397,18 @@ class Step2Pipeline:
 
     @staticmethod
     def _build_scene_deps_map(storyboard: dict) -> dict[str, tuple[list[str], list[str]]]:
-        """Build scene→(character_refs, prop_refs) lookup from per-shot deps.json."""
+        """Build scene→(character_refs, prop_refs) lookup from scene and shot metadata."""
         scene_deps: dict[str, tuple[list[str], list[str]]] = {}
+        for scene in storyboard.get("scenes", []):
+            scene_id = scene.get("scene_id", "")
+            if not scene_id:
+                continue
+            char_refs = scene.get("character_refs", [])
+            prop_refs = scene.get("prop_refs", [])
+            scene_deps[scene_id] = (
+                char_refs if isinstance(char_refs, list) else [],
+                prop_refs if isinstance(prop_refs, list) else [],
+            )
         for shot in storyboard.get("shots", []):
             sid = shot.get("full_shot_id", "")
             dep_path = ensure_output_dir("shots", sid) / "deps.json"

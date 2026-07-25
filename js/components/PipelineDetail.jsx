@@ -4,6 +4,7 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [visualAssetsCompleted, setVisualAssetsCompleted] = useState(false);
   const [maxShotsPerScene, setMaxShotsPerScene] = useState(() => {
     try { const s = localStorage.getItem('pipelineSettings'); return s ? JSON.parse(s).maxShotsPerScene ?? 1 : 1; } catch { return 1; }
   });
@@ -32,6 +33,8 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
     return () => { cancelled = true; };
   }, [pipeline.pipeline_id]);
 
+  useEffect(() => { setVisualAssetsCompleted(false); }, [pipeline.pipeline_id]);
+
   const getCurrentStep = () => {
     if (pipeline.status === 'done') return 5;
     if (pipeline.status === 'running') return Math.max(0, (pipeline.step || 1) - 1);
@@ -41,11 +44,22 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
     if (pipeline.status === 'failed' || pipeline.status === 'canceled') return Math.max(0, (pipeline.step || 1) - 1);
     return pipeline.step || 0;
   };
-  const currentStep = getCurrentStep();
+  const pipelineCurrentStep = getCurrentStep();
+  // Step 2 is complete in the UI only when all four asset categories report
+  // that their totals have been completed. This supports hand-generated and
+  // uploaded assets before the backend status has refreshed.
+  const currentStep = pipelineCurrentStep === 1 && visualAssetsCompleted
+    ? 2
+    : pipelineCurrentStep === 2 && !visualAssetsCompleted
+      ? 1
+      : pipelineCurrentStep;
   const pid = pipeline.pipeline_id;
   // Same availability check as StepTabs: a step is available if completed or isNext
   const stepAvailable = (n) => {
     if (pipeline.status === 'done') return n <= 5;
+    // Step 3 may only be entered when every visual-asset category is complete.
+    // This also handles adding a new, still-empty asset after Step 2 was done.
+    if (n === 3 && !visualAssetsCompleted) return false;
     return n <= currentStep || n === currentStep + 1;
   };
 
@@ -163,6 +177,10 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
       return;
     }
     if (!stepAvailable(next)) {
+      if (next === 3 && !visualAssetsCompleted) {
+        toast('请先完成「视觉素材」，再进入下一步');
+        return;
+      }
       const cs = getCurrentStep();
       toast(`请先完成「${STEP_NAMES[cs + 1]}」，再进入下一步`);
       return;
@@ -202,7 +220,7 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
         </div>
       )}
 
-      <StepView step={activeStep} pipeline={pipeline} onRun={runStep} onCancel={cancelStep} actionLoading={actionLoading} pipelineId={pid}
+      <StepView step={activeStep} pipeline={pipeline} onRun={runStep} onCancel={cancelStep} onRefresh={onRefresh} visualAssetsCompletionKnown={visualAssetsCompleted} onVisualAssetsCompletionChange={setVisualAssetsCompleted} actionLoading={actionLoading} pipelineId={pid}
   maxShotsPerScene={maxShotsPerScene} setMaxShotsPerScene={setMaxShotsPerScene}
   totalShots={totalShots} setTotalShots={setTotalShots}
   totalDuration={totalDuration} setTotalDuration={setTotalDuration} />
@@ -226,9 +244,9 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
       <LogViewer pipelineId={pid} />
       <ArtifactList pipelineId={pid} />
 
-      <div className="mt-8 text-xs text-stone-500 leading-relaxed">
-        创建时间: {new Date(pipeline.created_at).toLocaleString()}<br/>
-        更新时间: {new Date(pipeline.updated_at).toLocaleString()}
+      <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-stone-500">
+        <span>创建时间: {formatDateTime(pipeline.created_at)}</span>
+        <span>更新时间: {formatDateTime(pipeline.updated_at)}</span>
       </div>
     </div>
   );

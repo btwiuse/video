@@ -20,12 +20,53 @@ const promptPathFromImage = (name) => {
   return null;
 };
 
-function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
+function AssetPreview({ file, pipelineId, cacheBust, aspectClass, onOpen, label }) {
+  const isPlaceholder = file?.placeholder;
+  return (
+    <div className={`relative overflow-hidden bg-ink-950 ${aspectClass}`}>
+      {isPlaceholder ? (
+        <button
+          type="button"
+          onClick={() => onOpen(file.name)}
+          className="w-full h-full flex flex-col items-center justify-center gap-2 bg-ink-800/70 text-stone-600 hover:bg-ink-700/70 transition-colors"
+        >
+          <span className="w-9 h-9 rounded-full border border-dashed border-ink-500 flex items-center justify-center text-lg">+</span>
+          <span className="text-xs">等待生成</span>
+        </button>
+      ) : (
+        <img
+          src={artifactUrl(pipelineId, file.name, cacheBust[file.name])}
+          alt={label || file.name.split('/').pop()}
+          className="w-full h-full object-cover cursor-pointer transition-transform duration-300 group-hover:scale-[1.03]"
+          onError={e => { e.currentTarget.style.display = 'none'; }}
+          onClick={() => onOpen(file.name)}
+        />
+      )}
+    </div>
+  );
+}
+
+function AssetToolbar({ onGenerate, onUpload, onDelete, disabled }) {
+  const uploadRef = useRef(null);
+  return (
+    <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-lg border border-ink-600/80 bg-ink-950/85 p-1 shadow-lg opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+      <button type="button" title="AI 生成" onClick={onGenerate} disabled={disabled} className="w-7 h-7 rounded-md text-brass-400 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-40">✦</button>
+      <button type="button" title="本地上传" onClick={() => uploadRef.current?.click()} disabled={disabled} className="w-7 h-7 rounded-md text-stone-300 hover:bg-ink-700 disabled:opacity-40">⇧</button>
+      <button type="button" title="删除" onClick={onDelete} disabled={disabled} className="w-7 h-7 rounded-md text-clay-400 hover:bg-clay-500 hover:text-white disabled:opacity-40">⌫</button>
+      <input ref={uploadRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => { const file = event.target.files?.[0]; if (file) onUpload(file); event.target.value = ''; }} />
+    </div>
+  );
+}
+
+function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, onRefresh, visualAssetsCompletionKnown, onVisualAssetsCompletionChange,
                     maxShotsPerScene, setMaxShotsPerScene, totalShots, setTotalShots, totalDuration, setTotalDuration }) {
   const getCS = () => {
     if (pipeline.status === 'done') return 5;
     if (pipeline.status === 'failed' || pipeline.status === 'canceled') return Math.max(0, (pipeline.step || 1) - 1);
-    return pipeline.step || 0;
+    const pipelineStep = pipeline.step || 0;
+    if (pipelineStep === 1 && visualAssetsCompletionKnown) return 2;
+    if (pipelineStep === 2 && !visualAssetsCompletionKnown) return 1;
+    return pipelineStep;
   };
   const currentStep = getCS();
   const isStepDone = step <= currentStep || pipeline.status === 'done';
@@ -48,6 +89,13 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
   const [scriptText, setScriptText] = useState(null);
   const [editingScript, setEditingScript] = useState(false);
   const [savingScript, setSavingScript] = useState(false);
+  const [assetTab, setAssetTab] = useState('characters');
+  const [assetDialog, setAssetDialog] = useState(null);
+  const [showAddCharacter, setShowAddCharacter] = useState(false);
+  const [newCharacter, setNewCharacter] = useState({ name: '', identity: '', appearance: '', prompt: '', gender: '', age: '', generationMode: 'ai', characterRefs: [], propRefs: [], sceneId: '' });
+  const [newEntityFile, setNewEntityFile] = useState(null);
+  const [addingCharacter, setAddingCharacter] = useState(false);
+  const [assetErrors, setAssetErrors] = useState({});
   const prevPipelineRef = useRef(pipeline);
   const textareaRef = useRef(null);
 
@@ -183,6 +231,45 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
   const videoFiles = artifacts.filter(f => f.name.startsWith('shots/') && /\.(mp4|webm|mov)$/i.test(f.name));
   const audioFiles = artifacts.filter(f => (f.name.startsWith('audio/') || f.name.startsWith('sfx/') || f.name.startsWith('bgm/')) && /\.(wav|mp3|m4a|flac)$/i.test(f.name));
   const finalVideo = artifacts.find(f => f.name === 'final.mp4');
+  const characterCards = useMemo(() => (storyboardData?.characters || []).map(character => {
+    const images = ['front', 'profile', 'fullbody'].map(angle => {
+      const prefix = `characters/${character.ref_id}_${angle}.`;
+      return charImages.find(file => file.name.startsWith(prefix)) || {
+        name: `characters/${character.ref_id}_${angle}.jpg`, placeholder: true, ref_id: character.ref_id, angle,
+      };
+    });
+    return { ...character, images };
+  }), [storyboardData, charImages]);
+  const sceneCards = useMemo(() => (storyboardData?.scenes || []).map(scene => {
+    const images = ['wide', 'detail'].map(suffix => {
+      const prefix = `scenes/${scene.scene_id}_${suffix}.`;
+      return sceneImages.find(file => file.name.startsWith(prefix)) || {
+        name: `scenes/${scene.scene_id}_${suffix}.jpg`, placeholder: true, scene_id: scene.scene_id, suffix,
+      };
+    });
+    return { ...scene, images };
+  }), [storyboardData, sceneImages]);
+  const assetOverview = useMemo(() => {
+    const count = (items, isComplete, keyFor) => ({
+      total: items.length,
+      completed: items.filter(isComplete).length,
+      generating: items.filter(item => regenerating[keyFor(item)]).length,
+      failed: items.filter(item => assetErrors[keyFor(item)]).length,
+    });
+    return {
+      characters: count(characterCards, card => card.images.every(image => !image.placeholder), card => 'char_' + card.ref_id),
+      props: count(allPropImages, prop => !prop.placeholder, prop => 'prop_' + (prop.prop_id || prop.name.split('/').pop()?.replace(/_reference\.(jpg|jpeg|png|webp)$/, ''))),
+      scenes: count(sceneCards, scene => scene.images.some(image => !image.placeholder), scene => 'scene_' + scene.scene_id),
+      shots: count(allShotImages, shot => !shot.placeholder, shot => 'shot_' + (shot.shot_id || shot.name.split('/')[1])),
+    };
+  }, [characterCards, allPropImages, sceneCards, allShotImages, regenerating, assetErrors]);
+  const visualAssetsCompleted = useMemo(() => Boolean(storyboardData) && Object.values(assetOverview).every(section =>
+    section.total === section.completed && section.generating === 0 && section.failed === 0
+  ), [storyboardData, assetOverview]);
+
+  useEffect(() => {
+    if (step === 2) onVisualAssetsCompletionChange?.(visualAssetsCompleted);
+  }, [step, visualAssetsCompleted, onVisualAssetsCompletionChange]);
 
   const openLightbox = async (name) => {
     setLightboxName(name);
@@ -232,9 +319,114 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
       await api(`/pipelines/${pipelineId}/regenerate`, { method: 'POST', body: JSON.stringify(body) });
       setCacheBust(c => ({ ...c, [name]: Date.now() }));
       await refreshArtifacts();
+      onRefresh?.();
     } catch (_) {}
     setRegeneratingLightbox(false);
     if (regenKey) setRegenerating(r => { const n = {...r}; delete n[regenKey]; return n; });
+  };
+
+  const regenerateAsset = async (key, body, files = []) => {
+    if (regenerating[key]) return;
+    setRegenerating(current => ({ ...current, [key]: true }));
+    setAssetErrors(current => { const next = { ...current }; delete next[key]; return next; });
+    try {
+      const response = await api(`/pipelines/${pipelineId}/regenerate`, {
+        method: 'POST', body: JSON.stringify(body),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      setCacheBust(current => ({
+        ...current,
+        ...Object.fromEntries(files.filter(file => !file.placeholder).map(file => [file.name, Date.now()])),
+      }));
+      await refreshArtifacts();
+      onRefresh?.();
+    } catch (_) {
+      setAssetErrors(current => ({ ...current, [key]: true }));
+      toast.error('生成失败，请检查服务日志后重试');
+    } finally {
+      setRegenerating(current => { const next = { ...current }; delete next[key]; return next; });
+    }
+  };
+
+  const addCharacter = async (event) => {
+    event.preventDefault();
+    const name = newCharacter.name.trim();
+    const appearance = newCharacter.appearance.trim();
+    const kind = assetDialog || 'characters';
+    if (!name || !appearance) return;
+    setAddingCharacter(true);
+    try {
+      const response = await api(`/pipelines/${pipelineId}/entities`, {
+        method: 'POST', body: JSON.stringify({
+          kind, name, identity: newCharacter.identity.trim(), appearance,
+          prompt: newCharacter.prompt.trim(), gender: newCharacter.gender, age: newCharacter.age,
+          character_refs: newCharacter.characterRefs, prop_refs: newCharacter.propRefs, scene_id: newCharacter.sceneId,
+          generation_mode: newCharacter.generationMode,
+        }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const result = await response.json();
+      setStoryboardData(current => ({
+        ...(current || { scenes: [], props: [], shots: [] }),
+        [kind]: [...(current?.[kind] || []), result.entity],
+      }));
+      const entityId = kind === 'scenes' ? result.entity.scene_id : kind === 'shots' ? result.entity.full_shot_id : result.entity.ref_id;
+      if (newCharacter.generationMode === 'upload' && newEntityFile && entityId) {
+        await uploadAsset(kind, entityId, newEntityFile);
+      }
+      setNewCharacter({ name: '', identity: '', appearance: '', prompt: '', gender: '', age: '', generationMode: 'ai', characterRefs: [], propRefs: [], sceneId: '' });
+      setNewEntityFile(null);
+      setShowAddCharacter(false);
+      setAssetDialog(null);
+      setAssetTab(kind);
+      toast((kind === 'characters' ? '角色' : kind === 'props' ? '道具' : '场景') + '已添加，可使用卡片上的 AI 生成或本地上传。');
+    } catch (_) {
+      toast.error('添加失败，请稍后重试');
+    } finally {
+      setAddingCharacter(false);
+    }
+  };
+
+  const toggleEntityReference = (field, id) => {
+    setNewCharacter(current => ({
+      ...current,
+      [field]: current[field].includes(id)
+        ? current[field].filter(value => value !== id)
+        : [...current[field], id],
+    }));
+  };
+
+  const uploadAsset = async (kind, entityId, file) => {
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      const response = await fetch(`/pipelines/${pipelineId}/entities/${kind}/${encodeURIComponent(entityId)}/upload`, { method: 'POST', body: form });
+      if (!response.ok) throw new Error(await response.text());
+      await refreshArtifacts();
+      onRefresh?.();
+      toast('素材已上传');
+    } catch (_) {
+      toast.error('上传失败，请确认文件格式后重试');
+    }
+  };
+
+  const deleteEntity = async (kind, entityId) => {
+    const label = kind === 'characters' ? '角色' : kind === 'props' ? '道具' : kind === 'scenes' ? '场景' : '镜头起始帧';
+    if (!window.confirm(`确定删除此${label}及其素材吗？此操作不可撤销。`)) return;
+    try {
+      const response = await api(`/pipelines/${pipelineId}/entities/${kind}/${encodeURIComponent(entityId)}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error(await response.text());
+      const result = await response.json();
+      if (result.status !== 'deleted' || result.entity_id !== entityId) throw new Error('服务端未确认删除');
+      const collection = kind === 'characters' ? 'characters' : kind === 'props' ? 'props' : kind === 'scenes' ? 'scenes' : 'shots';
+      const idKey = kind === 'characters' || kind === 'props' ? 'ref_id' : kind === 'scenes' ? 'scene_id' : 'full_shot_id';
+      setStoryboardData(current => current ? { ...current, [collection]: (current[collection] || []).filter(item => item[idKey] !== entityId) } : current);
+      await refreshArtifacts();
+      onRefresh?.();
+      toast(`${label}已删除`);
+    } catch (error) {
+      toast.error(`删除失败：${error?.message || '请稍后重试'}`);
+    }
   };
 
   return (
@@ -351,247 +543,153 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel,
       {step === 1 && (isStepDone || isStepRunning) && <StoryboardViewer pipelineId={pipelineId} poll={isStepRunning} reloadKey={stepReloadKey} />}
 
       {step === 2 && (isStepDone || isStepRunning || canGenerate) && (
-        <div className="space-y-6">
-          {allCharImages.length > 0 && (
-            <div>
-              <h4 className="text-sm font-semibold text-stone-300 mb-3">角色肖像</h4>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {allCharImages.map(f => {
-                  const label = f.name.split('/')[1]?.replace(/\.(jpg|jpeg|png)$/, '');
-                  const isRegen = regenerating['char_' + label];
-                  const cb = cacheBust[f.name];
-                  const isPlaceholder = f.placeholder;
-                  return (
-                    <div key={f.name + (cb || '')} className="flex flex-col items-center gap-1.5 group relative">
-                      <div className="relative w-full aspect-[3/4]">
-                        {isPlaceholder ? (
-                          <div
-                            className="w-full h-full rounded bg-ink-800 border border-dashed border-ink-600 flex flex-col items-center justify-center cursor-pointer hover:bg-ink-700/50 transition-colors"
-                            onClick={() => openLightbox(f.name)}
-                          >
-                            <span className="text-stone-600 text-2xl">?</span>
-                            <span className="text-stone-600 text-xs mt-1">待生成</span>
-                          </div>
-                        ) : (
-                          <img
-                            src={artifactUrl(pipelineId, f.name, cb)}
-                            alt={f.name.split('/').pop()}
-                            className="w-full h-full object-cover rounded bg-ink-700 cursor-pointer"
-                            onError={e => { e.target.style.display = 'none'; }}
-                            onClick={() => openLightbox(f.name)}
-                          />
-                        )}
-                        {isRegen && (
-                          <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
-                            <div className="w-6 h-6 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
-                          </div>
-                        )}
-                      </div>
-                      <span className="text-xs text-stone-500 truncate max-w-full">{f.name.split('/').pop()?.replace(/\.(jpg|jpeg|png)$/, '')}</span>
-                      <button
-                        onClick={async () => {
-                          if (isRegen) return;
-                          setRegenerating(r => ({ ...r, ['char_' + label]: true }));
-                          try {
-                            await api(`/pipelines/${pipelineId}/regenerate`, {
-                              method: 'POST',
-                              body: JSON.stringify({ character_images: [label] }),
-                            });
-                            setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
-                            await refreshArtifacts();
-                          } catch (e) { /* ignore */ }
-                          setRegenerating(r => { const n = {...r}; delete n['char_' + label]; return n; });
-                        }}
-                        className="absolute top-1 right-1 w-7 h-7 rounded bg-ink-900/80 hover:bg-brass-500/80 text-stone-400 hover:text-ink-950 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-0"
-                        disabled={isRegen}
-                        title="重新生成此角色"
-                      >⟳</button>
-                    </div>
-                  );
-                })}
+        <div className="space-y-5">
+          <div className="rounded-xl border border-ink-700 bg-ink-950/45 overflow-hidden">
+            <div className="px-4 pt-4 pb-3 border-b border-ink-700/80">
+              <p className="text-xs text-stone-500 leading-relaxed">素材按实体归类展示。点击图片可查看和编辑提示词；角色需生成正面、侧面和全身三个视角后才视为完成。</p>
+            </div>
+            <div className="flex flex-col gap-4 p-4">
+              <div className="flex flex-wrap items-center gap-x-1 gap-y-2" role="tablist" aria-label="视觉素材分类">
+                {[
+                  ['characters', '角色肖像', characterCards.length],
+                  ['props', '道具', allPropImages.length],
+                  ['scenes', '场景', sceneCards.length],
+                  ['shots', '镜头起始帧', allShotImages.length],
+                ].map(([key, label, count]) => (
+                  <button key={key} type="button" role="tab" aria-selected={assetTab === key} onClick={() => setAssetTab(key)}
+                    className={'px-3 py-2 text-sm rounded-lg transition-colors ' + (assetTab === key ? 'bg-brass-500 text-ink-950 font-semibold shadow-sm' : 'text-stone-400 hover:text-stone-100 hover:bg-ink-800')}>
+                    {label}<span className={'ml-1.5 text-xs ' + (assetTab === key ? 'text-ink-950/70' : 'text-stone-600')}>{count}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+                {[
+                  [assetTab === 'characters' ? '角色总计' : assetTab === 'props' ? '道具总计' : assetTab === 'scenes' ? '场景总计' : '起始帧总计', assetOverview[assetTab].total, 'text-stone-100'],
+                  ['已完成', assetOverview[assetTab].completed, 'text-leaf-400'],
+                  ['生成中', assetOverview[assetTab].generating, 'text-brass-400'],
+                  ['失败', assetOverview[assetTab].failed, 'text-clay-400'],
+                ].map(([label, value, color]) => (
+                  <div key={label} className="flex items-baseline gap-1.5"><span className="text-xs text-stone-500">{label}</span><span className={'text-lg leading-none font-semibold ' + color}>{value}</span></div>
+                ))}
+                <div className="flex-1" />
+                <button type="button" onClick={() => { setAssetDialog(assetTab); setNewEntityFile(null); setNewCharacter({ name: '', identity: '', appearance: '', prompt: '', gender: '', age: '', generationMode: 'ai', characterRefs: [], propRefs: [], sceneId: '' }); setShowAddCharacter(true); }} disabled={pipeline.status === 'running'}
+                  className="px-3.5 py-2 rounded-lg text-sm font-medium bg-ink-800 border border-ink-600 text-stone-200 hover:border-brass-500 hover:text-brass-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">+ 添加{assetTab === 'characters' ? '角色' : assetTab === 'props' ? '道具' : assetTab === 'scenes' ? '场景' : '起始帧'}</button>
               </div>
             </div>
-          )}
-          {allPropImages.length > 0 && (
-            <div>
-              <h4 className="text-sm font-semibold text-stone-300 mb-3">道具参考图</h4>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {allPropImages.map(f => {
-                  const isPlaceholder = f.placeholder;
-                  const cb = cacheBust[f.name];
-                  const label = f.prop_id || f.name.split('/').pop()?.replace(/_reference\.(jpg|jpeg|png|webp)$/, '');
-                  const displayName = f.prop_name || label;
-                  const isRegen = regenerating['prop_' + label];
-                  return (
-                    <div key={f.name + (cb || '')} className="flex flex-col items-center gap-1.5 group relative">
-                      <div className="relative w-full aspect-square">
-                        {isPlaceholder ? (
-                          <div
-                            className="w-full h-full rounded bg-ink-800 border border-dashed border-ink-600 flex flex-col items-center justify-center cursor-pointer hover:bg-ink-700/50 transition-colors"
-                            onClick={() => openLightbox(f.name)}
-                          >
-                            <span className="text-stone-600 text-2xl">?</span>
-                            <span className="text-stone-600 text-xs mt-1">待生成</span>
-                          </div>
-                        ) : (
-                          <img
-                            src={artifactUrl(pipelineId, f.name, cb)}
-                            alt={label}
-                            className="w-full h-full object-cover rounded bg-ink-700 cursor-pointer"
-                            onError={e => { e.target.style.display = 'none'; }}
-                            onClick={() => openLightbox(f.name)}
-                          />
-                        )}
-                        {isRegen && (
-                          <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
-                            <div className="w-6 h-6 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
-                          </div>
-                        )}
-                      </div>
-                      <span className="text-xs text-stone-500 truncate max-w-full">{displayName}</span>
-                      <button
-                        onClick={async () => {
-                          if (isRegen) return;
-                            setRegenerating(r => ({ ...r, ['prop_' + label]: true }));
-                            try {
-                              await api(`/pipelines/${pipelineId}/regenerate`, {
-                                method: 'POST',
-                                body: JSON.stringify({ prop_images: [label] }),
-                              });
-                              setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
-                              await refreshArtifacts();
-                            } catch (e) { /* ignore */ }
-                            setRegenerating(r => { const n = {...r}; delete n['prop_' + label]; return n; });
-                          }}
-                          className="absolute top-1 right-1 w-7 h-7 rounded bg-ink-900/80 hover:bg-brass-500/80 text-stone-400 hover:text-ink-950 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-0"
-                          disabled={isRegen}
-                          title="重新生成此道具"
-                        >⟳</button>
+          </div>
+
+          {assetTab === 'characters' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              {characterCards.map(character => {
+                const regenKey = 'char_' + character.ref_id;
+                const isGenerating = regenerating[regenKey];
+                const complete = character.images.every(image => !image.placeholder);
+                return (
+                  <article key={character.ref_id} className="group overflow-hidden rounded-xl border border-ink-700 bg-ink-900/80 hover:border-ink-600 transition-colors">
+                    <div className="relative grid grid-cols-3 gap-px bg-ink-700">
+                      {character.images.map((image, index) => (
+                        <div key={image.name} className="relative">
+                          <AssetPreview file={image} pipelineId={pipelineId} cacheBust={cacheBust} aspectClass="aspect-[3/4]" onOpen={openLightbox} label={(character.name || character.ref_id) + ' ' + ['正面', '侧面', '全身'][index]} />
+                          <span className="absolute left-2 bottom-2 px-1.5 py-0.5 rounded bg-ink-950/75 text-[10px] text-stone-300 pointer-events-none">{['正面', '侧面', '全身'][index]}</span>
+                        </div>
+                      ))}
+                      <AssetToolbar onGenerate={() => regenerateAsset(regenKey, { characters: [character.ref_id] }, character.images)} onUpload={file => uploadAsset('characters', character.ref_id, file)} onDelete={() => deleteEntity('characters', character.ref_id)} disabled={isGenerating} />
                     </div>
-                  );
-                })}
-              </div>
+                    <div className="p-3.5">
+                      <div className="flex items-start gap-3">
+                        <div className="min-w-0 flex-1"><h4 className="text-sm font-semibold text-stone-100 truncate">{character.name || character.ref_id}</h4><p className="mt-1 text-xs text-stone-500 line-clamp-2">{character.description || character.identity || (complete ? '3 个视角 · 素材已完成' : '等待生成 · 需 3 个视角')}</p></div>
+                        <span className={'mt-0.5 w-2 h-2 rounded-full ' + (isGenerating ? 'bg-brass-400 animate-pulse' : assetErrors[regenKey] ? 'bg-clay-400' : complete ? 'bg-leaf-400' : 'bg-stone-600')} />
+                      </div>
+                      {assetErrors[regenKey] && <p className="mt-2 text-xs text-clay-400">上次生成失败，请重试。</p>}
+                      <div className="flex items-center gap-2 mt-3">
+                        <button type="button" onClick={() => openLightbox(character.images[0].name)} className="text-xs text-stone-400 hover:text-stone-100 transition-colors">查看提示词</button>
+                        <button type="button" onClick={() => regenerateAsset(regenKey, { characters: [character.ref_id] }, character.images)} disabled={isGenerating}
+                          className="ml-auto px-2.5 py-1.5 rounded-md text-xs font-medium bg-brass-500/15 text-brass-400 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-50 transition-colors">{isGenerating ? '生成中…' : complete ? '重新生成' : '生成角色'}</button>
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+              {characterCards.length === 0 && <div className="sm:col-span-2 xl:col-span-3 py-12 text-center rounded-xl border border-dashed border-ink-700 text-sm text-stone-500">暂无角色。可手动添加一个角色，或先运行步骤 1。</div>}
             </div>
           )}
-          {allSceneImages.length > 0 && (
-            <div>
-              <h4 className="text-sm font-semibold text-stone-300 mb-3">场景参考</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {allSceneImages.map(f => {
-                  const label = f.name.split('/')[1]?.replace(/\.(jpg|jpeg|png)$/, '');
-                  const isRegen = regenerating['scene_' + label];
-                  const cb = cacheBust[f.name];
-                  const isPlaceholder = f.placeholder;
-                  return (
-                    <div key={f.name + (cb || '')} className="group relative">
-                      <div className="relative w-full aspect-video">
-                        {isPlaceholder ? (
-                          <div
-                            className="w-full h-full rounded bg-ink-800 border border-dashed border-ink-600 flex flex-col items-center justify-center cursor-pointer hover:bg-ink-700/50 transition-colors"
-                            onClick={() => openLightbox(f.name)}
-                          >
-                            <span className="text-stone-600 text-2xl">?</span>
-                            <span className="text-stone-600 text-xs mt-1">待生成</span>
-                          </div>
-                        ) : (
-                          <img
-                            src={artifactUrl(pipelineId, f.name, cb)}
-                            alt={f.name.split('/').pop()}
-                            className="w-full h-full object-cover rounded bg-ink-700 cursor-pointer"
-                            onError={e => { e.target.style.display = 'none'; }}
-                            onClick={() => openLightbox(f.name)}
-                          />
-                        )}
-                        {isRegen && (
-                          <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
-                            <div className="w-6 h-6 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
-                          </div>
-                        )}
-                      </div>
-                      <span className="text-xs text-stone-500 mt-1 block">{f.name.split('/').pop()?.replace(/\.(jpg|jpeg|png)$/, '')}</span>
-                      <button
-                        onClick={async () => {
-                          if (isRegen) return;
-                            setRegenerating(r => ({ ...r, ['scene_' + label]: true }));
-                            try {
-                              await api(`/pipelines/${pipelineId}/regenerate`, {
-                                method: 'POST',
-                                body: JSON.stringify({ scene_images: [label] }),
-                              });
-                              setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
-                              await refreshArtifacts();
-                            } catch (e) { /* ignore */ }
-                            setRegenerating(r => { const n = {...r}; delete n['scene_' + label]; return n; });
-                          }}
-                          className="absolute top-1 right-1 w-7 h-7 rounded bg-ink-900/80 hover:bg-brass-500/80 text-stone-400 hover:text-ink-950 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-0"
-                          disabled={isRegen}
-                          title="重新生成此场景"
-                        >⟳</button>
+
+          {assetTab === 'props' && (
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+              {allPropImages.map(prop => {
+                const label = prop.prop_id || prop.name.split('/').pop()?.replace(/_reference\.(jpg|jpeg|png|webp)$/, '');
+                const regenKey = 'prop_' + label;
+                return (
+                  <article key={prop.name} className="group overflow-hidden rounded-xl border border-ink-700 bg-ink-900/80 hover:border-ink-600 transition-colors">
+                    <div className="relative"><AssetPreview file={prop} pipelineId={pipelineId} cacheBust={cacheBust} aspectClass="aspect-square" onOpen={openLightbox} label={prop.prop_name || label} /><AssetToolbar onGenerate={() => regenerateAsset(regenKey, { prop_images: [label] }, [prop])} onUpload={file => uploadAsset('props', label, file)} onDelete={() => deleteEntity('props', label)} disabled={regenerating[regenKey]} /></div>
+                    <div className="p-3"><div className="flex items-center gap-2"><h4 className="min-w-0 flex-1 text-sm font-medium text-stone-200 truncate">{prop.prop_name || label}</h4><span className={'w-2 h-2 rounded-full ' + (regenerating[regenKey] ? 'bg-brass-400 animate-pulse' : prop.placeholder ? 'bg-stone-600' : assetErrors[regenKey] ? 'bg-clay-400' : 'bg-leaf-400')} /></div><p className="mt-1 text-xs text-stone-500 line-clamp-2">{prop.description || prop.narrative_function || prop.category || '道具设定'}</p>
+                      <div className="flex items-center mt-3"><button type="button" onClick={() => regenerateAsset(regenKey, { prop_images: [label] }, [prop])} disabled={regenerating[regenKey]} className="ml-auto px-2.5 py-1.5 rounded-md text-xs font-medium bg-brass-500/15 text-brass-400 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-50 transition-colors">{regenerating[regenKey] ? '生成中…' : prop.placeholder ? '生成道具' : '重新生成'}</button></div>
                     </div>
-                  );
-                })}
-              </div>
+                  </article>
+                );
+              })}
+              {allPropImages.length === 0 && <div className="col-span-full py-12 text-center rounded-xl border border-dashed border-ink-700 text-sm text-stone-500">剧本中暂无道具设定。</div>}
             </div>
           )}
-          {allCharImages.length === 0 && allPropImages.length === 0 && allSceneImages.length === 0 && <p className="text-stone-500 text-sm">暂无视觉素材</p>}
-          {allShotImages.length > 0 && (
-            <div>
-              <h4 className="text-sm font-semibold text-stone-300 mb-3">镜头起始帧</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {allShotImages.map(f => {
-                  const shotId = f.placeholder ? f.shot_id : f.name.split('/')[1];
-                  const isRegen = regenerating['shot_' + shotId];
-                  const cb = cacheBust[f.name];
-                  const isPlaceholder = f.placeholder;
-                  return (
-                    <div key={f.name + (cb || '')} className="flex flex-col items-center gap-1.5 group relative">
-                      <div className="relative w-full aspect-video">
-                        {isPlaceholder ? (
-                          <div
-                            className="w-full h-full rounded bg-ink-800 border border-dashed border-ink-600 flex flex-col items-center justify-center cursor-pointer hover:bg-ink-700/50 transition-colors"
-                            onClick={() => openLightbox(f.name)}
-                          >
-                            <span className="text-stone-600 text-2xl">?</span>
-                            <span className="text-stone-600 text-xs mt-1">待生成</span>
-                          </div>
-                        ) : (
-                          <img
-                            src={artifactUrl(pipelineId, f.name, cb)}
-                            alt={f.name.split('/').pop()}
-                            className="w-full h-full object-cover rounded bg-ink-700 cursor-pointer"
-                            onError={e => { e.target.style.display = 'none'; }}
-                            onClick={() => openLightbox(f.name)}
-                          />
-                        )}
-                        {isRegen && (
-                          <div className="absolute inset-0 bg-ink-950/70 rounded flex items-center justify-center">
-                            <div className="w-6 h-6 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
-                          </div>
-                        )}
-                      </div>
-                      <span className="text-xs text-stone-500 truncate max-w-full">{shotId}</span>
-                      <button
-                        onClick={async () => {
-                          if (isRegen) return;
-                            setRegenerating(r => ({ ...r, ['shot_' + shotId]: true }));
-                            try {
-                              await api(`/pipelines/${pipelineId}/regenerate`, {
-                                method: 'POST',
-                                body: JSON.stringify({ shots: [shotId] }),
-                              });
-                              setCacheBust(c => ({ ...c, [f.name]: Date.now() }));
-                              await refreshArtifacts();
-                            } catch (e) { /* ignore */ }
-                            setRegenerating(r => { const n = {...r}; delete n['shot_' + shotId]; return n; });
-                          }}
-                          className="absolute top-1 right-1 w-7 h-7 rounded bg-ink-900/80 hover:bg-brass-500/80 text-stone-400 hover:text-ink-950 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-all cursor-pointer disabled:opacity-0"
-                          disabled={isRegen}
-                          title="重新生成此镜头"
-                        >⟳</button>
+
+          {assetTab === 'scenes' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {sceneCards.map(scene => {
+                const regenKey = 'scene_' + scene.scene_id;
+                const complete = scene.images.some(image => !image.placeholder);
+                return (
+                  <article key={scene.scene_id} className="group overflow-hidden rounded-xl border border-ink-700 bg-ink-900/80 hover:border-ink-600 transition-colors">
+                    <div className="relative grid grid-cols-2 gap-px bg-ink-700">
+                      {scene.images.map((image, index) => <div key={image.name} className="relative"><AssetPreview file={image} pipelineId={pipelineId} cacheBust={cacheBust} aspectClass="aspect-video" onOpen={openLightbox} label={scene.scene_id + ' ' + (index === 0 ? '全景' : '细节')} /><span className="absolute left-2 bottom-2 px-1.5 py-0.5 rounded bg-ink-950/75 text-[10px] text-stone-300 pointer-events-none">{index === 0 ? '全景' : '细节'}</span></div>)}
+                      <AssetToolbar onGenerate={() => regenerateAsset(regenKey, { scenes: [scene.scene_id] }, scene.images)} onUpload={file => uploadAsset('scenes', scene.scene_id, file)} onDelete={() => deleteEntity('scenes', scene.scene_id)} disabled={regenerating[regenKey]} />
                     </div>
-                  );
-                })}
-              </div>
+                    <div className="p-3.5 flex items-center gap-3"><div className="min-w-0 flex-1"><h4 className="text-sm font-semibold text-stone-100">{scene.name || scene.scene_id}</h4><p className="mt-1 text-xs text-stone-500 line-clamp-2">{scene.description || (complete ? '场景参考已生成' : '等待生成')}</p></div>
+                      <button type="button" onClick={() => regenerateAsset(regenKey, { scenes: [scene.scene_id] }, scene.images)} disabled={regenerating[regenKey]} className="px-2.5 py-1.5 rounded-md text-xs font-medium bg-ink-800 text-stone-300 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-50 transition-colors">{regenerating[regenKey] ? '生成中…' : complete ? '重新生成' : '生成场景'}</button>
+                    </div>
+                  </article>
+                );
+              })}
+              {sceneCards.length === 0 && <div className="col-span-full py-12 text-center rounded-xl border border-dashed border-ink-700 text-sm text-stone-500">剧本中暂无场景设定。</div>}
+            </div>
+          )}
+
+          {assetTab === 'shots' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {allShotImages.map(shot => {
+                const shotId = shot.shot_id || shot.name.split('/')[1];
+                const regenKey = 'shot_' + shotId;
+                return (
+                  <article key={shot.name} className="group overflow-hidden rounded-xl border border-ink-700 bg-ink-900/80 hover:border-ink-600 transition-colors">
+                    <div className="relative"><AssetPreview file={shot} pipelineId={pipelineId} cacheBust={cacheBust} aspectClass="aspect-video" onOpen={openLightbox} label={shotId} /><AssetToolbar onGenerate={() => regenerateAsset(regenKey, { shots: [shotId] }, [shot])} onUpload={file => uploadAsset('shots', shotId, file)} onDelete={() => deleteEntity('shots', shotId)} disabled={regenerating[regenKey]} /></div>
+                    <div className="p-3.5 flex items-center gap-3"><div className="min-w-0 flex-1"><h4 className="text-sm font-semibold text-stone-100 truncate">{shotId}</h4><p className="mt-1 text-xs text-stone-500">{shot.placeholder ? '等待生成起始帧' : '起始帧已完成'}</p></div>
+                      <button type="button" onClick={() => regenerateAsset(regenKey, { shots: [shotId] }, [shot])} disabled={regenerating[regenKey]} className="px-2.5 py-1.5 rounded-md text-xs font-medium bg-ink-800 text-stone-300 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-50 transition-colors">{regenerating[regenKey] ? '生成中…' : shot.placeholder ? '生成' : '重新生成'}</button>
+                    </div>
+                  </article>
+                );
+              })}
+              {allShotImages.length === 0 && <div className="col-span-full py-12 text-center rounded-xl border border-dashed border-ink-700 text-sm text-stone-500">暂无镜头起始帧。</div>}
+            </div>
+          )}
+
+          {showAddCharacter && (
+            <div className="fixed inset-0 z-50 bg-ink-950/80 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={() => !addingCharacter && setShowAddCharacter(false)}>
+              <form onSubmit={addCharacter} onMouseDown={event => event.stopPropagation()} className="w-full max-w-2xl rounded-xl border border-ink-600 bg-ink-900 shadow-2xl">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-ink-700"><div><h4 className="text-base font-semibold text-stone-100">新增{assetDialog === 'characters' ? '角色' : assetDialog === 'props' ? '道具' : assetDialog === 'scenes' ? '场景' : '镜头起始帧'}</h4><p className="mt-1 text-xs text-stone-500">参考火山引擎设定页：先创建实体，再选择 AI 生成或本地上传素材。</p></div><button type="button" onClick={() => { setShowAddCharacter(false); setAssetDialog(null); }} disabled={addingCharacter} className="w-7 h-7 rounded-md text-stone-500 hover:bg-ink-800 hover:text-stone-200">×</button></div>
+                <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[70vh] overflow-y-auto">
+                  <label className="block"><span className="text-xs font-medium text-stone-300">{assetDialog === 'characters' ? '名称' : assetDialog === 'props' ? '道具名称' : assetDialog === 'scenes' ? '场景名称' : '起始帧名称'} <span className="text-clay-400">*</span></span><input autoFocus required maxLength="80" value={newCharacter.name} onChange={event => setNewCharacter(current => ({ ...current, name: event.target.value }))} placeholder="请输入" className="mt-1.5 w-full rounded-lg border border-ink-600 bg-ink-950 px-3 py-2.5 text-sm text-stone-100 placeholder:text-stone-600 focus:border-brass-500 focus:outline-none" /></label>
+                  {assetDialog === 'characters' && <><label className="block"><span className="text-xs font-medium text-stone-300">性别</span><select value={newCharacter.gender} onChange={event => setNewCharacter(current => ({ ...current, gender: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-ink-600 bg-ink-950 px-3 py-2.5 text-sm text-stone-100 focus:border-brass-500 focus:outline-none"><option value="">请选择</option><option>男</option><option>女</option><option>未知</option></select></label><label className="block"><span className="text-xs font-medium text-stone-300">年龄</span><input value={newCharacter.age} onChange={event => setNewCharacter(current => ({ ...current, age: event.target.value }))} placeholder="例如：28 岁" className="mt-1.5 w-full rounded-lg border border-ink-600 bg-ink-950 px-3 py-2.5 text-sm text-stone-100 placeholder:text-stone-600 focus:border-brass-500 focus:outline-none" /></label><label className="block"><span className="text-xs font-medium text-stone-300">身份 / 关系</span><input maxLength="160" value={newCharacter.identity} onChange={event => setNewCharacter(current => ({ ...current, identity: event.target.value }))} placeholder="例如：刑警队长，主角的姐姐" className="mt-1.5 w-full rounded-lg border border-ink-600 bg-ink-950 px-3 py-2.5 text-sm text-stone-100 placeholder:text-stone-600 focus:border-brass-500 focus:outline-none" /></label></>}
+                  <div className="md:col-span-2"><span className="text-xs font-medium text-stone-300">形象生成方式</span><div className="mt-2 flex flex-wrap gap-2">{[['ai', 'AI 生成'], ['upload', '本地上传']].map(([value, label]) => <label key={value} className={'cursor-pointer rounded-lg border px-3 py-2 text-sm ' + (newCharacter.generationMode === value ? 'border-brass-500 bg-brass-500/10 text-brass-400' : 'border-ink-600 text-stone-400')}><input type="radio" className="sr-only" checked={newCharacter.generationMode === value} onChange={() => setNewCharacter(current => ({ ...current, generationMode: value }))} />{label}</label>)}</div></div>
+                  {newCharacter.generationMode === 'ai' && <label className="block md:col-span-2"><span className="text-xs font-medium text-stone-300">提示词</span><textarea maxLength="3000" value={newCharacter.prompt} onChange={event => setNewCharacter(current => ({ ...current, prompt: event.target.value }))} placeholder="描述希望生成的视觉效果；为空时将使用下方描述生成提示词。" className="mt-1.5 min-h-24 w-full rounded-lg border border-ink-600 bg-ink-950 px-3 py-2.5 text-sm leading-relaxed text-stone-100 placeholder:text-stone-600 focus:border-brass-500 focus:outline-none resize-y" /></label>}
+                  {newCharacter.generationMode === 'upload' && <label className="block md:col-span-2"><span className="text-xs font-medium text-stone-300">上传图片 <span className="text-clay-400">*</span></span><input required type="file" accept="image/png,image/jpeg,image/webp" onChange={event => setNewEntityFile(event.target.files?.[0] || null)} className="mt-1.5 block w-full rounded-lg border border-dashed border-ink-600 bg-ink-950 px-3 py-2 text-sm text-stone-400 file:mr-3 file:rounded-md file:border-0 file:bg-ink-700 file:px-3 file:py-1.5 file:text-sm file:text-stone-200 hover:file:bg-ink-600" /><span className="mt-1 block text-xs text-stone-600">支持 JPG、PNG、WebP，上传后会成为首张参考图。</span></label>}
+                  {(assetDialog === 'scenes' || assetDialog === 'shots') && <div className="md:col-span-2 rounded-lg border border-ink-700 bg-ink-950/60 p-3.5"><div><span className="text-xs font-medium text-stone-300">关联素材（可选）</span><p className="mt-1 text-xs text-stone-600">选中的已完成素材会作为图片生成参考，帮助保持角色与道具的一致性。</p></div>
+                    {assetDialog === 'shots' && <label className="mt-3 block"><span className="text-xs text-stone-400">关联场景</span><select value={newCharacter.sceneId} onChange={event => setNewCharacter(current => ({ ...current, sceneId: event.target.value }))} className="mt-1.5 w-full rounded-md border border-ink-600 bg-ink-900 px-2.5 py-2 text-sm text-stone-200 focus:border-brass-500 focus:outline-none"><option value="">不指定场景</option>{(storyboardData?.scenes || []).map(scene => <option key={scene.scene_id} value={scene.scene_id}>{scene.name || scene.scene_id}</option>)}</select></label>}
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3"><div><span className="text-xs text-stone-400">角色</span><div className="mt-1.5 flex flex-wrap gap-1.5">{(storyboardData?.characters || []).length ? (storyboardData.characters || []).map(character => <label key={character.ref_id} className={'cursor-pointer rounded-md border px-2 py-1 text-xs transition-colors ' + (newCharacter.characterRefs.includes(character.ref_id) ? 'border-brass-500 bg-brass-500/10 text-brass-400' : 'border-ink-600 text-stone-400 hover:text-stone-200')}><input type="checkbox" className="sr-only" checked={newCharacter.characterRefs.includes(character.ref_id)} onChange={() => toggleEntityReference('characterRefs', character.ref_id)} />{character.name || character.ref_id}</label>) : <span className="text-xs text-stone-600">暂无可选角色</span>}</div></div><div><span className="text-xs text-stone-400">道具</span><div className="mt-1.5 flex flex-wrap gap-1.5">{(storyboardData?.props || []).length ? (storyboardData.props || []).map(prop => <label key={prop.ref_id} className={'cursor-pointer rounded-md border px-2 py-1 text-xs transition-colors ' + (newCharacter.propRefs.includes(prop.ref_id) ? 'border-brass-500 bg-brass-500/10 text-brass-400' : 'border-ink-600 text-stone-400 hover:text-stone-200')}><input type="checkbox" className="sr-only" checked={newCharacter.propRefs.includes(prop.ref_id)} onChange={() => toggleEntityReference('propRefs', prop.ref_id)} />{prop.name || prop.ref_id}</label>) : <span className="text-xs text-stone-600">暂无可选道具</span>}</div></div></div>
+                  </div>}
+                  <label className="block md:col-span-2"><span className="text-xs font-medium text-stone-300">{assetDialog === 'characters' ? '角色描述' : assetDialog === 'shots' ? '画面描述' : '设定描述'} <span className="text-clay-400">*</span></span><textarea required maxLength="2000" value={newCharacter.appearance} onChange={event => setNewCharacter(current => ({ ...current, appearance: event.target.value }))} placeholder={assetDialog === 'characters' ? '描述外貌、服装、性格与标志性特征…' : assetDialog === 'shots' ? '描述构图、景别、人物动作、空间与光影…' : '描述用途、外观、材质、空间、氛围等…'} className="mt-1.5 min-h-32 w-full rounded-lg border border-ink-600 bg-ink-950 px-3 py-2.5 text-sm leading-relaxed text-stone-100 placeholder:text-stone-600 focus:border-brass-500 focus:outline-none resize-y" /></label>
+                  {assetDialog === 'characters' && <div className="md:col-span-2 flex items-center gap-3 rounded-lg bg-ink-950/70 px-3 py-2.5 text-xs text-stone-500"><span>音色</span><select className="bg-transparent text-stone-300 focus:outline-none"><option>暂不配置</option><option>成熟男声</option><option>温柔女声</option></select><span className="ml-auto">模型：Doubao-Seedream-5.0-Pro · 3:4</span></div>}
+                </div>
+                <div className="flex justify-end gap-2 px-5 py-4 border-t border-ink-700"><button type="button" onClick={() => { setShowAddCharacter(false); setAssetDialog(null); }} disabled={addingCharacter} className="px-3 py-2 text-sm text-stone-400 hover:text-stone-200 disabled:opacity-50">取消</button><button type="submit" disabled={addingCharacter || !newCharacter.name.trim() || !newCharacter.appearance.trim()} className="px-4 py-2 rounded-lg bg-brass-500 text-sm font-medium text-ink-950 hover:bg-brass-400 disabled:opacity-50 disabled:cursor-not-allowed">{addingCharacter ? '添加中…' : '确认添加'}</button></div>
+              </form>
             </div>
           )}
         </div>
