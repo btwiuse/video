@@ -36,16 +36,16 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
   useEffect(() => { setVisualAssetsCompleted(false); }, [pipeline.pipeline_id]);
 
   const getCurrentStep = () => {
-    if (pipeline.status === 'done') return 5;
-    if (pipeline.status === 'running') return Math.max(0, (pipeline.step || 1) - 1);
+    if (pipeline.status === 'done') return WORKFLOW_STEP_COUNT;
+    if (pipeline.status === 'running') return Math.max(0, workflowStep(pipeline.step || 1) - 1);
     if (pipeline.status?.startsWith('step_')) {
-      return parseInt(pipeline.status.split('_')[1]);
+      return workflowStep(parseInt(pipeline.status.split('_')[1]));
     }
-    if (pipeline.status === 'failed' || pipeline.status === 'canceled') return Math.max(0, (pipeline.step || 1) - 1);
-    return pipeline.step || 0;
+    if (pipeline.status === 'failed' || pipeline.status === 'canceled') return Math.max(0, workflowStep(pipeline.step || 1) - 1);
+    return workflowStep(pipeline.step);
   };
   const pipelineCurrentStep = getCurrentStep();
-  // Step 2 is complete in the UI only when all four asset categories report
+  // Step 2 is complete in the UI only when all reusable asset categories report
   // that their totals have been completed. This supports hand-generated and
   // uploaded assets before the backend status has refreshed.
   const currentStep = pipelineCurrentStep === 1 && visualAssetsCompleted
@@ -56,7 +56,7 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
   const pid = pipeline.pipeline_id;
   // Same availability check as StepTabs: a step is available if completed or isNext
   const stepAvailable = (n) => {
-    if (pipeline.status === 'done') return n <= 5;
+    if (pipeline.status === 'done') return n <= WORKFLOW_STEP_COUNT;
     // Step 3 may only be entered when every visual-asset category is complete.
     // This also handles adding a new, still-empty asset after Step 2 was done.
     if (n === 3 && !visualAssetsCompleted) return false;
@@ -65,12 +65,12 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
 
   // Step tab routing via hash
   const getDefaultStep = () => {
-    if (pipeline.status === 'done') return 5;
-    return Math.min(currentStep + 1, 5);
+    if (pipeline.status === 'done') return WORKFLOW_STEP_COUNT;
+    return Math.min(currentStep + 1, WORKFLOW_STEP_COUNT);
   };
   const getStepFromHash = () => {
     const m = window.location.hash.match(/\/step\/(\d)/);
-    if (m) { const s = parseInt(m[1]); if (s >= 1 && s <= 5) return s; }
+    if (m) { const s = parseInt(m[1]); if (s >= 1 && s <= WORKFLOW_STEP_COUNT) return s; }
     return getDefaultStep();
   };
   const [activeStep, setActiveStep] = useState(getDefaultStep);
@@ -105,8 +105,8 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
   const runAll = async () => {
     setActionLoading(true);
     try {
-      const startStep = currentStep === 5 ? 1 : currentStep + 1;
-      for (let s = startStep; s <= 5; s++) {
+      const startStep = currentStep === WORKFLOW_STEP_COUNT ? 1 : currentStep + 1;
+      for (let s = startStep; s <= WORKFLOW_STEP_COUNT; s++) {
         navigateToStep(s);
         const body = s === 1 ? { max_shots_per_scene: maxShotsPerScene, total_shots: totalShots, total_duration: totalDuration } : {};
         await api(`/pipelines/${pid}/steps/${s}`, { method: 'POST', body: JSON.stringify(body) });
@@ -130,8 +130,8 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
             }
             return; // 停止全部流程
           }
-          const currentStep = status?.startsWith('step_') ? parseInt(status.split('_')[1]) : (status === 'done' ? 5 : 0);
-          if (currentStep > s || status === 'done') break;
+          const completedStep = status?.startsWith('step_') ? workflowStep(parseInt(status.split('_')[1])) : (status === 'done' ? WORKFLOW_STEP_COUNT : 0);
+          if (completedStep >= s || status === 'done') break;
         }
       }
       onRefresh();
@@ -171,7 +171,7 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
 
   const handleNextStep = () => {
     const next = activeStep + 1;
-    if (next > 5) return;
+    if (next > WORKFLOW_STEP_COUNT) return;
     if (actionLoading || pipeline.status === 'running') {
       toast('当前步骤正在运行中，请等待完成后进入下一步');
       return;
@@ -200,7 +200,7 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
           )}
           <div className="flex items-center gap-3 mt-2">
             <StatusBadge status={pipeline.status} />
-            <span className="text-stone-400 text-sm">{pipeline.status === 'running' ? `运行中 - 步骤 ${pipeline.step}/5` : currentStep > 0 ? `已完成 ${currentStep}/5` : '未开始'}</span>
+            <span className="text-stone-400 text-sm">{pipeline.status === 'running' ? `运行中 - 步骤 ${workflowStep(pipeline.step)}/${WORKFLOW_STEP_COUNT}` : currentStep > 0 ? `已完成 ${currentStep}/${WORKFLOW_STEP_COUNT}` : '未开始'}</span>
             {pipeline.duration && <span className="text-stone-500 text-xs">运行时长: {formatDuration(pipeline.duration)}</span>}
           </div>
         </div>
@@ -226,11 +226,11 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
   totalDuration={totalDuration} setTotalDuration={setTotalDuration} />
 
       <div className="flex justify-end">
-        {activeStep >= 5 ? (
+        {activeStep >= WORKFLOW_STEP_COUNT && pipeline.status === 'done' ? (
           <button onClick={handleDownloadFinalVideo} className="nav-btn text-xs px-3 py-1.5 bg-brass-500 hover:bg-brass-400 text-ink-950 rounded transition-colors font-medium">
             ↓ 下载最终视频
           </button>
-        ) : (
+        ) : activeStep < WORKFLOW_STEP_COUNT ? (
           <button onClick={handleNextStep}
             className={`nav-btn text-xs px-2.5 py-1.5 rounded transition-colors font-medium ${
               !stepAvailable(activeStep + 1) || actionLoading || pipeline.status === 'running'
@@ -239,7 +239,7 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
             }`}>
             下一步 →
           </button>
-        )}
+        ) : null}
       </div>
       <LogViewer pipelineId={pid} />
       <ArtifactList pipelineId={pid} />

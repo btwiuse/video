@@ -205,14 +205,13 @@ func detectStatus(id string) PipelineStatus {
 		"storyboard.json",
 		"manifest.json",
 		"clip_manifest.json",
-		"audio_manifest.json",
 	}
 	for i, f := range steps {
 		if !fileExists(filepath.Join(dir, f)) {
 			return PipelineStatus(fmt.Sprintf("step_%d", i+1))
 		}
 	}
-	return StatusStep5
+	return StatusStep4
 }
 
 func hasImageMatching(pattern string) bool {
@@ -265,12 +264,6 @@ func visualAssetsComplete(id string) bool {
 	for _, scene := range entities("scenes") {
 		sceneID := value(scene, "scene_id")
 		if sceneID == "" || !hasImageMatching(filepath.Join(dir, "scenes", sceneID+"_*")) {
-			return false
-		}
-	}
-	for _, shot := range entities("shots") {
-		shotID := value(shot, "full_shot_id")
-		if shotID == "" || !hasImageMatching(filepath.Join(dir, "shots", shotID, shotID+"_startframe.*")) {
 			return false
 		}
 	}
@@ -359,10 +352,10 @@ func runPythonAsync(p *Pipeline, args []string, stepNum int, maxShotsPerScene, t
 			if stepNum == 0 {
 				p.Status = detectStatus(p.ID)
 				if p.Status == StatusDone {
-					p.Step = 5
+					p.Step = 4
 				}
 			} else {
-				if stepNum >= 5 {
+				if stepNum >= 4 {
 					p.Status = StatusDone
 				} else {
 					p.Status = PipelineStatus(fmt.Sprintf("step_%d", stepNum))
@@ -507,8 +500,8 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 	}
 	id := parts[1]
 	var step int
-	if _, err := fmt.Sscanf(parts[3], "%d", &step); err != nil || step < 1 || step > 5 {
-		http.Error(w, "step must be 1-5", http.StatusBadRequest)
+	if _, err := fmt.Sscanf(parts[3], "%d", &step); err != nil || step < 1 || step > 4 {
+		http.Error(w, "step must be 1-4", http.StatusBadRequest)
 		return
 	}
 
@@ -534,8 +527,7 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 	required := map[int][]string{}
 	required[2] = []string{"storyboard.json"}
 	required[3] = []string{"storyboard.json", "manifest.json"}
-	required[4] = []string{"storyboard.json", "clip_manifest.json"}
-	required[5] = []string{"clip_manifest.json", "audio_manifest.json"}
+	required[4] = []string{"clip_manifest.json"}
 	if deps, ok := required[step]; ok {
 		for _, f := range deps {
 			if !fileExists(filepath.Join(dir, f)) {
@@ -552,7 +544,7 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 
 	sp := filepath.Join(dir, p.ScriptFile)
 	args := []string{"main.py"}
-	stepNames := []string{"", "storyboard", "assets", "videos", "audio", "compose"}
+	stepNames := []string{"", "storyboard", "assets", "videos", "compose"}
 	switch step {
 	case 1:
 		args = append(args, "storyboard", sp)
@@ -561,9 +553,9 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 	case 3:
 		args = append(args, "videos", filepath.Join(outputDir(id), "storyboard.json"), filepath.Join(outputDir(id), "manifest.json"))
 	case 4:
-		args = append(args, "audio", filepath.Join(outputDir(id), "storyboard.json"), filepath.Join(outputDir(id), "clip_manifest.json"))
-	case 5:
-		args = append(args, "compose", filepath.Join(outputDir(id), "clip_manifest.json"), filepath.Join(outputDir(id), "audio_manifest.json"))
+		// Audio generation is intentionally optional. Compose directly from the
+		// video manifest so the product workflow stays four steps long.
+		args = append(args, "compose", filepath.Join(outputDir(id), "clip_manifest.json"))
 	}
 
 	vlog("pipeline %s step %d (%s) starting", id, step, stepNames[step])
@@ -573,8 +565,7 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 		1: "storyboard.json",
 		2: "manifest.json",
 		3: "clip_manifest.json",
-		4: "audio_manifest.json",
-		5: "final.mp4",
+		4: "final.mp4",
 	}
 	if f := stepOutputs[step]; f != "" {
 		fp := filepath.Join(dir, f)
@@ -609,13 +600,6 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 			os.Remove(m)
 		}
 		vlog("pipeline %s cleared stale video artifacts", id)
-	case 4:
-		for _, sub := range []string{"audio", "sfx", "bgm"} {
-			if d := filepath.Join(dir, sub); fileExists(d) {
-				os.RemoveAll(d)
-				vlog("pipeline %s cleared stale audio artifacts: %s/", id, sub)
-			}
-		}
 	}
 
 	// Parse optional step params from request body
@@ -1465,6 +1449,44 @@ func handleRegenerateAsset(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func handleGenerateShotVideo(w http.ResponseWriter, r *http.Request) {
+	// POST /pipelines/{id}/videos/{shot_id}/generate
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 5 || parts[0] != "pipelines" || parts[2] != "videos" || parts[4] != "generate" {
+		http.Error(w, "invalid video generation path", http.StatusBadRequest)
+		return
+	}
+	id, shotID := parts[1], parts[3]
+	if shotID != filepath.Base(shotID) || shotID == "." || shotID == "" {
+		http.Error(w, "invalid shot id", http.StatusBadRequest)
+		return
+	}
+
+	mu.RLock()
+	p, exists := pipelines[id]
+	mu.RUnlock()
+	if !exists {
+		http.Error(w, "pipeline not found", http.StatusNotFound)
+		return
+	}
+	dir := outputDir(id)
+	for _, required := range []string{"storyboard.json", "manifest.json"} {
+		if !fileExists(filepath.Join(dir, required)) {
+			http.Error(w, fmt.Sprintf("missing dependency: %s", required), http.StatusConflict)
+			return
+		}
+	}
+
+	args := []string{
+		"main.py", "videos", filepath.Join(dir, "storyboard.json"), filepath.Join(dir, "manifest.json"),
+		"--shot", shotID,
+	}
+	runPythonAsync(p, args, 3, 0, 0, 0)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]any{"status": "running", "shot_id": shotID})
+}
+
 func serveHome(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -1688,6 +1710,10 @@ func main() {
 		}
 		if strings.HasSuffix(path, "/reindex") && r.Method == http.MethodPost {
 			handleReindex(w, r)
+			return
+		}
+		if strings.Contains(path, "/videos/") && strings.HasSuffix(path, "/generate") && r.Method == http.MethodPost {
+			handleGenerateShotVideo(w, r)
 			return
 		}
 		if strings.HasSuffix(path, "/cancel") && r.Method == http.MethodPost {

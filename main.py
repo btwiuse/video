@@ -113,38 +113,19 @@ def run(script_file, output, skip_step):
     else:
         print("[SKIP] Step 3")
 
-    # Step 4: Audio
-    audio_path = out_dir / "audio_manifest.json"
+    # Step 4: Post-production (audio generation is an optional standalone command)
     if "4" not in skip_step:
         print()
         print("=" * 60)
-        print("STEP 4: Audio Pipeline")
-        print("=" * 60)
-        from src.step4_audio import generate_audio
-        audio_manifest = asyncio.run(
-            generate_audio(str(storyboard_path), str(clips_path))
-        )
-        dialogue_count = len(audio_manifest.get("dialogue", []))
-        ambience_count = len(audio_manifest.get("ambience", []))
-        print(f"  Generated: {dialogue_count} dialogue lines, "
-              f"{ambience_count} ambience tracks")
-    else:
-        print("[SKIP] Step 4")
-
-    # Step 5: Compositing
-    if "5" not in skip_step:
-        print()
-        print("=" * 60)
-        print("STEP 5: Post-Production Compositing")
+        print("STEP 4: Post-Production Compositing")
         print("=" * 60)
         from src.step5_postprocess import compose_film
         final_path = compose_film(
             str(clips_path),
-            str(audio_path),
         )
         print(f"\nFinal film: {final_path}")
     else:
-        print("[SKIP] Step 5")
+        print("[SKIP] Step 4")
 
     print()
     print("Pipeline complete.")
@@ -213,10 +194,15 @@ def assets(storyboard_path, regenerate_char, regenerate_char_image, regenerate_s
 @cli.command()
 @click.argument("storyboard_path", type=click.Path(exists=True))
 @click.argument("assets_path", type=click.Path(exists=True))
-def videos(storyboard_path, assets_path):
-    """Generate video clips only (Step 3)."""
+@click.option("--shot", "shot_ids", multiple=True, help="Generate or regenerate only these full_shot_id values")
+def videos(storyboard_path, assets_path, shot_ids):
+    """Generate video clips, or regenerate selected shots only (Step 3)."""
     from src.step3_video_generation import generate_videos
-    clip_manifest = asyncio.run(generate_videos(storyboard_path, assets_path))
+    clip_manifest = asyncio.run(generate_videos(
+        storyboard_path, assets_path,
+        shot_ids=list(shot_ids) or None,
+        force=bool(shot_ids),
+    ))
     done = sum(1 for c in clip_manifest if c.get("status") == "done")
     total = len(clip_manifest)
     print(f"Videos: {done}/{total} clips generated.")
@@ -262,8 +248,7 @@ def status():
         "Step 1 (Storyboard)": out_dir / "storyboard.json",
         "Step 2 (Assets)": out_dir / "manifest.json",
         "Step 3 (Videos)": out_dir / "clip_manifest.json",
-        "Step 4 (Audio)": out_dir / "audio_manifest.json",
-        "Step 5 (Final)": out_dir / "final.mp4",
+        "Step 4 (Final)": out_dir / "final.mp4",
     }
 
     for step, path in steps.items():

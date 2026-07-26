@@ -491,13 +491,21 @@ class VideoPipeline:
         self.max_images = config.TOKENVOKE_MAX_IMAGES
 
     async def generate_all_shots(
-        self, storyboard: dict, asset_manifest: dict
+        self, storyboard: dict, asset_manifest: dict,
+        shot_ids: list[str] | None = None, force: bool = False,
     ) -> list[dict]:
-        """Generate video clips for all shots."""
+        """Generate all clips, or safely regenerate only selected shots."""
         logger.info("Video provider: %s", self.provider.name)
 
         shots = storyboard.get("shots", [])
         timeline = self._build_timeline(shots)
+        selected_ids = set(shot_ids or [])
+        existing_manifest_path = ensure_output_dir() / "clip_manifest.json"
+        existing_manifest = load_json(str(existing_manifest_path)) if existing_manifest_path.is_file() else []
+        existing_by_id = {
+            entry.get("shot_id"): entry for entry in existing_manifest
+            if entry.get("shot_id")
+        }
         results = []
 
         for i, shot in enumerate(shots):
@@ -506,14 +514,34 @@ class VideoPipeline:
 
             logger.info("Shot %s (%d/%d) [%s]", shot_id, i+1, len(shots), transition)
 
-            # Read deps.json for character/scene references
-            deps = load_json(str(ensure_output_dir("shots", shot_id) / "deps.json"))
-            char_ref_ids = deps.get("character_refs", [])
-            scene_id = deps.get("scene_id", self._get_scene_id(shot))
-            prop_ref_ids = deps.get("prop_refs", [])
+            # A single-card regeneration must preserve every other entry in
+            # clip_manifest.json and never ask the provider to recreate it.
+            if selected_ids and shot_id not in selected_ids:
+                previous = existing_by_id.get(shot_id, {})
+                result = {
+                    "shot_id": shot_id,
+                    "path": previous.get("file", ""),
+                    "status": previous.get("status", "pending"),
+                    "url": "",
+                    "error": previous.get("error", ""),
+                }
+                result["start_sec"] = timeline[i]["start_sec"]
+                result["end_sec"] = timeline[i]["end_sec"]
+                result["transition_type"] = transition
+                results.append(result)
+                continue
 
-            # Read full .md as the complete prompt
-            prompt = self._read_shot_md(shot_id)
+            # Hand-added storyboard cards may not have a dependency file yet.
+            # Their references live directly on the editable storyboard entry.
+            deps_path = ensure_output_dir("shots", shot_id) / "deps.json"
+            deps = load_json(str(deps_path)) if deps_path.is_file() else {}
+            char_ref_ids = deps.get("character_refs", shot.get("character_refs", []))
+            scene_id = deps.get("scene_id", shot.get("scene_id", self._get_scene_id(shot)))
+            prop_ref_ids = deps.get("prop_refs", shot.get("prop_refs", []))
+
+            # Keep Step 1's rich .md prompt by default.  When a user edits a
+            # storyboard card in the web UI, its JSON fields become canonical.
+            prompt = assemble_video_prompt(shot) if shot.get("user_edited") else self._read_shot_md(shot_id)
             if not prompt:
                 prompt = assemble_video_prompt(shot)
 
@@ -524,7 +552,7 @@ class VideoPipeline:
 
             result = await self._generate_single(
                 shot_id, prompt, start_frame, ref_images,
-                shot.get("duration_sec", 5),
+                shot.get("duration_sec", 5), force=force,
             )
             if result.get("status") != "done":
                 logger.warning("  %s generation failed: %s", shot_id, result.get("error", "unknown"))
@@ -554,10 +582,12 @@ class VideoPipeline:
     # ========================================================================
 
     async def _generate_single(
-        self, shot_id, prompt, start_frame, ref_images, duration,
+        self, shot_id, prompt, start_frame, ref_images, duration, force: bool = False,
     ) -> dict:
         import os as _os
         output_path = str(ensure_output_dir("shots", shot_id) / f"{shot_id}.mp4")
+        if force and _os.path.isfile(output_path):
+            _os.remove(output_path)
         if _os.path.isfile(output_path):
             return {"shot_id": shot_id, "path": output_path, "status": "done", "url": "", "error": ""}
         r = await self.provider.generate(
@@ -718,10 +748,11 @@ class VideoPipeline:
 
 async def generate_videos(
     storyboard_path: str, manifest_path: str, provider_name: str | None = None,
+    shot_ids: list[str] | None = None, force: bool = False,
 ) -> list[dict]:
     """Convenience: storyboard JSON + asset manifest -> clip manifest."""
     storyboard = load_json(storyboard_path)
     manifest = load_json(manifest_path)
     provider = create_video_provider(provider_name)
     pipeline = VideoPipeline(provider)
-    return await pipeline.generate_all_shots(storyboard, manifest)
+    return await pipeline.generate_all_shots(storyboard, manifest, shot_ids=shot_ids, force=force)

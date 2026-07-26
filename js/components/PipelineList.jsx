@@ -48,9 +48,9 @@ function PipelineList({ onSelect, onCreateNew }) {
                 <span className="text-stone-100 text-sm font-medium truncate" title={p.name}>{p.name || p.pipeline_id.slice(-8)}</span>
                 <StatusBadge status={p.status} />
               </div>
-              <div className="text-stone-400 text-xs">步骤 {p.step}/5</div>
+              <div className="text-stone-400 text-xs">步骤 {workflowStep(p.step)}/{WORKFLOW_STEP_COUNT}</div>
               <div className="mt-3 w-full bg-ink-700 rounded-full h-1 overflow-hidden">
-                <div className="bg-brass-500 h-full rounded-full transition-all duration-500" style={{ width: `${(p.step / 5) * 100}%` }} />
+                <div className="bg-brass-500 h-full rounded-full transition-all duration-500" style={{ width: `${(workflowStep(p.step) / WORKFLOW_STEP_COUNT) * 100}%` }} />
               </div>
               <div className="mt-3 text-xs text-stone-500">{new Date(p.updated_at).toLocaleString()}</div>
               {p.duration && <div className="mt-0.5 text-xs text-stone-500">运行时长: {formatDuration(p.duration)}</div>}
@@ -87,7 +87,7 @@ function PipelineList({ onSelect, onCreateNew }) {
             className="grid grid-cols-12 gap-4 p-3 border-t border-ink-700 cursor-pointer hover:bg-ink-800/50 transition-colors">
             <div className="col-span-4 text-stone-100 text-sm font-medium truncate" title={p.name}>{p.name || p.pipeline_id.slice(-8)}</div>
             <div className="col-span-2"><StatusBadge status={p.status} /></div>
-            <div className="col-span-1 text-stone-400 text-xs">步骤 {p.step}/5</div>
+            <div className="col-span-1 text-stone-400 text-xs">步骤 {workflowStep(p.step)}/{WORKFLOW_STEP_COUNT}</div>
             <div className="col-span-3 text-stone-400 text-xs">{new Date(p.created_at).toLocaleString()}</div>
             <div className="col-span-2 text-stone-400 text-xs">{formatDuration(p.duration) || '-'}</div>
           </div>

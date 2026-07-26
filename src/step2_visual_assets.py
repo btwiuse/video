@@ -1123,11 +1123,15 @@ class Step2Pipeline:
                 logger.warning("  %s: no start frame prompt, skipping", shot_id)
                 continue
 
-            # A manually-created start frame may not reference any other asset.
-            # Fall back to an empty dependency set for older cards that were
-            # created before the UI began saving deps.json.
+            # Step 3 may create a new shot before a deps.json file exists.
+            # Its selected characters, scene and props live on the storyboard
+            # record, so use those fields as the dependency fallback.
             deps_path = ensure_output_dir("shots", shot_id) / "deps.json"
-            deps = load_json(str(deps_path)) if deps_path.is_file() else {}
+            deps = load_json(str(deps_path)) if deps_path.is_file() else {
+                "character_refs": shot.get("character_refs", []),
+                "scene_id": shot.get("scene_id", ""),
+                "prop_refs": shot.get("prop_refs", []),
+            }
             char_ref_ids = deps.get("character_refs", [])
             scene_ref_id = deps.get("scene_id", "")
             prop_ref_ids = deps.get("prop_refs", [])

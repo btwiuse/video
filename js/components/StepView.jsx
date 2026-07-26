@@ -52,18 +52,47 @@ function AssetToolbar({ onGenerate, onUpload, onDelete, disabled }) {
     <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-lg border border-ink-600/80 bg-ink-950/85 p-1 shadow-lg opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
       <button type="button" title="AI 生成" onClick={onGenerate} disabled={disabled} className="w-7 h-7 rounded-md text-brass-400 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-40">✦</button>
       <button type="button" title="本地上传" onClick={() => uploadRef.current?.click()} disabled={disabled} className="w-7 h-7 rounded-md text-stone-300 hover:bg-ink-700 disabled:opacity-40">⇧</button>
-      <button type="button" title="删除" onClick={onDelete} disabled={disabled} className="w-7 h-7 rounded-md text-clay-400 hover:bg-clay-500 hover:text-white disabled:opacity-40">⌫</button>
+      {onDelete && <button type="button" title="删除" onClick={onDelete} disabled={disabled} className="w-7 h-7 rounded-md text-clay-400 hover:bg-clay-500 hover:text-white disabled:opacity-40">⌫</button>}
       <input ref={uploadRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => { const file = event.target.files?.[0]; if (file) onUpload(file); event.target.value = ''; }} />
     </div>
   );
 }
 
+function StartFramePanel({ shot, frame, video, pipelineId, cacheBust, onOpen, onGenerate, onUpload, generating, generatingVideo, onGenerateVideo }) {
+  const startFrame = frame || { name: shot.startframe_file || `shots/${shot.full_shot_id}/${shot.full_shot_id}_startframe.jpg`, placeholder: true, shot_id: shot.full_shot_id };
+  return <section className="border-t border-ink-700 bg-ink-950/35 px-4 py-4"><div className="mb-3 flex items-center justify-between gap-3"><div><h5 className="text-xs font-semibold text-stone-200">镜头起始帧</h5><p className="mt-1 text-xs text-stone-500">此帧仅服务当前分镜，可用 AI 生成或本地上传。</p></div><button type="button" onClick={() => onGenerate(shot, startFrame)} disabled={generating} className="rounded-md bg-ink-800 px-2.5 py-1.5 text-xs font-medium text-stone-300 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-50">{generating ? '生成中…' : startFrame.placeholder ? '生成起始帧' : '重新生成起始帧'}</button></div><div className="group relative max-w-md overflow-hidden rounded-lg border border-ink-700"><AssetPreview file={startFrame} pipelineId={pipelineId} cacheBust={cacheBust} aspectClass="aspect-video" onOpen={onOpen} label={shot.title || shot.full_shot_id} /><AssetToolbar onGenerate={() => onGenerate(shot, startFrame)} onUpload={file => onUpload(shot, file)} disabled={generating} /></div><div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-ink-700 bg-ink-900/70 px-3 py-2.5"><div className="min-w-0 flex-1"><p className="text-xs font-medium text-stone-200">分镜视频</p><p className="mt-0.5 text-xs text-stone-500">{video ? '该分镜视频已生成，可单独重新生成。' : '使用当前分镜信息与视觉参考生成视频。'}</p></div><button type="button" onClick={() => onGenerateVideo(shot)} disabled={generatingVideo} className="rounded-md bg-brass-500 px-3 py-1.5 text-xs font-semibold text-ink-950 hover:bg-brass-400 disabled:opacity-50">{generatingVideo ? '视频生成中…' : video ? '重新生成分镜视频' : '生成分镜视频'}</button></div></section>;
+}
+
+function StoryboardEditor({ storyboard, onChange, onSave, saving, startFrames, videos, pipelineId, cacheBust, onOpenStartFrame, onGenerateStartFrame, onUploadStartFrame, onGenerateShotVideo, regenerating, generatingVideos }) {
+  const shots = storyboard?.shots || [];
+  const characters = storyboard?.characters || [];
+  const scenes = storyboard?.scenes || [];
+  const props = storyboard?.props || [];
+  const update = (id, patch) => onChange({ ...storyboard, shots: shots.map(shot => shot.full_shot_id === id ? { ...shot, ...patch } : shot) });
+  const toggle = (shot, field, id) => update(shot.full_shot_id, { [field]: (shot[field] || []).includes(id) ? (shot[field] || []).filter(value => value !== id) : [...(shot[field] || []), id] });
+  const nextId = (source = 'SHOT_MANUAL') => { let n = 1; while (shots.some(shot => shot.full_shot_id === `${source}_${String(n).padStart(2, '0')}`)) n++; return `${source}_${String(n).padStart(2, '0')}`; };
+  // Creating a shot is a structural change, so save it immediately. Ordinary
+  // text edits can still be saved in one batch with the explicit save action.
+  const commitStructure = (nextStoryboard, successMessage) => { onChange(nextStoryboard); onSave(nextStoryboard, successMessage); };
+  const add = () => { const id = nextId(); commitStructure({ ...storyboard, shots: [...shots, { full_shot_id: id, title: '新建分镜', description: '', positive_prompt: '', action_description: '', character_refs: [], prop_refs: [], scene_id: '', duration_sec: 5, transition_type: 'B', generation_mode: 'reference' }] }, `已创建新建分镜 ${id}`); };
+  const copy = shot => { const id = nextId('SHOT_COPY'); commitStructure({ ...storyboard, shots: [...shots, { ...shot, full_shot_id: id, title: `${shot.title || shot.full_shot_id}（副本）`, startframe_file: '' }] }, `已复制分镜为 ${id}`); };
+  const remove = shot => { if (window.confirm(`确定删除分镜「${shot.title || shot.full_shot_id}」吗？`)) commitStructure({ ...storyboard, shots: shots.filter(item => item.full_shot_id !== shot.full_shot_id) }, `已删除分镜 ${shot.full_shot_id}`); };
+  return <div className="space-y-4">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink-700 bg-ink-950/45 px-4 py-3"><div><h4 className="text-sm font-semibold text-stone-100">分镜表</h4><p className="mt-1 text-xs text-stone-500">{shots.length} 个分镜 · {shots.reduce((total, shot) => total + Number(shot.duration_sec || 0), 0).toFixed(1)} 秒。编辑后保存，视频生成会使用最新内容。</p></div><div className="flex gap-2"><button type="button" disabled={saving} onClick={add} className="rounded-lg border border-ink-600 bg-ink-800 px-3 py-2 text-sm text-stone-200 hover:border-brass-500 hover:text-brass-400 disabled:opacity-50">+ 添加分镜</button><button type="button" disabled={saving} onClick={() => onSave()} className="rounded-lg bg-brass-500 px-3 py-2 text-sm font-medium text-ink-950 hover:bg-brass-400 disabled:opacity-50">{saving ? '保存中…' : '保存分镜'}</button></div></div>
+    {shots.map((shot, index) => <article key={shot.full_shot_id} className="rounded-xl border border-ink-700 bg-ink-900/80 overflow-hidden"><header className="flex flex-wrap items-center gap-3 border-b border-ink-700 px-4 py-3"><span className="flex h-6 w-6 items-center justify-center rounded bg-brass-500 text-xs font-bold text-ink-950">{index + 1}</span><input value={shot.title || ''} onChange={event => update(shot.full_shot_id, { title: event.target.value })} placeholder="分镜标题" className="min-w-32 flex-1 bg-transparent text-sm font-semibold text-stone-100 outline-none placeholder:text-stone-600"/><span className="font-mono text-xs text-stone-600">{shot.full_shot_id}</span><button type="button" onClick={() => copy(shot)} className="rounded px-2 py-1 text-xs text-stone-400 hover:bg-ink-800 hover:text-stone-100">复制</button><button type="button" onClick={() => remove(shot)} className="rounded px-2 py-1 text-xs text-clay-400 hover:bg-clay-500/15">删除</button></header>
+      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_280px]"><div className="space-y-4"><label className="block"><span className="text-xs font-medium text-stone-300">分镜描述</span><textarea value={shot.description || ''} onChange={event => update(shot.full_shot_id, { description: event.target.value })} placeholder="描述这一段剧情、人物和情绪" className="mt-1.5 min-h-20 w-full rounded-lg border border-ink-600 bg-ink-950 px-3 py-2 text-sm text-stone-100 placeholder:text-stone-600 focus:border-brass-500 focus:outline-none"/></label><label className="block"><span className="text-xs font-medium text-stone-300">视频提示词 / 镜头动作</span><textarea value={shot.positive_prompt || shot.action_description || ''} onChange={event => update(shot.full_shot_id, { positive_prompt: event.target.value, action_description: event.target.value })} placeholder="景别、机位、人物动作、光影和镜头运动…" className="mt-1.5 min-h-32 w-full rounded-lg border border-ink-600 bg-ink-950 px-3 py-2 text-sm leading-relaxed text-stone-100 placeholder:text-stone-600 focus:border-brass-500 focus:outline-none"/></label></div>
+        <aside className="space-y-3 rounded-lg bg-ink-950/60 p-3"><div><span className="text-xs font-medium text-stone-300">视频生成模式</span><div className="mt-2 flex gap-2"><label className={'cursor-pointer rounded-md border px-2 py-1.5 text-xs ' + ((shot.generation_mode || 'reference') === 'reference' ? 'border-brass-500 bg-brass-500/10 text-brass-400' : 'border-ink-600 text-stone-400')}><input type="radio" className="sr-only" checked={(shot.generation_mode || 'reference') === 'reference'} onChange={() => update(shot.full_shot_id, { generation_mode: 'reference' })}/>全能参考</label><label className={'cursor-pointer rounded-md border px-2 py-1.5 text-xs ' + (shot.generation_mode === 'first_last' ? 'border-brass-500 bg-brass-500/10 text-brass-400' : 'border-ink-600 text-stone-400')}><input type="radio" className="sr-only" checked={shot.generation_mode === 'first_last'} onChange={() => update(shot.full_shot_id, { generation_mode: 'first_last' })}/>首尾帧</label></div></div><label className="block"><span className="text-xs text-stone-400">时长（秒）</span><input type="number" min="1" max="15" step="0.5" value={shot.duration_sec || 5} onChange={event => update(shot.full_shot_id, { duration_sec: Number(event.target.value) })} className="mt-1 w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-sm text-stone-100 focus:border-brass-500 focus:outline-none"/></label><label className="block"><span className="text-xs text-stone-400">分镜场景</span><select value={shot.scene_id || ''} onChange={event => update(shot.full_shot_id, { scene_id: event.target.value })} className="mt-1 w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-sm text-stone-100 focus:border-brass-500 focus:outline-none"><option value="">请选择场景</option>{scenes.map(scene => <option key={scene.scene_id} value={scene.scene_id}>{scene.name || scene.scene_id}</option>)}</select></label><div><span className="text-xs text-stone-400">出镜角色</span><div className="mt-1.5 flex flex-wrap gap-1">{characters.map(character => <label key={character.ref_id} className={'cursor-pointer rounded border px-1.5 py-1 text-xs ' + ((shot.character_refs || []).includes(character.ref_id) ? 'border-brass-500 bg-brass-500/10 text-brass-400' : 'border-ink-600 text-stone-500')}><input type="checkbox" className="sr-only" checked={(shot.character_refs || []).includes(character.ref_id)} onChange={() => toggle(shot, 'character_refs', character.ref_id)}/>{character.name || character.ref_id}</label>)}</div></div><div><span className="text-xs text-stone-400">场景道具</span><div className="mt-1.5 flex flex-wrap gap-1">{props.map(prop => <label key={prop.ref_id} className={'cursor-pointer rounded border px-1.5 py-1 text-xs ' + ((shot.prop_refs || []).includes(prop.ref_id) ? 'border-brass-500 bg-brass-500/10 text-brass-400' : 'border-ink-600 text-stone-500')}><input type="checkbox" className="sr-only" checked={(shot.prop_refs || []).includes(prop.ref_id)} onChange={() => toggle(shot, 'prop_refs', prop.ref_id)}/>{prop.name || prop.ref_id}</label>)}</div></div></aside></div>
+      <StartFramePanel shot={shot} frame={startFrames[shot.full_shot_id]} video={videos[shot.full_shot_id]} pipelineId={pipelineId} cacheBust={cacheBust} onOpen={onOpenStartFrame} onGenerate={onGenerateStartFrame} onUpload={onUploadStartFrame} onGenerateVideo={onGenerateShotVideo} generating={regenerating['shot_' + shot.full_shot_id]} generatingVideo={generatingVideos[shot.full_shot_id]} />
+    </article>)}
+  </div>;
+}
+
 function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, onRefresh, visualAssetsCompletionKnown, onVisualAssetsCompletionChange,
                     maxShotsPerScene, setMaxShotsPerScene, totalShots, setTotalShots, totalDuration, setTotalDuration }) {
   const getCS = () => {
-    if (pipeline.status === 'done') return 5;
-    if (pipeline.status === 'failed' || pipeline.status === 'canceled') return Math.max(0, (pipeline.step || 1) - 1);
-    const pipelineStep = pipeline.step || 0;
+    if (pipeline.status === 'done') return WORKFLOW_STEP_COUNT;
+    if (pipeline.status === 'failed' || pipeline.status === 'canceled') return Math.max(0, workflowStep(pipeline.step || 1) - 1);
+    const pipelineStep = workflowStep(pipeline.step);
     if (pipelineStep === 1 && visualAssetsCompletionKnown) return 2;
     if (pipelineStep === 2 && !visualAssetsCompletionKnown) return 1;
     return pipelineStep;
@@ -74,8 +103,10 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
   const canGenerate = (step === currentStep + 1 || step <= currentStep) && !actionLoading;
   const [artifacts, setArtifacts] = useState([]);
   const [artLoading, setArtLoading] = useState(false);
+  const [artifactsLoadedFor, setArtifactsLoadedFor] = useState(null);
   const [previews, setPreviews] = useState({});
   const [regenerating, setRegenerating] = useState({});
+  const [generatingVideos, setGeneratingVideos] = useState({});
   const [cacheBust, setCacheBust] = useState({});
   const [lightboxName, setLightboxName] = useState(null);
   const [promptText, setPromptText] = useState(null);
@@ -89,6 +120,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
   const [scriptText, setScriptText] = useState(null);
   const [editingScript, setEditingScript] = useState(false);
   const [savingScript, setSavingScript] = useState(false);
+  const [savingStoryboard, setSavingStoryboard] = useState(false);
   const [assetTab, setAssetTab] = useState('characters');
   const [assetDialog, setAssetDialog] = useState(null);
   const [showAddCharacter, setShowAddCharacter] = useState(false);
@@ -97,6 +129,9 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
   const [addingCharacter, setAddingCharacter] = useState(false);
   const [assetErrors, setAssetErrors] = useState({});
   const prevPipelineRef = useRef(pipeline);
+  // Step 2 only gates reusable reference assets. Keep its result stable while
+  // editing a Step 3 draft so a new shot never hides the editor.
+  const visualCompletionAtStep3Ref = useRef(null);
   const textareaRef = useRef(null);
 
   useEffect(() => {
@@ -108,7 +143,14 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
   }, [pipeline, pipeline.status]);
 
   useEffect(() => {
-    if (!isStepDone && !isStepRunning && !(step === 2 && canGenerate)) { setArtifacts([]); return; }
+    setArtifactsLoadedFor(null);
+    visualCompletionAtStep3Ref.current = null;
+  }, [pipelineId]);
+
+  useEffect(() => {
+    // Step 3 also needs the Step 2 asset inventory when opened directly from
+    // a URL, otherwise the completion gate cannot be evaluated.
+    if (!isStepDone && !isStepRunning && step !== 2 && step !== 3 && step !== 4) { setArtifacts([]); return; }
     let cancelled = false;
     let t;
     const doFetch = async () => {
@@ -116,6 +158,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
         const res = await api(`/pipelines/${pipelineId}/artifacts`);
         if (res.ok && !cancelled) setArtifacts((await res.json()).files || []);
       } catch (e) { /* ignore */ }
+      finally { if (!cancelled) setArtifactsLoadedFor(pipelineId); }
     };
     doFetch();
     if (isStepRunning) {
@@ -133,7 +176,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
 
   // Load storyboard data for step 2 placeholders (independent of actionLoading)
   useEffect(() => {
-    if (step !== 2 || storyboardData || artLoading) return;
+    if ((step !== 2 && step !== 3 && step !== 4) || storyboardData || artLoading) return;
     let cancelled = false;
     let retries = 0;
     const tryFetch = () => {
@@ -211,25 +254,13 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
   const allSceneImages = [...sceneImages, ...scenePlaceholders];
   const allPropImages = [...propImages, ...propPlaceholders];
   const shotImages = artifacts.filter(f => f.name.startsWith('shots/') && /_startframe\.(jpg|jpeg|png|webp)$/i.test(f.name));
-  const shotPlaceholders = React.useMemo(() => {
-    if (!storyboardData) return [];
-    const shotImageNames = new Set(shotImages.map(f => f.name));
-    const expected = [];
-    for (const s of storyboardData.shots || []) {
-      const sf = s.startframe_file;
-      const name = sf || `shots/${s.full_shot_id}/${s.full_shot_id}_startframe.jpg`;
-      if (!shotImageNames.has(name)) {
-        // Also check if any file with same shot_id prefix exists (extension might differ)
-        const prefix = `shots/${s.full_shot_id}/${s.full_shot_id}_startframe.`;
-        const exists = shotImages.some(f => f.name.startsWith(prefix));
-        if (!exists) expected.push({ name, placeholder: true, shot_id: s.full_shot_id });
-      }
-    }
-    return expected;
-  }, [storyboardData, shotImages]);
-  const allShotImages = [...shotImages, ...shotPlaceholders];
+  const startFramesByShot = useMemo(() => Object.fromEntries((storyboardData?.shots || []).map(shot => {
+    const id = shot.full_shot_id;
+    const frame = shotImages.find(file => file.name.startsWith(`shots/${id}/${id}_startframe.`));
+    return [id, frame || { name: shot.startframe_file || `shots/${id}/${id}_startframe.jpg`, placeholder: true, shot_id: id }];
+  })), [storyboardData, shotImages]);
   const videoFiles = artifacts.filter(f => f.name.startsWith('shots/') && /\.(mp4|webm|mov)$/i.test(f.name));
-  const audioFiles = artifacts.filter(f => (f.name.startsWith('audio/') || f.name.startsWith('sfx/') || f.name.startsWith('bgm/')) && /\.(wav|mp3|m4a|flac)$/i.test(f.name));
+  const videosByShot = useMemo(() => Object.fromEntries(videoFiles.map(file => [file.name.split('/')[1], file])), [videoFiles]);
   const finalVideo = artifacts.find(f => f.name === 'final.mp4');
   const characterCards = useMemo(() => (storyboardData?.characters || []).map(character => {
     const images = ['front', 'profile', 'fullbody'].map(angle => {
@@ -260,16 +291,27 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
       characters: count(characterCards, card => card.images.every(image => !image.placeholder), card => 'char_' + card.ref_id),
       props: count(allPropImages, prop => !prop.placeholder, prop => 'prop_' + (prop.prop_id || prop.name.split('/').pop()?.replace(/_reference\.(jpg|jpeg|png|webp)$/, ''))),
       scenes: count(sceneCards, scene => scene.images.some(image => !image.placeholder), scene => 'scene_' + scene.scene_id),
-      shots: count(allShotImages, shot => !shot.placeholder, shot => 'shot_' + (shot.shot_id || shot.name.split('/')[1])),
     };
-  }, [characterCards, allPropImages, sceneCards, allShotImages, regenerating, assetErrors]);
+  }, [characterCards, allPropImages, sceneCards, regenerating, assetErrors]);
   const visualAssetsCompleted = useMemo(() => Boolean(storyboardData) && Object.values(assetOverview).every(section =>
     section.total === section.completed && section.generating === 0 && section.failed === 0
   ), [storyboardData, assetOverview]);
 
   useEffect(() => {
-    if (step === 2) onVisualAssetsCompletionChange?.(visualAssetsCompleted);
-  }, [step, visualAssetsCompleted, onVisualAssetsCompletionChange]);
+    if (!storyboardData || artifactsLoadedFor !== pipelineId) return;
+    if (step === 2) {
+      // Step 2 is the source of truth for the live asset checklist.
+      visualCompletionAtStep3Ref.current = visualAssetsCompleted;
+      onVisualAssetsCompletionChange?.(visualAssetsCompleted);
+      return;
+    }
+    if ((step === 3 || step === 4) && visualCompletionAtStep3Ref.current === null) {
+      // On a direct URL visit, report the loaded Step 2 state once. Do not
+      // recompute it from Step 3 drafts: start-frame work belongs to Step 3.
+      visualCompletionAtStep3Ref.current = visualAssetsCompleted;
+      onVisualAssetsCompletionChange?.(visualAssetsCompleted);
+    }
+  }, [step, storyboardData, artifactsLoadedFor, pipelineId, visualAssetsCompleted, onVisualAssetsCompletionChange]);
 
   const openLightbox = async (name) => {
     setLightboxName(name);
@@ -429,6 +471,61 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
     }
   };
 
+  const saveStoryboard = async (draft = storyboardData, successMessage = '分镜已保存，视频生成将使用最新内容') => {
+    if (!draft || savingStoryboard) return false;
+    setSavingStoryboard(true);
+    try {
+      const nextStoryboard = { ...draft, shots: (draft.shots || []).map(shot => ({ ...shot, user_edited: true })) };
+      const response = await api(`/pipelines/${pipelineId}/artifacts/storyboard.json`, { method: 'PUT', body: JSON.stringify(nextStoryboard, null, 2) });
+      if (!response.ok) throw new Error(await response.text());
+      setStoryboardData(nextStoryboard);
+      toast(successMessage);
+      onRefresh?.();
+      return true;
+    } catch (error) {
+      toast.error(`保存分镜失败：${error?.message || '请稍后重试'}`);
+      return false;
+    } finally { setSavingStoryboard(false); }
+  };
+
+  const generateStartFrame = async (shot, frame) => {
+    const prompt = (shot.start_frame_prompt || shot.positive_prompt || shot.action_description || shot.description || '').trim();
+    if (!prompt) {
+      toast.error('请先填写分镜描述或视频提示词，再生成起始帧');
+      return;
+    }
+    const draft = { ...storyboardData, shots: (storyboardData?.shots || []).map(item => item.full_shot_id === shot.full_shot_id ? { ...item, start_frame_prompt: prompt } : item) };
+    if (!(await saveStoryboard(draft))) return;
+    await regenerateAsset('shot_' + shot.full_shot_id, { shots: [shot.full_shot_id] }, [frame]);
+  };
+
+  const generateShotVideo = async shot => {
+    const shotId = shot.full_shot_id;
+    if (!shotId || generatingVideos[shotId]) return;
+    setGeneratingVideos(current => ({ ...current, [shotId]: true }));
+    try {
+      const response = await api(`/pipelines/${pipelineId}/videos/${encodeURIComponent(shotId)}/generate`, { method: 'POST' });
+      if (!response.ok) throw new Error(await response.text());
+      toast(`已开始生成分镜视频 ${shotId}`);
+      const checkProgress = async () => {
+        let pipelineStatus = null;
+        try {
+          const statusResponse = await api(`/pipelines/${pipelineId}`);
+          pipelineStatus = statusResponse.ok ? await statusResponse.json() : null;
+          if (pipelineStatus?.status === 'running') { setTimeout(checkProgress, 2000); return; }
+          await refreshArtifacts();
+          onRefresh?.();
+        } finally {
+          if (pipelineStatus?.status !== 'running') setGeneratingVideos(current => { const next = { ...current }; delete next[shotId]; return next; });
+        }
+      };
+      setTimeout(checkProgress, 1200);
+    } catch (error) {
+      setGeneratingVideos(current => { const next = { ...current }; delete next[shotId]; return next; });
+      toast.error(`生成分镜视频失败：${error?.message || '请稍后重试'}`);
+    }
+  };
+
   return (
     <div className="bg-ink-800/30 border border-ink-700 rounded p-6 mb-6">
       <div className="flex items-center justify-between mb-6">
@@ -437,7 +534,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
             步骤 {step}: {STEP_NAMES[step]}
           </h3>
           <p className="text-xs text-stone-500 mt-1">
-            {isStepDone ? '已完成' : isStepRunning ? '正在生成...' : canGenerate ? '准备就绪' : '前置步骤尚未完成'}
+            {isStepDone ? '已完成' : isStepRunning ? (step === 4 ? '正在合成最终影片...' : '正在生成...') : canGenerate ? '准备就绪' : '前置步骤尚未完成'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -460,7 +557,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
                   : 'bg-ink-700 text-stone-500 cursor-not-allowed'
             }`}
           >
-            {isStepRunning ? '⏳ 生成中...' : isStepDone ? '重新生成' : 'Generate'}
+            {isStepRunning ? (step === 4 ? '⏳ 合成中...' : '⏳ 生成中...') : isStepDone ? (step === 4 ? '重新合成' : step === 3 ? '生成全部分镜' : '重新生成') : (step === 4 ? '开始合成' : step === 3 ? '生成全部分镜' : '开始生成')}
           </button>
         </div>
       </div>
@@ -554,7 +651,6 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
                   ['characters', '角色肖像', characterCards.length],
                   ['props', '道具', allPropImages.length],
                   ['scenes', '场景', sceneCards.length],
-                  ['shots', '镜头起始帧', allShotImages.length],
                 ].map(([key, label, count]) => (
                   <button key={key} type="button" role="tab" aria-selected={assetTab === key} onClick={() => setAssetTab(key)}
                     className={'px-3 py-2 text-sm rounded-lg transition-colors ' + (assetTab === key ? 'bg-brass-500 text-ink-950 font-semibold shadow-sm' : 'text-stone-400 hover:text-stone-100 hover:bg-ink-800')}>
@@ -564,7 +660,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
               </div>
               <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
                 {[
-                  [assetTab === 'characters' ? '角色总计' : assetTab === 'props' ? '道具总计' : assetTab === 'scenes' ? '场景总计' : '起始帧总计', assetOverview[assetTab].total, 'text-stone-100'],
+                  [assetTab === 'characters' ? '角色总计' : assetTab === 'props' ? '道具总计' : '场景总计', assetOverview[assetTab].total, 'text-stone-100'],
                   ['已完成', assetOverview[assetTab].completed, 'text-leaf-400'],
                   ['生成中', assetOverview[assetTab].generating, 'text-brass-400'],
                   ['失败', assetOverview[assetTab].failed, 'text-clay-400'],
@@ -573,7 +669,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
                 ))}
                 <div className="flex-1" />
                 <button type="button" onClick={() => { setAssetDialog(assetTab); setNewEntityFile(null); setNewCharacter({ name: '', identity: '', appearance: '', prompt: '', gender: '', age: '', generationMode: 'ai', characterRefs: [], propRefs: [], sceneId: '' }); setShowAddCharacter(true); }} disabled={pipeline.status === 'running'}
-                  className="px-3.5 py-2 rounded-lg text-sm font-medium bg-ink-800 border border-ink-600 text-stone-200 hover:border-brass-500 hover:text-brass-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">+ 添加{assetTab === 'characters' ? '角色' : assetTab === 'props' ? '道具' : assetTab === 'scenes' ? '场景' : '起始帧'}</button>
+                  className="px-3.5 py-2 rounded-lg text-sm font-medium bg-ink-800 border border-ink-600 text-stone-200 hover:border-brass-500 hover:text-brass-400 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">+ 添加{assetTab === 'characters' ? '角色' : assetTab === 'props' ? '道具' : '场景'}</button>
               </div>
             </div>
           </div>
@@ -653,24 +749,6 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
             </div>
           )}
 
-          {assetTab === 'shots' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {allShotImages.map(shot => {
-                const shotId = shot.shot_id || shot.name.split('/')[1];
-                const regenKey = 'shot_' + shotId;
-                return (
-                  <article key={shot.name} className="group overflow-hidden rounded-xl border border-ink-700 bg-ink-900/80 hover:border-ink-600 transition-colors">
-                    <div className="relative"><AssetPreview file={shot} pipelineId={pipelineId} cacheBust={cacheBust} aspectClass="aspect-video" onOpen={openLightbox} label={shotId} /><AssetToolbar onGenerate={() => regenerateAsset(regenKey, { shots: [shotId] }, [shot])} onUpload={file => uploadAsset('shots', shotId, file)} onDelete={() => deleteEntity('shots', shotId)} disabled={regenerating[regenKey]} /></div>
-                    <div className="p-3.5 flex items-center gap-3"><div className="min-w-0 flex-1"><h4 className="text-sm font-semibold text-stone-100 truncate">{shotId}</h4><p className="mt-1 text-xs text-stone-500">{shot.placeholder ? '等待生成起始帧' : '起始帧已完成'}</p></div>
-                      <button type="button" onClick={() => regenerateAsset(regenKey, { shots: [shotId] }, [shot])} disabled={regenerating[regenKey]} className="px-2.5 py-1.5 rounded-md text-xs font-medium bg-ink-800 text-stone-300 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-50 transition-colors">{regenerating[regenKey] ? '生成中…' : shot.placeholder ? '生成' : '重新生成'}</button>
-                    </div>
-                  </article>
-                );
-              })}
-              {allShotImages.length === 0 && <div className="col-span-full py-12 text-center rounded-xl border border-dashed border-ink-700 text-sm text-stone-500">暂无镜头起始帧。</div>}
-            </div>
-          )}
-
           {showAddCharacter && (
             <div className="fixed inset-0 z-50 bg-ink-950/80 backdrop-blur-sm flex items-center justify-center p-4" onMouseDown={() => !addingCharacter && setShowAddCharacter(false)}>
               <form onSubmit={addCharacter} onMouseDown={event => event.stopPropagation()} className="w-full max-w-2xl rounded-xl border border-ink-600 bg-ink-900 shadow-2xl">
@@ -695,8 +773,12 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
         </div>
       )}
 
-      {step === 3 && (isStepDone || isStepRunning) && (
-        <div>
+      {step === 3 && (storyboardData || isStepDone || isStepRunning || canGenerate) && (
+        <div className="space-y-5">
+          {storyboardData && <StoryboardEditor storyboard={storyboardData} onChange={setStoryboardData} onSave={saveStoryboard} saving={savingStoryboard}
+            startFrames={startFramesByShot} videos={videosByShot} pipelineId={pipelineId} cacheBust={cacheBust} onOpenStartFrame={openLightbox} regenerating={regenerating} generatingVideos={generatingVideos}
+            onGenerateStartFrame={generateStartFrame}
+            onUploadStartFrame={(shot, file) => uploadAsset('shots', shot.full_shot_id, file)} onGenerateShotVideo={generateShotVideo} />}
           {videoFiles.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {videoFiles.map(f => (
@@ -717,31 +799,11 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
         </div>
       )}
 
-      {step === 4 && (isStepDone || isStepRunning) && (
-        <div>
-          {audioFiles.length > 0 ? (
-            <div className="space-y-3">
-              {audioFiles.map(f => (
-                <div key={f.name} className="flex items-center gap-3 bg-ink-900 rounded p-3 border border-ink-700">
-                  <span className="text-stone-400 text-xs font-mono flex-shrink-0">🔊</span>
-                  <span className="text-stone-200 text-sm flex-1 min-w-0 truncate">{f.name}</span>
-                  <audio
-                    src={`/pipelines/${pipelineId}/artifacts/${encodeURIComponent(f.name)}`}
-                    controls
-                    className="h-8 max-w-[200px]"
-                    preload="none"
-                  />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-stone-500 text-sm">暂无音频文件</p>
-          )}
-        </div>
-      )}
-
-      {step === 5 && (isStepDone || isStepRunning) && (
-        <div>
+      {step === 4 && (isStepDone || isStepRunning || canGenerate) && (
+        <div className="space-y-5">
+          <div className="rounded-xl border border-ink-700 bg-gradient-to-br from-ink-950 to-ink-900 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm font-semibold text-stone-100">最终影片合成</p><p className="mt-1 text-xs leading-relaxed text-stone-500">按分镜顺序拼接已生成的视频片段，输出最终成片。音频生成已从默认工作流移除，可在后续版本作为可选轨道接入。</p></div><div className="flex gap-5 text-xs"><span className="text-stone-500">视频片段 <b className="ml-1 text-stone-200">{videoFiles.length}</b></span><span className="text-stone-500">输出 <b className={'ml-1 ' + (finalVideo ? 'text-leaf-400' : 'text-stone-400')}>{finalVideo ? '已生成' : '等待合成'}</b></span></div></div>
+          </div>
           {finalVideo ? (
             <div>
               <video
@@ -752,7 +814,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
               <p className="text-xs text-stone-500 mt-2">{(finalVideo.size / 1024 / 1024).toFixed(1)} MB</p>
             </div>
           ) : (
-            <p className="text-stone-500 text-sm">暂无最终影片</p>
+            <p className="text-stone-500 text-sm">尚未生成最终影片。确认视频片段后点击“开始合成”。</p>
           )}
         </div>
       )}

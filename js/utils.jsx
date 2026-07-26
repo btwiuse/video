@@ -13,7 +13,9 @@ const formatDateTime = (value) => {
 };
 
 const API_BASE = window.location.origin;
-const STEP_NAMES = ["", "剧本分镜", "视觉素材", "视频生成", "音频生成", "后期合成"];
+const WORKFLOW_STEP_COUNT = 4;
+const workflowStep = step => Math.min(Number(step) || 0, WORKFLOW_STEP_COUNT);
+const STEP_NAMES = ["", "剧本分镜", "视觉素材", "视频生成", "后期合成"];
 
 const STATUS_BADGE_STYLES = {
   pending:     'bg-ink-700 text-stone-400',
@@ -29,7 +31,7 @@ const STATUS_BADGE_STYLES = {
 };
 const STATUS_BADGE_LABELS = {
   pending: '待处理', running: '运行中', done: '完成', failed: '失败', canceled: '已取消',
-  step_1: '步骤 1', step_2: '步骤 2', step_3: '步骤 3', step_4: '步骤 4', step_5: '步骤 5',
+  step_1: '步骤 1', step_2: '步骤 2', step_3: '步骤 3', step_4: '步骤 4', step_5: '后期合成',
 };
 
 // Sonner-style toast

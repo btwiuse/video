@@ -1,9 +1,9 @@
 function StepTabs({ currentStep, pipelineStatus, activeStep, onNavigate }) {
   const isDone = pipelineStatus === 'done';
-  const current = isDone ? 5 : currentStep;
+  const current = isDone ? WORKFLOW_STEP_COUNT : currentStep;
   return (
     <div className="flex gap-2 mb-6">
-      {[1,2,3,4,5].map(n => {
+      {[1,2,3,4].map(n => {
         const completed = n <= current;
         const isNext = n === current + 1;
         const available = completed || isNext;
