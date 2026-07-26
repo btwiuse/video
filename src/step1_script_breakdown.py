@@ -34,18 +34,33 @@ logger = logging.getLogger("step1")
 # ============================================================================
 
 def _load_film_grammar() -> str:
-    """Load film knowledge from pipeline's own storyboard skill (with external skill as enhancement)."""
+    """Load the default film grammar and storyboard-directing knowledge."""
     sm = get_skill_manager()
+    parts: list[str] = []
     # Primary: pipeline's own Chinese film grammar (exact original content)
     try:
-        return sm.get_template("storyboard", "film_grammar")
+        parts.append(sm.get_template("storyboard", "film_grammar"))
     except KeyError:
-        pass
-    # Fallback: external skill
-    body = sm.inject("cinematic-audiovisual-language")
-    if body:
-        return body
-    return ""
+        # Fallback: external audiovisual grammar when the pipeline template is absent.
+        body = sm.inject("cinematic-audiovisual-language")
+        if body:
+            parts.append(body)
+
+    film_grammar_loaded = bool(parts)
+    # This skill defines the planning discipline for every Step 1 storyboard:
+    # scene goal, beats, shot functions, continuity and final image. Keep it
+    # here instead of Step 3, where the already-approved shot cards are simply
+    # converted into video-generation prompts.
+    director = sm.inject("professional-storyboard-director")
+    if director:
+        parts.append("## 专业分镜导演方法\n\n" + director)
+
+    logger.info(
+        "Step 1 default skills: film_grammar=%s, professional-storyboard-director=%s",
+        "loaded" if film_grammar_loaded else "missing",
+        "loaded" if director else "missing",
+    )
+    return "\n\n".join(parts)
 
 # ============================================================================
 # Tool definitions (JSON Schema for function calling)

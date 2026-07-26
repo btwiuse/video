@@ -568,16 +568,20 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
             <div className="mb-6 p-4 bg-ink-900/50 rounded border border-ink-700">
               <div className="flex items-center justify-between mb-2">
                 <p className="text-xs text-stone-400 font-medium">剧本</p>
-                <button
-                  onClick={async () => {
-                    if (editingScript) {
-                      setEditingScript(false);
-                    } else {
-                      setEditingScript(true);
-                    }
-                  }}
-                  className="text-xs text-stone-500 hover:text-brass-400 transition-colors px-1.5 py-0.5 rounded cursor-pointer"
-                >{editingScript ? '✓' : '✎'}</button>
+                <div className="flex items-center gap-1">
+                  <button type="button" onClick={() => navigator.clipboard.writeText(scriptText).then(() => toast('剧本已复制')).catch(() => toast.error('复制失败'))}
+                    className="text-xs text-stone-500 hover:text-stone-200 transition-colors px-1.5 py-0.5 rounded cursor-pointer" title="复制剧本">📋</button>
+                  <button
+                    onClick={async () => {
+                      if (editingScript) {
+                        setEditingScript(false);
+                      } else {
+                        setEditingScript(true);
+                      }
+                    }}
+                    className="text-xs text-stone-500 hover:text-brass-400 transition-colors px-1.5 py-0.5 rounded cursor-pointer" title="编辑剧本"
+                  >{editingScript ? '✓' : '✎'}</button>
+                </div>
               </div>
               {editingScript ? (
                 <div className="space-y-2">
