@@ -88,9 +88,13 @@ function StoryboardEditor({ storyboard, onChange, onSave, saving, startFrames, v
 }
 
 function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, onRefresh, visualAssetsCompletionKnown, onVisualAssetsCompletionChange,
+                    assetTab: controlledAssetTab, onAssetTabChange, onAssetOverviewChange,
                     maxShotsPerScene, setMaxShotsPerScene, totalShots, setTotalShots, totalDuration, setTotalDuration }) {
   const getCS = () => {
     if (pipeline.status === 'done') return WORKFLOW_STEP_COUNT;
+    // A running step is in progress, not completed.  Keep this aligned with
+    // PipelineDetail so its header never says "已完成" beside "生成中".
+    if (pipeline.status === 'running') return Math.max(0, workflowStep(pipeline.step || 1) - 1);
     if (pipeline.status === 'failed' || pipeline.status === 'canceled') return Math.max(0, workflowStep(pipeline.step || 1) - 1);
     const pipelineStep = workflowStep(pipeline.step);
     if (pipelineStep === 1 && visualAssetsCompletionKnown) return 2;
@@ -121,7 +125,12 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
   const [editingScript, setEditingScript] = useState(false);
   const [savingScript, setSavingScript] = useState(false);
   const [savingStoryboard, setSavingStoryboard] = useState(false);
-  const [assetTab, setAssetTab] = useState('characters');
+  const [localAssetTab, setLocalAssetTab] = useState('characters');
+  const assetTab = controlledAssetTab || localAssetTab;
+  const setAssetTab = useCallback((tab) => {
+    setLocalAssetTab(tab);
+    onAssetTabChange?.(tab);
+  }, [onAssetTabChange]);
   const [assetDialog, setAssetDialog] = useState(null);
   const [showAddCharacter, setShowAddCharacter] = useState(false);
   const [newCharacter, setNewCharacter] = useState({ name: '', identity: '', appearance: '', prompt: '', gender: '', age: '', generationMode: 'ai', characterRefs: [], propRefs: [], sceneId: '' });
@@ -162,7 +171,9 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
     };
     doFetch();
     if (isStepRunning) {
-      t = setInterval(() => { if (!document.hidden) doFetch(); }, 15000);
+      // Asset generation is sequential. Poll Step 2 more frequently so the
+      // visible category follows the backend as it moves through the queue.
+      t = setInterval(() => { if (!document.hidden) doFetch(); }, step === 2 ? 3000 : 15000);
     }
     return () => { cancelled = true; if (t) clearInterval(t); };
   }, [pipelineId, isStepDone, isStepRunning, step, canGenerate, pipeline.status, stepReloadKey]);
@@ -296,6 +307,22 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
   const visualAssetsCompleted = useMemo(() => Boolean(storyboardData) && Object.values(assetOverview).every(section =>
     section.total === section.completed && section.generating === 0 && section.failed === 0
   ), [storyboardData, assetOverview]);
+
+  const activeAssetStage = useMemo(() => ['characters', 'props', 'scenes'].find(key => {
+    const section = assetOverview[key];
+    return section.total > 0 && (section.completed < section.total || section.generating > 0 || section.failed > 0);
+  }), [assetOverview]);
+
+  useEffect(() => {
+    if (step !== 2 || !isStepRunning || !activeAssetStage) return;
+    setAssetTab(activeAssetStage);
+  }, [step, isStepRunning, activeAssetStage, setAssetTab]);
+
+  useEffect(() => {
+    if (step === 2 && storyboardData && artifactsLoadedFor === pipelineId) {
+      onAssetOverviewChange?.(assetOverview);
+    }
+  }, [step, storyboardData, artifactsLoadedFor, pipelineId, assetOverview, onAssetOverviewChange]);
 
   useEffect(() => {
     if (!storyboardData || artifactsLoadedFor !== pipelineId) return;
@@ -534,7 +561,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
             步骤 {step}: {STEP_NAMES[step]}
           </h3>
           <p className="text-xs text-stone-500 mt-1">
-            {isStepDone ? '已完成' : isStepRunning ? (step === 4 ? '正在合成最终影片...' : '正在生成...') : canGenerate ? '准备就绪' : '前置步骤尚未完成'}
+            {isStepDone ? '已完成' : isStepRunning ? (step === 2 && activeAssetStage ? `正在生成${activeAssetStage === 'characters' ? '角色肖像' : activeAssetStage === 'props' ? '道具' : '场景'}...` : step === 4 ? '正在合成最终影片...' : '正在生成...') : canGenerate ? '准备就绪' : '前置步骤尚未完成'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -557,7 +584,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
                   : 'bg-ink-700 text-stone-500 cursor-not-allowed'
             }`}
           >
-            {isStepRunning ? (step === 4 ? '⏳ 合成中...' : '⏳ 生成中...') : isStepDone ? (step === 4 ? '重新合成' : step === 3 ? '生成全部分镜' : '重新生成') : (step === 4 ? '开始合成' : step === 3 ? '生成全部分镜' : '开始生成')}
+            {isStepRunning ? (step === 4 ? '⏳ 合成中...' : step === 2 && activeAssetStage ? `⏳ 正在生成${activeAssetStage === 'characters' ? '角色肖像' : activeAssetStage === 'props' ? '道具' : '场景'}...` : '⏳ 生成中...') : isStepDone ? (step === 4 ? '重新合成' : step === 3 ? '生成全部分镜' : step === 2 ? '重新生成全部素材' : '重新生成') : (step === 4 ? '开始合成' : step === 3 ? '生成全部分镜' : step === 2 ? '生成全部素材' : '开始生成')}
           </button>
         </div>
       </div>
@@ -647,7 +674,10 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
         <div className="space-y-5">
           <div className="rounded-xl border border-ink-700 bg-ink-950/45 overflow-hidden">
             <div className="px-4 pt-4 pb-3 border-b border-ink-700/80">
-              <p className="text-xs text-stone-500 leading-relaxed">素材按实体归类展示。点击图片可查看和编辑提示词；角色需生成正面、侧面和全身三个视角后才视为完成。</p>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <p className="text-xs text-stone-500 leading-relaxed">按「角色肖像 → 道具 → 场景」完成素材。角色需生成正面、侧面和全身三个视角后才视为完成。</p>
+                {isStepRunning && activeAssetStage && <span className="inline-flex items-center gap-1.5 rounded-full border border-brass-500/35 bg-brass-500/10 px-2 py-0.5 text-xs font-medium text-brass-400"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brass-400"/>全部生成中：{activeAssetStage === 'characters' ? '角色肖像' : activeAssetStage === 'props' ? '道具' : '场景'}</span>}
+              </div>
             </div>
             <div className="flex flex-col gap-4 p-4">
               <div className="flex flex-wrap items-center gap-x-1 gap-y-2" role="tablist" aria-label="视觉素材分类">

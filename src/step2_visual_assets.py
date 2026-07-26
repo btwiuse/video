@@ -634,7 +634,6 @@ class Step2Pipeline:
         chars_dir = str(ensure_output_dir("characters"))
         scenes_dir_str = str(ensure_output_dir("scenes"))
         props_dir_str = str(ensure_output_dir("props"))
-        ensure_output_dir("shots")  # ensure shots root exists
 
         # ---- Characters: 3 portraits each ----
         logger.info("Generating %d characters x 3 angles...", len(characters))
@@ -713,8 +712,10 @@ class Step2Pipeline:
             done = sum(1 for r in results if r.status == "done")
             logger.info("  %s: %d/%d done", name, done, len(results))
 
-        # ---- Shots: start frame for each (with character + scene refs) ----
-        shots = storyboard.get("shots", [])
+        # Start frames are a Step 3 concern.  Step 2 intentionally stops after
+        # reusable character, prop, and scene references so its visible order
+        # and completion boundary match the UI workflow.
+        shots: list[dict] = []
         shot_map: dict[str, list[ImageResult]] = {}
         if shots:
             logger.info("Generating start frames for %d shots...", len(shots))

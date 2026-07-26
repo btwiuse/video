@@ -5,6 +5,18 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [visualAssetsCompleted, setVisualAssetsCompleted] = useState(false);
+  // Step 2 has its own ordered flow. Keep this state here because the bottom
+  // navigation lives outside StepView.
+  const [step2AssetTab, setStep2AssetTab] = useState('characters');
+  const [step2AssetOverview, setStep2AssetOverview] = useState(null);
+  const updateStep2AssetOverview = useCallback((next) => {
+    setStep2AssetOverview(previous => {
+      const same = previous && Object.keys(next).every(key =>
+        ['total', 'completed', 'generating', 'failed'].every(field => previous[key]?.[field] === next[key]?.[field])
+      );
+      return same ? previous : next;
+    });
+  }, []);
   const [maxShotsPerScene, setMaxShotsPerScene] = useState(() => {
     try { const s = localStorage.getItem('pipelineSettings'); return s ? JSON.parse(s).maxShotsPerScene ?? 1 : 1; } catch { return 1; }
   });
@@ -33,7 +45,20 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
     return () => { cancelled = true; };
   }, [pipeline.pipeline_id]);
 
-  useEffect(() => { setVisualAssetsCompleted(false); }, [pipeline.pipeline_id]);
+  useEffect(() => {
+    setVisualAssetsCompleted(false);
+    setStep2AssetTab('characters');
+    setStep2AssetOverview(null);
+  }, [pipeline.pipeline_id]);
+
+  const assetSectionComplete = section => Boolean(section) &&
+    section.total === section.completed && section.generating === 0 && section.failed === 0;
+  const step2AssetsCompleted = Boolean(step2AssetOverview) &&
+    Object.values(step2AssetOverview).every(assetSectionComplete);
+  // Prefer the fresh Step 2 inventory while it is on screen. The callback
+  // remains necessary for direct visits to later steps, before this inventory
+  // has been loaded in the parent.
+  const visualAssetsReady = visualAssetsCompleted || step2AssetsCompleted;
 
   const getCurrentStep = () => {
     if (pipeline.status === 'done') return WORKFLOW_STEP_COUNT;
@@ -48,9 +73,9 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
   // Step 2 is complete in the UI only when all reusable asset categories report
   // that their totals have been completed. This supports hand-generated and
   // uploaded assets before the backend status has refreshed.
-  const currentStep = pipelineCurrentStep === 1 && visualAssetsCompleted
+  const currentStep = pipelineCurrentStep === 1 && visualAssetsReady
     ? 2
-    : pipelineCurrentStep === 2 && !visualAssetsCompleted
+    : pipelineCurrentStep === 2 && !visualAssetsReady
       ? 1
       : pipelineCurrentStep;
   const pid = pipeline.pipeline_id;
@@ -59,7 +84,7 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
     if (pipeline.status === 'done') return n <= WORKFLOW_STEP_COUNT;
     // Step 3 may only be entered when every visual-asset category is complete.
     // This also handles adding a new, still-empty asset after Step 2 was done.
-    if (n === 3 && !visualAssetsCompleted) return false;
+    if (n === 3 && !visualAssetsReady) return false;
     return n <= currentStep || n === currentStep + 1;
   };
 
@@ -176,8 +201,26 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
       toast('当前步骤正在运行中，请等待完成后进入下一步');
       return;
     }
+    if (activeStep === 2) {
+      const currentAsset = step2AssetOverview?.[step2AssetTab];
+      if (!assetSectionComplete(currentAsset)) {
+        const label = step2AssetTab === 'characters' ? '角色肖像' : step2AssetTab === 'props' ? '道具' : '场景';
+        toast(`请先完成「${label}」，再进入下一项`);
+        return;
+      }
+      if (step2AssetTab === 'characters') {
+        setStep2AssetTab('props');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      if (step2AssetTab === 'props') {
+        setStep2AssetTab('scenes');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+    }
     if (!stepAvailable(next)) {
-      if (next === 3 && !visualAssetsCompleted) {
+      if (next === 3 && !visualAssetsReady) {
         toast('请先完成「视觉素材」，再进入下一步');
         return;
       }
@@ -188,6 +231,11 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
     navigateToStep(next);
   };
+
+  const nextDisabled = actionLoading || pipeline.status === 'running' ||
+    (activeStep === 2
+      ? !assetSectionComplete(step2AssetOverview?.[step2AssetTab])
+      : !stepAvailable(activeStep + 1));
 
   return (
     <div className="bg-ink-900 rounded-lg p-6 border border-ink-700">
@@ -220,7 +268,7 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
         </div>
       )}
 
-      <StepView step={activeStep} pipeline={pipeline} onRun={runStep} onCancel={cancelStep} onRefresh={onRefresh} visualAssetsCompletionKnown={visualAssetsCompleted} onVisualAssetsCompletionChange={setVisualAssetsCompleted} actionLoading={actionLoading} pipelineId={pid}
+      <StepView step={activeStep} pipeline={pipeline} onRun={runStep} onCancel={cancelStep} onRefresh={onRefresh} visualAssetsCompletionKnown={visualAssetsReady} onVisualAssetsCompletionChange={setVisualAssetsCompleted} assetTab={step2AssetTab} onAssetTabChange={setStep2AssetTab} onAssetOverviewChange={updateStep2AssetOverview} actionLoading={actionLoading} pipelineId={pid}
   maxShotsPerScene={maxShotsPerScene} setMaxShotsPerScene={setMaxShotsPerScene}
   totalShots={totalShots} setTotalShots={setTotalShots}
   totalDuration={totalDuration} setTotalDuration={setTotalDuration} />
@@ -231,13 +279,15 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
             ↓ 下载最终视频
           </button>
         ) : activeStep < WORKFLOW_STEP_COUNT ? (
-          <button onClick={handleNextStep}
+          <button onClick={handleNextStep} disabled={nextDisabled}
             className={`nav-btn text-xs px-2.5 py-1.5 rounded transition-colors font-medium ${
-              !stepAvailable(activeStep + 1) || actionLoading || pipeline.status === 'running'
+              nextDisabled
                 ? 'bg-ink-800/60 text-stone-600 cursor-not-allowed'
                 : 'bg-brass-500 hover:bg-brass-400 text-ink-950'
             }`}>
-            下一步 →
+            {activeStep === 2
+              ? step2AssetTab === 'characters' ? '下一步：道具 →' : step2AssetTab === 'props' ? '下一步：场景 →' : '下一步：视频生成 →'
+              : '下一步 →'}
           </button>
         ) : null}
       </div>
