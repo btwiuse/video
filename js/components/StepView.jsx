@@ -63,7 +63,74 @@ function StartFramePanel({ shot, frame, video, pipelineId, cacheBust, onOpen, on
   return <section className="border-t border-ink-700 bg-ink-950/35 px-4 py-4"><div className="mb-3 flex items-center justify-between gap-3"><div><h5 className="text-xs font-semibold text-stone-200">镜头起始帧</h5><p className="mt-1 text-xs text-stone-500">此帧仅服务当前分镜，可用 AI 生成或本地上传。</p></div><button type="button" onClick={() => onGenerate(shot, startFrame)} disabled={generating} className="rounded-md bg-ink-800 px-2.5 py-1.5 text-xs font-medium text-stone-300 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-50">{generating ? '生成中…' : startFrame.placeholder ? '生成起始帧' : '重新生成起始帧'}</button></div><div className="group relative max-w-md overflow-hidden rounded-lg border border-ink-700"><AssetPreview file={startFrame} pipelineId={pipelineId} cacheBust={cacheBust} aspectClass="aspect-video" onOpen={onOpen} label={shot.title || shot.full_shot_id} /><AssetToolbar onGenerate={() => onGenerate(shot, startFrame)} onUpload={file => onUpload(shot, file)} disabled={generating} /></div><div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-ink-700 bg-ink-900/70 px-3 py-2.5"><div className="min-w-0 flex-1"><p className="text-xs font-medium text-stone-200">分镜视频</p><p className="mt-0.5 text-xs text-stone-500">{video ? '该分镜视频已生成，可单独重新生成。' : '使用当前分镜信息与视觉参考生成视频。'}</p></div><button type="button" onClick={() => onGenerateVideo(shot)} disabled={generatingVideo} className="rounded-md bg-brass-500 px-3 py-1.5 text-xs font-semibold text-ink-950 hover:bg-brass-400 disabled:opacity-50">{generatingVideo ? '视频生成中…' : video ? '重新生成分镜视频' : '生成分镜视频'}</button></div></section>;
 }
 
-function StoryboardEditor({ storyboard, onChange, onSave, saving, startFrames, videos, pipelineId, cacheBust, onOpenStartFrame, onGenerateStartFrame, onUploadStartFrame, onGenerateShotVideo, regenerating, generatingVideos }) {
+const SHOT_SKILL_GROUPS = [
+  { label: '镜头语言', skills: [
+    ['cinematic-audiovisual-language', '电影视听语言', '强化镜头功能、空间与运镜逻辑'],
+    ['high-tension-shot-design', '高张力镜头设计', '强化危险感、压迫感与冲击画面'],
+  ] },
+  { label: '动作设计', skills: [
+    ['action-choreography-reference', '动作编排参考', '让动作具有重心、受力与反应'],
+    ['action-rhythm-editing', '动作节奏剪辑', '按时长安排铺垫、高潮与收束'],
+    ['action-showcase-direction', '动作展示导演', '设计武器、能力或角色动作展示'],
+    ['seedance-fight-director', 'Seedance 格斗导演', '面向格斗、追逐和武器动作优化'],
+  ] },
+  { label: '视觉与声音', skills: [
+    ['ai-material-realism', 'AI 材质真实感', '强化材质、光影与接触关系'],
+    ['cinematic-music-sound-design', '电影音乐与声音设计', '补充节奏、音效与声画提示'],
+  ] },
+];
+
+function ShotSkillPanel({ shot, onOptimize, optimizing, disabled }) {
+  const serializedSkills = JSON.stringify(shot.skill_ids || []);
+  const [selectedSkills, setSelectedSkills] = useState(shot.skill_ids || []);
+  const savedInstruction = shot.skill_optimization?.custom_instruction || '';
+  const [customInstruction, setCustomInstruction] = useState(savedInstruction);
+  const [skillMenuOpen, setSkillMenuOpen] = useState(false);
+  const skillPanelRef = useRef(null);
+  useEffect(() => { setSelectedSkills(shot.skill_ids || []); }, [shot.full_shot_id, serializedSkills]);
+  useEffect(() => { setCustomInstruction(shot.skill_optimization?.custom_instruction || ''); }, [shot.full_shot_id, savedInstruction]);
+  useEffect(() => { setSkillMenuOpen(false); }, [shot.full_shot_id]);
+  useEffect(() => {
+    if (!skillMenuOpen) return undefined;
+    const closeOnOutside = event => {
+      if (!skillPanelRef.current?.contains(event.target)) setSkillMenuOpen(false);
+    };
+    const closeOnEscape = event => {
+      if (event.key === 'Escape') setSkillMenuOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutside);
+    document.addEventListener('focusin', closeOnOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutside);
+      document.removeEventListener('focusin', closeOnOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [skillMenuOpen]);
+  const selectedLabels = SHOT_SKILL_GROUPS.flatMap(group => group.skills)
+    .filter(([id]) => selectedSkills.includes(id)).map(([, label]) => label);
+  const optimization = shot.skill_optimization || {};
+  const toggleSkill = skillId => {
+    setSelectedSkills(current => {
+      if (current.includes(skillId)) return current.filter(id => id !== skillId);
+      return [...current, skillId];
+    });
+  };
+  const canOptimize = selectedSkills.length > 0 || customInstruction.trim().length > 0;
+  return <section ref={skillPanelRef} className="space-y-2 rounded-lg border border-ink-700 bg-ink-900/70 p-3">
+    <div className="flex items-center justify-between gap-2"><span className="text-xs font-medium text-stone-300">Skill 精调</span><span className="text-[10px] text-stone-600">默认：专业分镜导演</span></div>
+    <div className="relative"><textarea value={customInstruction} maxLength={2000} disabled={disabled || optimizing} onChange={event => setCustomInstruction(event.target.value)} placeholder="输入本镜头的精调要求，例如：动作更克制，人物先短暂停顿再缓慢转头。" className="min-h-24 w-full resize-y rounded-md border border-ink-600 bg-ink-950 px-2.5 pb-6 pt-2 text-xs leading-relaxed text-stone-100 placeholder:text-stone-600 focus:border-brass-500 focus:outline-none disabled:opacity-50"/>
+      <span className="pointer-events-none absolute bottom-2 left-2 text-[10px] text-stone-600">{customInstruction.length}/2000</span>
+    </div>
+    <div className="relative flex items-center justify-between gap-2"><span className="min-w-0 truncate text-[11px] text-stone-500">{selectedLabels.length ? `已加载：${selectedLabels.join('、')}` : '可选：为本镜头加载额外 Skill'}</span><button type="button" title="选择要加载的 Skill" aria-label="选择要加载的 Skill" aria-expanded={skillMenuOpen} onClick={() => setSkillMenuOpen(current => !current)} disabled={disabled || optimizing} className={'shrink-0 flex h-6 items-center gap-1 rounded border px-1.5 text-[10px] transition-colors disabled:opacity-50 ' + (selectedSkills.length ? 'border-brass-500/70 bg-brass-500/10 text-brass-400' : 'border-ink-600 bg-ink-900 text-stone-400 hover:border-ink-500 hover:text-stone-200')}><span className="text-sm leading-none">⋯</span><span>{selectedSkills.length ? `已选 ${selectedSkills.length}` : '选择 Skill'}</span></button>
+      {skillMenuOpen && <div className="absolute right-0 top-full z-20 mt-2 max-h-96 w-80 max-w-[calc(100vw-3rem)] overflow-y-auto rounded-lg border border-ink-600 bg-ink-900 p-2.5 shadow-2xl shadow-black/40"><div className="mb-3"><p className="text-xs font-medium text-stone-100">加载可选 Skill</p><p className="mt-0.5 text-[10px] text-stone-500">可自由组合；默认 Skill 始终参与。</p></div>{SHOT_SKILL_GROUPS.map((group, groupIndex) => <div key={group.label} className={groupIndex ? 'mt-3' : ''}><div className="flex items-center gap-2"><p className="text-[10px] font-semibold text-stone-400">{group.label}</p><span className="h-px flex-1 bg-ink-700"/></div><div className="mt-1 overflow-hidden rounded-md border border-ink-700 divide-y divide-ink-700">{group.skills.map(([id, label, description]) => <label key={id} className={'flex cursor-pointer items-center gap-2 px-2 py-1.5 transition-colors ' + (selectedSkills.includes(id) ? 'bg-brass-500/10' : 'hover:bg-ink-800/70')}><span className="min-w-0 flex-1"><span className={selectedSkills.includes(id) ? 'text-xs font-medium text-brass-400' : 'text-xs font-medium text-stone-300'}>{label}</span><span className="ml-1 text-[10px] leading-relaxed text-stone-500">· {description}</span></span><input type="checkbox" className="shrink-0 accent-brass-500" checked={selectedSkills.includes(id)} disabled={disabled || optimizing} onChange={() => toggleSkill(id)}/></label>)}</div></div>)}</div>}
+    </div>
+    {optimization.summary && <p className="rounded-md bg-leaf-500/10 px-2.5 py-2 text-xs leading-relaxed text-leaf-400">已应用：{optimization.summary}</p>}
+    <button type="button" onClick={() => onOptimize(shot, selectedSkills, customInstruction)} disabled={disabled || optimizing || !canOptimize} className="w-full rounded-md bg-brass-500 px-3 py-2 text-xs font-semibold text-ink-950 hover:bg-brass-400 disabled:cursor-not-allowed disabled:opacity-40">{optimizing ? '正在应用 Skill…' : '应用并优化分镜'}</button>
+  </section>;
+}
+
+function StoryboardEditor({ storyboard, onChange, onSave, saving, onOptimizeSkills, optimizingSkills, startFrames, videos, pipelineId, cacheBust, onOpenStartFrame, onGenerateStartFrame, onUploadStartFrame, onGenerateShotVideo, regenerating, generatingVideos }) {
   const shots = storyboard?.shots || [];
   const characters = storyboard?.characters || [];
   const scenes = storyboard?.scenes || [];
@@ -80,8 +147,15 @@ function StoryboardEditor({ storyboard, onChange, onSave, saving, startFrames, v
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink-700 bg-ink-950/45 px-4 py-3"><div><h4 className="text-sm font-semibold text-stone-100">分镜表</h4><p className="mt-1 text-xs text-stone-500">{shots.length} 个分镜 · {shots.reduce((total, shot) => total + Number(shot.duration_sec || 0), 0).toFixed(1)} 秒。编辑后保存，视频生成会使用最新内容。</p></div><div className="flex gap-2"><button type="button" disabled={saving} onClick={add} className="rounded-lg border border-ink-600 bg-ink-800 px-3 py-2 text-sm text-stone-200 hover:border-brass-500 hover:text-brass-400 disabled:opacity-50">+ 添加分镜</button><button type="button" disabled={saving} onClick={() => onSave()} className="rounded-lg bg-brass-500 px-3 py-2 text-sm font-medium text-ink-950 hover:bg-brass-400 disabled:opacity-50">{saving ? '保存中…' : '保存分镜'}</button></div></div>
     {shots.map((shot, index) => <article key={shot.full_shot_id} className="rounded-xl border border-ink-700 bg-ink-900/80 overflow-hidden"><header className="flex flex-wrap items-center gap-3 border-b border-ink-700 px-4 py-3"><span className="flex h-6 w-6 items-center justify-center rounded bg-brass-500 text-xs font-bold text-ink-950">{index + 1}</span><input value={shot.title || ''} onChange={event => update(shot.full_shot_id, { title: event.target.value })} placeholder="分镜标题" className="min-w-32 flex-1 bg-transparent text-sm font-semibold text-stone-100 outline-none placeholder:text-stone-600"/><span className="font-mono text-xs text-stone-600">{shot.full_shot_id}</span><button type="button" onClick={() => copy(shot)} className="rounded px-2 py-1 text-xs text-stone-400 hover:bg-ink-800 hover:text-stone-100">复制</button><button type="button" onClick={() => remove(shot)} className="rounded px-2 py-1 text-xs text-clay-400 hover:bg-clay-500/15">删除</button></header>
-      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_280px]"><div className="space-y-4"><label className="block"><span className="text-xs font-medium text-stone-300">分镜描述</span><textarea value={shot.description || ''} onChange={event => update(shot.full_shot_id, { description: event.target.value })} placeholder="描述这一段剧情、人物和情绪" className="mt-1.5 min-h-20 w-full rounded-lg border border-ink-600 bg-ink-950 px-3 py-2 text-sm text-stone-100 placeholder:text-stone-600 focus:border-brass-500 focus:outline-none"/></label><label className="block"><span className="text-xs font-medium text-stone-300">视频提示词 / 镜头动作</span><textarea value={shot.positive_prompt || shot.action_description || ''} onChange={event => update(shot.full_shot_id, { positive_prompt: event.target.value, action_description: event.target.value })} placeholder="景别、机位、人物动作、光影和镜头运动…" className="mt-1.5 min-h-32 w-full rounded-lg border border-ink-600 bg-ink-950 px-3 py-2 text-sm leading-relaxed text-stone-100 placeholder:text-stone-600 focus:border-brass-500 focus:outline-none"/></label></div>
-        <aside className="space-y-3 rounded-lg bg-ink-950/60 p-3"><div><span className="text-xs font-medium text-stone-300">视频生成模式</span><div className="mt-2 flex gap-2"><label className={'cursor-pointer rounded-md border px-2 py-1.5 text-xs ' + ((shot.generation_mode || 'reference') === 'reference' ? 'border-brass-500 bg-brass-500/10 text-brass-400' : 'border-ink-600 text-stone-400')}><input type="radio" className="sr-only" checked={(shot.generation_mode || 'reference') === 'reference'} onChange={() => update(shot.full_shot_id, { generation_mode: 'reference' })}/>全能参考</label><label className={'cursor-pointer rounded-md border px-2 py-1.5 text-xs ' + (shot.generation_mode === 'first_last' ? 'border-brass-500 bg-brass-500/10 text-brass-400' : 'border-ink-600 text-stone-400')}><input type="radio" className="sr-only" checked={shot.generation_mode === 'first_last'} onChange={() => update(shot.full_shot_id, { generation_mode: 'first_last' })}/>首尾帧</label></div></div><label className="block"><span className="text-xs text-stone-400">时长（秒）</span><input type="number" min="1" max="15" step="0.5" value={shot.duration_sec || 5} onChange={event => update(shot.full_shot_id, { duration_sec: Number(event.target.value) })} className="mt-1 w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-sm text-stone-100 focus:border-brass-500 focus:outline-none"/></label><label className="block"><span className="text-xs text-stone-400">分镜场景</span><select value={shot.scene_id || ''} onChange={event => update(shot.full_shot_id, { scene_id: event.target.value })} className="mt-1 w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-sm text-stone-100 focus:border-brass-500 focus:outline-none"><option value="">请选择场景</option>{scenes.map(scene => <option key={scene.scene_id} value={scene.scene_id}>{scene.name || scene.scene_id}</option>)}</select></label><div><span className="text-xs text-stone-400">出镜角色</span><div className="mt-1.5 flex flex-wrap gap-1">{characters.map(character => <label key={character.ref_id} className={'cursor-pointer rounded border px-1.5 py-1 text-xs ' + ((shot.character_refs || []).includes(character.ref_id) ? 'border-brass-500 bg-brass-500/10 text-brass-400' : 'border-ink-600 text-stone-500')}><input type="checkbox" className="sr-only" checked={(shot.character_refs || []).includes(character.ref_id)} onChange={() => toggle(shot, 'character_refs', character.ref_id)}/>{character.name || character.ref_id}</label>)}</div></div><div><span className="text-xs text-stone-400">场景道具</span><div className="mt-1.5 flex flex-wrap gap-1">{props.map(prop => <label key={prop.ref_id} className={'cursor-pointer rounded border px-1.5 py-1 text-xs ' + ((shot.prop_refs || []).includes(prop.ref_id) ? 'border-brass-500 bg-brass-500/10 text-brass-400' : 'border-ink-600 text-stone-500')}><input type="checkbox" className="sr-only" checked={(shot.prop_refs || []).includes(prop.ref_id)} onChange={() => toggle(shot, 'prop_refs', prop.ref_id)}/>{prop.name || prop.ref_id}</label>)}</div></div></aside></div>
+      <div className="grid gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_280px]"><div className="flex h-full min-h-0 flex-col gap-4"><label className="block"><span className="text-xs font-medium text-stone-300">分镜描述</span><textarea value={shot.description || ''} onChange={event => update(shot.full_shot_id, { description: event.target.value })} placeholder="描述这一段剧情、人物和情绪" className="mt-1.5 min-h-20 w-full rounded-lg border border-ink-600 bg-ink-950 px-3 py-2 text-sm text-stone-100 placeholder:text-stone-600 focus:border-brass-500 focus:outline-none"/></label><label className="flex min-h-32 flex-1 flex-col"><span className="text-xs font-medium text-stone-300">视频提示词 / 镜头动作</span><textarea value={shot.positive_prompt || shot.action_description || ''} onChange={event => update(shot.full_shot_id, { positive_prompt: event.target.value, action_description: event.target.value })} placeholder="景别、机位、人物动作、光影和镜头运动…" className="mt-1.5 min-h-32 w-full grow resize-y rounded-lg border border-ink-600 bg-ink-950 px-3 py-2 text-sm leading-relaxed text-stone-100 placeholder:text-stone-600 focus:border-brass-500 focus:outline-none"/></label></div>
+        <aside className="space-y-3 rounded-lg bg-ink-950/60 p-3">
+          <div><span className="text-xs font-medium text-stone-300">视频生成模式</span><div className="mt-2 flex gap-2"><label className={'cursor-pointer rounded-md border px-2 py-1.5 text-xs ' + ((shot.generation_mode || 'reference') === 'reference' ? 'border-brass-500 bg-brass-500/10 text-brass-400' : 'border-ink-600 text-stone-400')}><input type="radio" className="sr-only" checked={(shot.generation_mode || 'reference') === 'reference'} onChange={() => update(shot.full_shot_id, { generation_mode: 'reference' })}/>全能参考</label><label className={'cursor-pointer rounded-md border px-2 py-1.5 text-xs ' + (shot.generation_mode === 'first_last' ? 'border-brass-500 bg-brass-500/10 text-brass-400' : 'border-ink-600 text-stone-400')}><input type="radio" className="sr-only" checked={shot.generation_mode === 'first_last'} onChange={() => update(shot.full_shot_id, { generation_mode: 'first_last' })}/>首尾帧</label></div></div>
+          <label className="block"><span className="text-xs text-stone-400">时长（秒）</span><input type="number" min="1" max="15" step="0.5" value={shot.duration_sec || 5} onChange={event => update(shot.full_shot_id, { duration_sec: Number(event.target.value) })} className="mt-1 w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-sm text-stone-100 focus:border-brass-500 focus:outline-none"/></label>
+          <label className="block"><span className="text-xs text-stone-400">分镜场景</span><select value={shot.scene_id || ''} onChange={event => update(shot.full_shot_id, { scene_id: event.target.value })} className="mt-1 w-full rounded-md border border-ink-600 bg-ink-900 px-2 py-1.5 text-sm text-stone-100 focus:border-brass-500 focus:outline-none"><option value="">请选择场景</option>{scenes.map(scene => <option key={scene.scene_id} value={scene.scene_id}>{scene.name || scene.scene_id}</option>)}</select></label>
+          <div><span className="text-xs text-stone-400">出镜角色</span><div className="mt-1.5 flex flex-wrap gap-1">{characters.map(character => <label key={character.ref_id} className={'cursor-pointer rounded border px-1.5 py-1 text-xs ' + ((shot.character_refs || []).includes(character.ref_id) ? 'border-brass-500 bg-brass-500/10 text-brass-400' : 'border-ink-600 text-stone-500')}><input type="checkbox" className="sr-only" checked={(shot.character_refs || []).includes(character.ref_id)} onChange={() => toggle(shot, 'character_refs', character.ref_id)}/>{character.name || character.ref_id}</label>)}</div></div>
+          <div><span className="text-xs text-stone-400">场景道具</span><div className="mt-1.5 flex flex-wrap gap-1">{props.map(prop => <label key={prop.ref_id} className={'cursor-pointer rounded border px-1.5 py-1 text-xs ' + ((shot.prop_refs || []).includes(prop.ref_id) ? 'border-brass-500 bg-brass-500/10 text-brass-400' : 'border-ink-600 text-stone-500')}><input type="checkbox" className="sr-only" checked={(shot.prop_refs || []).includes(prop.ref_id)} onChange={() => toggle(shot, 'prop_refs', prop.ref_id)}/>{prop.name || prop.ref_id}</label>)}</div></div>
+          <ShotSkillPanel shot={shot} onOptimize={onOptimizeSkills} optimizing={Boolean(optimizingSkills[shot.full_shot_id])} disabled={saving}/>
+        </aside></div>
       <StartFramePanel shot={shot} frame={startFrames[shot.full_shot_id]} video={videos[shot.full_shot_id]} pipelineId={pipelineId} cacheBust={cacheBust} onOpen={onOpenStartFrame} onGenerate={onGenerateStartFrame} onUpload={onUploadStartFrame} onGenerateVideo={onGenerateShotVideo} generating={regenerating['shot_' + shot.full_shot_id]} generatingVideo={generatingVideos[shot.full_shot_id]} />
     </article>)}
   </div>;
@@ -125,6 +199,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
   const [editingScript, setEditingScript] = useState(false);
   const [savingScript, setSavingScript] = useState(false);
   const [savingStoryboard, setSavingStoryboard] = useState(false);
+  const [optimizingSkills, setOptimizingSkills] = useState({});
   const [localAssetTab, setLocalAssetTab] = useState('characters');
   const assetTab = controlledAssetTab || localAssetTab;
   const setAssetTab = useCallback((tab) => {
@@ -506,13 +581,40 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
       const response = await api(`/pipelines/${pipelineId}/artifacts/storyboard.json`, { method: 'PUT', body: JSON.stringify(nextStoryboard, null, 2) });
       if (!response.ok) throw new Error(await response.text());
       setStoryboardData(nextStoryboard);
-      toast(successMessage);
+      if (successMessage) toast(successMessage);
       onRefresh?.();
       return true;
     } catch (error) {
       toast.error(`保存分镜失败：${error?.message || '请稍后重试'}`);
       return false;
     } finally { setSavingStoryboard(false); }
+  };
+
+  const optimizeShotSkills = async (shot, skillIds, customInstruction = '') => {
+    const shotId = shot.full_shot_id;
+    if (!shotId || (!skillIds.length && !customInstruction.trim()) || optimizingSkills[shotId]) return;
+    // Persist ordinary card edits first, so Skill optimization always starts
+    // from exactly the storyboard text the user sees.
+    if (!(await saveStoryboard(storyboardData, ''))) return;
+    setOptimizingSkills(current => ({ ...current, [shotId]: true }));
+    try {
+      const response = await api(`/pipelines/${pipelineId}/shots/${encodeURIComponent(shotId)}/skills/optimize`, {
+        method: 'POST', body: JSON.stringify({ skills: skillIds, custom_instruction: customInstruction }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const result = await response.json();
+      if (!result.shot?.full_shot_id) throw new Error('服务端未返回优化后的分镜');
+      setStoryboardData(current => current ? {
+        ...current,
+        shots: (current.shots || []).map(item => item.full_shot_id === shotId ? result.shot : item),
+      } : current);
+      toast(`已应用 ${skillIds.length} 个技能并优化分镜 ${shotId}`);
+      onRefresh?.();
+    } catch (error) {
+      toast.error(`应用技能失败：${error?.message || '请稍后重试'}`);
+    } finally {
+      setOptimizingSkills(current => { const next = { ...current }; delete next[shotId]; return next; });
+    }
   };
 
   const generateStartFrame = async (shot, frame) => {
@@ -809,7 +911,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
 
       {step === 3 && (storyboardData || isStepDone || isStepRunning || canGenerate) && (
         <div className="space-y-5">
-          {storyboardData && <StoryboardEditor storyboard={storyboardData} onChange={setStoryboardData} onSave={saveStoryboard} saving={savingStoryboard}
+          {storyboardData && <StoryboardEditor storyboard={storyboardData} onChange={setStoryboardData} onSave={saveStoryboard} saving={savingStoryboard} onOptimizeSkills={optimizeShotSkills} optimizingSkills={optimizingSkills}
             startFrames={startFramesByShot} videos={videosByShot} pipelineId={pipelineId} cacheBust={cacheBust} onOpenStartFrame={openLightbox} regenerating={regenerating} generatingVideos={generatingVideos}
             onGenerateStartFrame={generateStartFrame}
             onUploadStartFrame={(shot, file) => uploadAsset('shots', shot.full_shot_id, file)} onGenerateShotVideo={generateShotVideo} />}

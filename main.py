@@ -292,5 +292,20 @@ def reindex(storyboard_path):
     print(f"Reindexed {shot_count} shots from .md files in {elapsed:.1f}s.")
 
 
+@cli.command("optimize-shot-skills")
+@click.argument("storyboard_path", type=click.Path(exists=True))
+@click.option("--shot", "shot_id", required=True, help="Shot full_shot_id to optimize")
+@click.option("--skill", "skill_ids", multiple=True, help="Step 3 Skill to apply (repeatable)")
+@click.option("--instruction", "custom_instruction", help="Optional per-shot directing instruction")
+def optimize_shot_skills(storyboard_path, shot_id, skill_ids, custom_instruction):
+    """Apply selected Skills and a custom note to one Step 3 storyboard shot."""
+    from src.step3_skills import optimize_shot_with_skills
+
+    result = optimize_shot_with_skills(
+        storyboard_path, shot_id, list(skill_ids), custom_instruction,
+    )
+    print(json.dumps(result, ensure_ascii=False))
+
+
 if __name__ == "__main__":
     cli()

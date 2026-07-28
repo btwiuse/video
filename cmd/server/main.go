@@ -1487,6 +1487,107 @@ func handleGenerateShotVideo(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{"status": "running", "shot_id": shotID})
 }
 
+func handleOptimizeShotSkills(w http.ResponseWriter, r *http.Request) {
+	// POST /pipelines/{id}/shots/{shot_id}/skills/optimize
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) != 6 || parts[0] != "pipelines" || parts[2] != "shots" || parts[4] != "skills" || parts[5] != "optimize" {
+		http.Error(w, "invalid Skill optimization path", http.StatusBadRequest)
+		return
+	}
+	id, shotID := parts[1], parts[3]
+	if shotID != filepath.Base(shotID) || shotID == "." || shotID == "" {
+		http.Error(w, "invalid shot id", http.StatusBadRequest)
+		return
+	}
+
+	mu.RLock()
+	p, exists := pipelines[id]
+	mu.RUnlock()
+	if !exists {
+		http.Error(w, "pipeline not found", http.StatusNotFound)
+		return
+	}
+	if p.Status == StatusRunning {
+		http.Error(w, "wait for the active pipeline step to finish before optimizing a shot", http.StatusConflict)
+		return
+	}
+
+	var params struct {
+		Skills            []string `json:"skills"`
+		CustomInstruction string   `json:"custom_instruction"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 16<<10)).Decode(&params); err != nil {
+		http.Error(w, fmt.Sprintf("bad request: %v", err), http.StatusBadRequest)
+		return
+	}
+	if len([]rune(strings.TrimSpace(params.CustomInstruction))) > 2000 {
+		http.Error(w, "custom instruction must be at most 2000 characters", http.StatusBadRequest)
+		return
+	}
+	if len(params.Skills) == 0 && strings.TrimSpace(params.CustomInstruction) == "" {
+		http.Error(w, "select a Skill or enter a custom instruction", http.StatusBadRequest)
+		return
+	}
+
+	dir := outputDir(id)
+	storyboardPath := filepath.Join(dir, "storyboard.json")
+	if !fileExists(storyboardPath) {
+		http.Error(w, "missing storyboard.json (run step 1 first)", http.StatusConflict)
+		return
+	}
+
+	args := []string{"run", "python", "main.py", "optimize-shot-skills", storyboardPath, "--shot", shotID}
+	for _, skill := range params.Skills {
+		args = append(args, "--skill", skill)
+	}
+	if strings.TrimSpace(params.CustomInstruction) != "" {
+		args = append(args, "--instruction", params.CustomInstruction)
+	}
+	cmd := exec.Command("uv", args...)
+	cmd.Dir = "."
+	dataDir := "."
+	if v := os.Getenv("DATA_DIR"); v != "" {
+		dataDir = v
+	}
+	cmd.Env = append(os.Environ(),
+		fmt.Sprintf("DATA_DIR=%s", dataDir),
+		fmt.Sprintf("OUTPUT_DIR=%s", dir),
+		fmt.Sprintf("PIPELINE_ID=%s", id),
+	)
+
+	var output bytes.Buffer
+	logFile, err := os.OpenFile(logPath(id), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err == nil {
+		defer logFile.Close()
+		cmd.Stdout = io.MultiWriter(logFile, &output)
+		cmd.Stderr = logFile
+	} else {
+		cmd.Stdout = &output
+		cmd.Stderr = &output
+	}
+
+	vlog("pipeline %s optimizing shot %s with Skills: %s", id, shotID, strings.Join(params.Skills, ", "))
+	if err := cmd.Run(); err != nil {
+		message := strings.TrimSpace(output.String())
+		vlog("pipeline %s Skill optimization failed: %v output=%s", id, err, message)
+		http.Error(w, fmt.Sprintf("Skill optimization failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	result := bytes.TrimSpace(output.Bytes())
+	if !json.Valid(result) {
+		vlog("pipeline %s Skill optimization returned invalid JSON: %s", id, string(result))
+		http.Error(w, "Skill optimization returned invalid data", http.StatusInternalServerError)
+		return
+	}
+
+	mu.Lock()
+	p.UpdatedAt = time.Now()
+	savePipelineState(p)
+	mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(result)
+}
+
 func serveHome(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -1714,6 +1815,10 @@ func main() {
 		}
 		if strings.Contains(path, "/videos/") && strings.HasSuffix(path, "/generate") && r.Method == http.MethodPost {
 			handleGenerateShotVideo(w, r)
+			return
+		}
+		if strings.Contains(path, "/shots/") && strings.HasSuffix(path, "/skills/optimize") && r.Method == http.MethodPost {
+			handleOptimizeShotSkills(w, r)
 			return
 		}
 		if strings.HasSuffix(path, "/cancel") && r.Method == http.MethodPost {

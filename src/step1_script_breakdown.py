@@ -572,6 +572,10 @@ class StoryboardGenerator:
         logger.info("  <- Chat done in %.1fs: %d chars (%d chunks)", elapsed, len(full), chunk_count)
         return full
 
+    def complete_text(self, system_prompt: str, user_prompt: str, label: str = "") -> str:
+        """Public text-completion entry point shared by downstream editors."""
+        return self._call_chat(system_prompt, user_prompt, label)
+
     # ========================================================================
     # Prompt builders
     # ========================================================================
