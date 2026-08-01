@@ -174,6 +174,87 @@ function StoryboardEditor({ storyboard, onChange, onSave, saving, onOptimizeSkil
   </div>;
 }
 
+const STEP1_PROGRESS_STAGES = [
+  { phase: 1, key: 'overview', label: '剧本概览', description: '分析剧本并提取基础要素' },
+  { phase: 2, key: 'characters', label: '角色设定', description: '完善角色外观与人物设定' },
+  { phase: 3, key: 'props', label: '道具设定', description: '完善关键道具与视觉特征' },
+  { phase: 4, key: 'scenes', label: '场景设定', description: '完善场景氛围与空间信息' },
+  { phase: 5, key: 'storyboard', label: '分镜生成', description: '为每个场景生成镜头分镜' },
+];
+
+const countLogMatches = (text, pattern) => (text.match(pattern) || []).length;
+
+// pipeline.log is appended to when a user regenerates a step. Restrict parsing
+// to the last Step 1 run so a previous finished run never masks live progress.
+function parseStep1Progress(logText) {
+  const text = String(logText || '').replace(/\r/g, '');
+  const runStart = Math.max(text.lastIndexOf('-> Chat: Phase 1'), text.lastIndexOf('Phase 1 done:'));
+  const currentRun = runStart >= 0 ? text.slice(runStart) : text;
+  const phaseOne = currentRun.match(/Phase 1 done:\s*(\d+) characters,\s*(\d+) scenes,\s*(\d+) props/);
+  const totals = {
+    characters: Number(currentRun.match(/Phase 2: defining\s+(\d+)\s+characters/)?.[1] || phaseOne?.[1] || 0),
+    props: Number(currentRun.match(/Phase 3: defining\s+(\d+)\s+props/)?.[1] || phaseOne?.[3] || 0),
+    scenes: Number(currentRun.match(/Phase 4: defining\s+(\d+)\s+scenes/)?.[1] || phaseOne?.[2] || 0),
+    storyboard: Number(currentRun.match(/Phase 5: generating shots for\s+(\d+)\s+scenes/)?.[1] || phaseOne?.[2] || 0),
+  };
+  const completed = {
+    overview: phaseOne ? 1 : 0,
+    characters: countLogMatches(currentRun, /Phase 2:\s+.+?\s+\([^)]+\) done/g),
+    props: countLogMatches(currentRun, /Phase 3:\s+.+?\s+\([^)]+\) done/g),
+    scenes: countLogMatches(currentRun, /Phase 4:\s+.+?\s+\([^)]+\) done/g),
+    storyboard: countLogMatches(currentRun, /Phase 5:\s+.+?\s+done\s+\(\d+ shots\)/g),
+  };
+  const phaseStarts = [
+    currentRun.search(/Phase 2: defining/),
+    currentRun.search(/Phase 3: defining/),
+    currentRun.search(/Phase 4: defining/),
+    currentRun.search(/Phase 5: generating shots/),
+  ];
+  const currentPhase = phaseStarts.reduce((phase, start, index) => start >= 0 ? index + 2 : phase, 1);
+  const stages = STEP1_PROGRESS_STAGES.map(stage => {
+    const total = stage.key === 'overview' ? 1 : totals[stage.key];
+    const done = Math.min(completed[stage.key], total || completed[stage.key]);
+    // Empty collections are intentionally skipped by the Python pipeline.
+    const skipped = stage.phase < currentPhase && total === 0;
+    return { ...stage, total, done, skipped, complete: skipped || (total > 0 && done >= total) };
+  });
+  const active = stages.find(stage => stage.phase === currentPhase) || stages[0];
+  // Python writes the final storyboard files after its last "Phase 5 done"
+  // line. Do not present that short persistence window as generation work.
+  const complete = stages.every(stage => stage.complete);
+  return { active, stages, complete, hasLog: Boolean(currentRun.trim()) };
+}
+
+function Step1Progress({ progress }) {
+  const active = progress?.active || STEP1_PROGRESS_STAGES[0];
+  const stages = progress?.stages || STEP1_PROGRESS_STAGES.map(stage => ({ ...stage, total: stage.phase === 1 ? 1 : 0, done: 0, complete: false, skipped: false }));
+  const activeStage = stages.find(stage => stage.phase === active.phase) || active;
+  const isFinalizing = Boolean(progress?.complete);
+  const countText = isFinalizing
+    ? '全部阶段已完成，正在保存结果'
+    : activeStage.phase === 1
+    ? (activeStage.done ? '基础要素已提取' : '正在分析剧本内容')
+    : activeStage.total > 0
+      ? `已完成 ${activeStage.done}/${activeStage.total}`
+      : '正在准备内容';
+  return <section className="mb-6 rounded-xl border border-brass-500/30 bg-brass-500/[0.06] px-4 py-3.5" aria-live="polite">
+    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
+      <div className="flex items-center gap-2.5"><span className={'h-2 w-2 rounded-full ' + (isFinalizing ? 'bg-leaf-400' : 'animate-pulse bg-brass-400')}/><div><p className="text-sm font-semibold text-stone-100">{isFinalizing ? '5/5 阶段已完成 · 正在保存分镜结果' : `第 ${active.phase}/5 阶段 · ${active.label}`}</p><p className="mt-0.5 text-xs text-stone-500">{isFinalizing ? '所有场景的分镜已生成，正在写入分镜文件。' : active.description}</p></div></div>
+      <span className="rounded-full border border-brass-500/25 bg-ink-950/50 px-2.5 py-1 text-xs font-medium text-brass-400">{countText}</span>
+    </div>
+    <div className="mt-4 grid grid-cols-2 gap-x-2 gap-y-2 sm:grid-cols-5">
+      {stages.map(stage => {
+        const isActive = !isFinalizing && stage.phase === active.phase;
+        const isDone = stage.complete && !isActive;
+        return <div key={stage.key} className={'flex min-w-0 items-center gap-2 rounded-lg border px-2.5 py-2 transition-colors ' + (isActive ? 'border-brass-500/60 bg-brass-500/10' : isDone ? 'border-leaf-500/25 bg-leaf-500/[0.06]' : 'border-ink-700 bg-ink-950/35')}>
+          <span className={'flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ' + (isActive ? 'bg-brass-500 text-ink-950' : isDone ? 'bg-leaf-500 text-ink-950' : 'bg-ink-700 text-stone-500')}>{isDone ? '✓' : isActive ? stage.phase : stage.phase}</span>
+          <span className={'truncate text-xs font-medium ' + (isActive ? 'text-brass-400' : isDone ? 'text-leaf-400' : 'text-stone-500')}>{stage.label}</span>
+        </div>;
+      })}
+    </div>
+  </section>;
+}
+
 function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, onRefresh, visualAssetsCompletionKnown, onVisualAssetsCompletionChange,
                     assetTab: controlledAssetTab, onAssetTabChange, onAssetOverviewChange,
                     maxShotsPerScene, setMaxShotsPerScene, totalShots, setTotalShots, totalDuration, setTotalDuration }) {
@@ -213,6 +294,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
   const [savingScript, setSavingScript] = useState(false);
   const [savingStoryboard, setSavingStoryboard] = useState(false);
   const [optimizingSkills, setOptimizingSkills] = useState({});
+  const [step1Progress, setStep1Progress] = useState(null);
   const [localAssetTab, setLocalAssetTab] = useState('characters');
   const assetTab = controlledAssetTab || localAssetTab;
   const setAssetTab = useCallback((tab) => {
@@ -243,6 +325,25 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
     setArtifactsLoadedFor(null);
     visualCompletionAtStep3Ref.current = null;
   }, [pipelineId]);
+
+  // Step 1 emits detailed phase logs before storyboard.json exists. Poll that
+  // existing source while it runs so the user can see what the model is doing.
+  useEffect(() => {
+    if (step !== 1 || !isStepRunning) {
+      setStep1Progress(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const loadProgress = async () => {
+      try {
+        const response = await api(`/pipelines/${pipelineId}/logs`);
+        if (response.ok && !cancelled) setStep1Progress(parseStep1Progress(await response.text()));
+      } catch (_) { /* keep the last known progress visible */ }
+    };
+    loadProgress();
+    const timer = setInterval(() => { if (!document.hidden) loadProgress(); }, 2500);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [pipelineId, step, isStepRunning]);
 
   useEffect(() => {
     // Step 3 also needs the Step 2 asset inventory when opened directly from
@@ -400,6 +501,11 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
     const section = assetOverview[key];
     return section.total > 0 && (section.completed < section.total || section.generating > 0 || section.failed > 0);
   }), [assetOverview]);
+  const step1RunningLabel = step1Progress?.complete
+    ? '正在保存分镜结果...'
+    : step1Progress?.active
+    ? `正在${step1Progress.active.label}...`
+    : '正在启动分镜生成...';
 
   useEffect(() => {
     if (step !== 2 || !isStepRunning || !activeAssetStage) return;
@@ -676,7 +782,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
             步骤 {step}: {STEP_NAMES[step]}
           </h3>
           <p className="text-xs text-stone-500 mt-1">
-            {isStepDone ? '已完成' : isStepRunning ? (step === 2 && activeAssetStage ? `正在生成${activeAssetStage === 'characters' ? '角色肖像' : activeAssetStage === 'props' ? '道具' : '场景'}...` : step === 4 ? '正在合成最终影片...' : '正在生成...') : canGenerate ? '准备就绪' : '前置步骤尚未完成'}
+            {isStepDone ? '已完成' : isStepRunning ? (step === 1 ? step1RunningLabel : step === 2 && activeAssetStage ? `正在生成${activeAssetStage === 'characters' ? '角色肖像' : activeAssetStage === 'props' ? '道具' : '场景'}...` : step === 4 ? '正在合成最终影片...' : '正在生成...') : canGenerate ? '准备就绪' : '前置步骤尚未完成'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -699,7 +805,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
                   : 'bg-ink-700 text-stone-500 cursor-not-allowed'
             }`}
           >
-            {isStepRunning ? (step === 4 ? '⏳ 合成中...' : step === 2 && activeAssetStage ? `⏳ 正在生成${activeAssetStage === 'characters' ? '角色肖像' : activeAssetStage === 'props' ? '道具' : '场景'}...` : '⏳ 生成中...') : isStepDone ? (step === 4 ? '重新合成' : step === 3 ? '生成全部分镜' : step === 2 ? '重新生成全部素材' : '重新生成') : (step === 4 ? '开始合成' : step === 3 ? '生成全部分镜' : step === 2 ? '生成全部素材' : '开始生成')}
+            {isStepRunning ? (step === 4 ? '⏳ 合成中...' : step === 1 ? `⏳ ${step1Progress?.complete ? '正在保存...' : step1Progress?.active?.label || '生成中'}...` : step === 2 && activeAssetStage ? `⏳ 正在生成${activeAssetStage === 'characters' ? '角色肖像' : activeAssetStage === 'props' ? '道具' : '场景'}...` : '⏳ 生成中...') : isStepDone ? (step === 4 ? '重新合成' : step === 3 ? '生成全部分镜' : step === 2 ? '重新生成全部素材' : '重新生成') : (step === 4 ? '开始合成' : step === 3 ? '生成全部分镜' : step === 2 ? '生成全部素材' : '开始生成')}
           </button>
         </div>
       </div>
@@ -783,6 +889,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
       </>
       )}
 
+      {step === 1 && isStepRunning && <Step1Progress progress={step1Progress} />}
       {step === 1 && (isStepDone || isStepRunning) && <StoryboardViewer pipelineId={pipelineId} poll={isStepRunning} reloadKey={stepReloadKey} />}
 
       {step === 2 && (isStepDone || isStepRunning || canGenerate) && (
