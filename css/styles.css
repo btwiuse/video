@@ -151,15 +151,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 
 .volc-logo {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  border-radius: 9px;
-  color: #fff;
-  font-size: 15px;
-  background: linear-gradient(135deg, var(--volc-primary-start), var(--volc-primary-end));
-  box-shadow: 0 5px 12px rgba(91, 63, 224, 0.2);
+  width: 36px;
+  height: 36px;
+  flex: none;
+  filter: drop-shadow(0 5px 10px rgba(91, 63, 224, 0.2));
 }
 
 .volc-primary {

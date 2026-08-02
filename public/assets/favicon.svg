@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">剧创工作台</title>
+  <defs>
+    <linearGradient id="background" x1="64" y1="48" x2="448" y2="464" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4f7cff"/>
+      <stop offset="1" stop-color="#743ce8"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="14" flood-color="#2e1a77" flood-opacity=".28"/>
+    </filter>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="url(#background)"/>
+  <g filter="url(#shadow)" fill="#fff">
+    <path d="M256 99c15 80 45 110 125 125-80 15-110 45-125 125-15-80-45-110-125-125 80-15 110-45 125-125Z"/>
+    <path d="M374 286c7 37 21 51 58 58-37 7-51 21-58 58-7-37-21-51-58-58 37-7 51-21 58-58Z" opacity=".82"/>
+  </g>
+  <rect x="145" y="374" width="222" height="18" rx="9" fill="#fff" fill-opacity=".42"/>
+</svg>

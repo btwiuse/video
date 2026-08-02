@@ -1702,7 +1702,23 @@ func serveHome(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	http.ServeFile(w, r, "index.html")
+	data, err := os.ReadFile("index.html")
+	if err != nil {
+		http.Error(w, "index page not found", http.StatusInternalServerError)
+		return
+	}
+	scheme := "http"
+	if r.TLS != nil || strings.EqualFold(strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0]), "https") {
+		scheme = "https"
+	}
+	origin := (&url.URL{Scheme: scheme, Host: r.Host}).String()
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write([]byte(strings.ReplaceAll(string(data), "{{SITE_URL}}", origin)))
+}
+
+func serveManifest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/manifest+json")
+	http.ServeFile(w, r, "public/manifest.json")
 }
 
 func handleArtifacts(w http.ResponseWriter, r *http.Request) {
@@ -1883,10 +1899,13 @@ func main() {
 	mime.AddExtensionType(".css", "text/css")
 	mime.AddExtensionType(".js", "application/javascript")
 	mime.AddExtensionType(".jsx", "application/javascript")
+	mime.AddExtensionType(".svg", "image/svg+xml")
 	mux.HandleFunc("/", serveHome)
+	mux.HandleFunc("/manifest.json", serveManifest)
 	mux.HandleFunc("/health", handleHealth)
 	mux.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("js"))))
 	mux.Handle("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir("css"))))
+	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("public/assets"))))
 	mux.HandleFunc("/pipelines", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			handleCreatePipeline(w, r)
