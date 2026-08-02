@@ -7,7 +7,7 @@
   <title>Film Pipeline Studio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -21,38 +21,38 @@
           transparent: 'transparent',
           current: 'currentColor',
           ink: {
-            950: '#0d0c0b',
-            900: '#1a1816',
-            800: '#252220',
-            700: '#34302d',
-            600: '#4a4440',
+            950: '#ffffff',
+            900: '#ffffff',
+            800: '#f6f7fb',
+            700: '#e6e8f0',
+            600: '#cfd3df',
           },
           brass: {
-            400: '#dbb95d',
-            500: '#c9a84c',
-            600: '#b8963e',
+            400: '#8b6cff',
+            500: '#6d45ed',
+            600: '#5632cb',
           },
           stone: {
-            100: '#f0ede8',
-            200: '#e0dcd5',
-            300: '#c4bfb7',
-            400: '#a09890',
-            500: '#7a736b',
+            100: '#1f2329',
+            200: '#30343b',
+            300: '#565d6b',
+            400: '#7d8494',
+            500: '#a1a7b4',
           },
           leaf: {
-            400: '#6aa07a',
-            500: '#5a8a6a',
-            600: '#4a7359',
+            400: '#18a56d',
+            500: '#0c8d5b',
+            600: '#08774d',
           },
           clay: {
-            400: '#b86a62',
-            500: '#a8524a',
-            600: '#8a423c',
+            400: '#ef6b73',
+            500: '#df4852',
+            600: '#c9343e',
           },
         },
         fontFamily: {
-          heading: ['"Playfair Display"', 'Georgia', 'serif'],
-          sans: ['"DM Sans"', 'system-ui', 'sans-serif'],
+          heading: ['"Noto Sans SC"', 'Inter', 'system-ui', 'sans-serif'],
+          sans: ['Inter', '"Noto Sans SC"', 'system-ui', 'sans-serif'],
           mono: ['"JetBrains Mono"', 'SF Mono', 'monospace'],
         },
         extend: {
@@ -84,21 +84,21 @@
       },
     }
   </script>
-  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/styles.css?v=volc-style-v3">
   <link rel="stylesheet" href="/css/patterns.css">
 </head>
 <body>
   <div id="root"></div>
   <script type="text/babel" src="/js/utils.jsx?v=four-step-v2"></script>
-  <script type="text/babel" src="/js/components/StepTabs.jsx?v=four-step-v2"></script>
+  <script type="text/babel" src="/js/components/StepTabs.jsx?v=volc-style-v2"></script>
   <script type="text/babel" src="/js/components/LogViewer.jsx"></script>
   <script type="text/babel" src="/js/components/ArtifactList.jsx"></script>
   <script type="text/babel" src="/js/components/StoryboardViewer.jsx?v=props-v2"></script>
-  <script type="text/babel" src="/js/components/StepView.jsx?v=step1-progress-v18"></script>
-  <script type="text/babel" src="/js/components/PipelineDetail.jsx?v=ordered-assets-v1"></script>
-  <script type="text/babel" src="/js/components/CreatePipeline.jsx"></script>
-  <script type="text/babel" src="/js/components/PipelineList.jsx?v=four-step-v2"></script>
-  <script type="text/babel" src="/js/components/App.jsx"></script>
+  <script type="text/babel" src="/js/components/StepView.jsx?v=volc-style-v19"></script>
+  <script type="text/babel" src="/js/components/PipelineDetail.jsx?v=manual-steps-v3"></script>
+  <script type="text/babel" src="/js/components/CreatePipeline.jsx?v=volc-style-v2"></script>
+  <script type="text/babel" src="/js/components/PipelineList.jsx?v=asset-mosaics-v20"></script>
+  <script type="text/babel" src="/js/components/App.jsx?v=volc-style-v4"></script>
   <script type="text/babel" src="/js/main.jsx"></script>
 </body>
 </html>

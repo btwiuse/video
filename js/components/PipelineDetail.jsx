@@ -127,42 +127,6 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
     } catch (_) {}
   };
 
-  const runAll = async () => {
-    setActionLoading(true);
-    try {
-      const startStep = currentStep === WORKFLOW_STEP_COUNT ? 1 : currentStep + 1;
-      for (let s = startStep; s <= WORKFLOW_STEP_COUNT; s++) {
-        navigateToStep(s);
-        const body = s === 1 ? { max_shots_per_scene: maxShotsPerScene, total_shots: totalShots, total_duration: totalDuration } : {};
-        await api(`/pipelines/${pid}/steps/${s}`, { method: 'POST', body: JSON.stringify(body) });
-        const startTime = Date.now();
-        const timeout = 30 * 60 * 1000;
-        while (true) {
-          await new Promise(r => setTimeout(r, 3000));
-          if (Date.now() - startTime > timeout) {
-            toast.error(`步骤 ${s} 超时 (30分钟)，请检查后端状态`);
-            break;
-          }
-          const res = await api(`/pipelines/${pid}`);
-          if (!res.ok) break;
-          const data = await res.json();
-          const status = data.status;
-          if (status === 'failed' || status === 'canceled') {
-            if (status === 'canceled') {
-              toast(`步骤 ${s} 已取消`);
-            } else {
-              toast.error(`步骤 ${s} 失败: ${data.error || status}`);
-            }
-            return; // 停止全部流程
-          }
-          const completedStep = status?.startsWith('step_') ? workflowStep(parseInt(status.split('_')[1])) : (status === 'done' ? WORKFLOW_STEP_COUNT : 0);
-          if (completedStep >= s || status === 'done') break;
-        }
-      }
-      onRefresh();
-    } finally { setActionLoading(false); }
-  };
-
   const del = async () => {
     if (!confirm('确定删除此 pipeline 及其所有产物?')) return;
     try {
@@ -238,9 +202,10 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
       : !stepAvailable(activeStep + 1));
 
   return (
-    <div className="bg-ink-900 rounded-lg p-6 border border-ink-700">
-      <div className="flex items-start justify-between mb-2">
+    <div className="bg-ink-900 rounded-2xl p-4 sm:p-6 border border-ink-700 shadow-sm">
+      <div className="flex items-start justify-between gap-4 mb-5">
         <div className="flex-1 min-w-0">
+          <p className="mb-1 text-[11px] font-medium tracking-wide text-brass-500">AI VIDEO PROJECT</p>
           <h2 className="font-heading text-xl font-semibold text-stone-100 truncate" title={pipeline.name}>{pipeline.name || 'Untitled Pipeline'}</h2>
           {summaryLoading && <p className="text-stone-400 text-xs mt-1">正在生成摘要...</p>}
           {summary && summary.summary && (
@@ -253,10 +218,7 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={runAll} disabled={actionLoading || pipeline.status === 'done'} className="nav-btn text-xs px-2.5 py-1.5 bg-brass-500 hover:bg-brass-400 disabled:bg-ink-700 text-ink-950 rounded transition-colors disabled:text-stone-400 font-medium">
-            运行全部步骤
-          </button>
-          <button onClick={del} className="text-xs px-2.5 py-1.5 bg-ink-700 hover:bg-ink-600 text-clay-400 rounded transition-colors">删除</button>
+          <button onClick={del} className="text-xs px-3 py-2 bg-ink-800 hover:bg-ink-700 text-clay-500 rounded-lg border border-ink-700 transition-colors">删除</button>
         </div>
       </div>
 
@@ -275,7 +237,7 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
 
       <div className="flex justify-end">
         {activeStep >= WORKFLOW_STEP_COUNT && pipeline.status === 'done' ? (
-          <button onClick={handleDownloadFinalVideo} className="nav-btn text-xs px-3 py-1.5 bg-brass-500 hover:bg-brass-400 text-ink-950 rounded transition-colors font-medium">
+          <button onClick={handleDownloadFinalVideo} className="nav-btn volc-primary text-xs px-3 py-2 text-ink-950 rounded-lg transition-colors font-medium">
             ↓ 下载最终视频
           </button>
         ) : activeStep < WORKFLOW_STEP_COUNT ? (
@@ -283,7 +245,7 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
             className={`nav-btn text-xs px-2.5 py-1.5 rounded transition-colors font-medium ${
               nextDisabled
                 ? 'bg-ink-800/60 text-stone-600 cursor-not-allowed'
-                : 'bg-brass-500 hover:bg-brass-400 text-ink-950'
+                : 'volc-primary text-ink-950'
             }`}>
             {activeStep === 2
               ? step2AssetTab === 'characters' ? '下一步：道具 →' : step2AssetTab === 'props' ? '下一步：场景 →' : '下一步：视频生成 →'

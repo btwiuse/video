@@ -775,7 +775,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
   };
 
   return (
-    <div className="bg-ink-800/30 border border-ink-700 rounded p-6 mb-6">
+    <div className="mb-6 rounded-2xl border border-ink-700 bg-ink-900 p-4 shadow-sm sm:p-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="font-heading text-lg font-semibold text-stone-100">

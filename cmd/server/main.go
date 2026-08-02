@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -66,6 +67,7 @@ type Pipeline struct {
 var (
 	pipelines = make(map[string]*Pipeline)
 	mu        sync.RWMutex
+	summaryMu sync.Mutex
 )
 
 // ============================================================================
@@ -119,6 +121,10 @@ func listArtifactsRecursive(dir string) ([]map[string]any, error) {
 
 func scriptPath(id string) string {
 	return filepath.Join(outputDir(id), "script.txt")
+}
+
+func summaryPath(id string) string {
+	return filepath.Join(outputDir(id), "summary.json")
 }
 
 func pipelineKey(id string) string {
@@ -188,12 +194,20 @@ func generatePipelineName(scriptPath string) string {
 		if strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") || strings.HasPrefix(line, "场景") || strings.HasPrefix(line, "===") {
 			continue
 		}
-		if len(line) > 30 {
-			line = line[:30] + "..."
-		}
+		// len(string) counts UTF-8 bytes, so slicing it can split a Chinese
+		// character and permanently store U+FFFD in the project name.
+		line = truncateRunes(line, 30)
 		return line
 	}
 	return "Untitled Pipeline"
+}
+
+func truncateRunes(value string, limit int) string {
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	return string(runes[:limit]) + "..."
 }
 
 func detectStatus(id string) PipelineStatus {
@@ -223,6 +237,62 @@ func hasImageMatching(pattern string) bool {
 		}
 	}
 	return false
+}
+
+// pipelinePreviewGroups returns fixed asset categories in the same order visual
+// assets are produced: character, prop, scene, then the Step 3 start frame.
+// Each category contains at most sixteen images for a compact mosaic preview;
+// its count is the number of logical assets, not the number of image variants.
+func pipelinePreviewGroups(id string) ([][]string, []int) {
+	dir := outputDir(id)
+	patterns := []string{
+		"characters/*.*",
+		"props/*_reference.*",
+		"scenes/*.*",
+		"shots/*/*_startframe.*",
+	}
+	groups := make([][]string, 0, len(patterns))
+	counts := make([]int, 0, len(patterns))
+	for category, pattern := range patterns {
+		group := make([]string, 0, 16)
+		assets := make(map[string]struct{})
+		matches, _ := filepath.Glob(filepath.Join(dir, pattern))
+		for _, path := range matches {
+			switch strings.ToLower(filepath.Ext(path)) {
+			case ".jpg", ".jpeg", ".png", ".webp":
+				rel, err := filepath.Rel(dir, path)
+				if err == nil {
+					rel = filepath.ToSlash(rel)
+					assets[previewAssetKey(category, rel)] = struct{}{}
+					if len(group) < 16 {
+						group = append(group, rel)
+					}
+				}
+			}
+		}
+		groups = append(groups, group)
+		counts = append(counts, len(assets))
+	}
+	return groups, counts
+}
+
+func previewAssetKey(category int, rel string) string {
+	base := strings.TrimSuffix(filepath.Base(rel), filepath.Ext(rel))
+	switch category {
+	case 0: // A character usually contributes front/profile/full-body views.
+		for _, suffix := range []string{"_front", "_profile", "_fullbody"} {
+			base = strings.TrimSuffix(base, suffix)
+		}
+	case 1:
+		base = strings.TrimSuffix(base, "_reference")
+	case 2: // A scene usually contributes wide/detail views.
+		for _, suffix := range []string{"_wide", "_detail"} {
+			base = strings.TrimSuffix(base, suffix)
+		}
+	case 3:
+		return filepath.ToSlash(filepath.Dir(rel))
+	}
+	return base
 }
 
 // visualAssetsComplete verifies the actual asset files rather than relying on
@@ -652,6 +722,32 @@ func handleSummarize(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "script not found", http.StatusNotFound)
 		return
 	}
+	scriptData, err := os.ReadFile(sp)
+	if err != nil {
+		http.Error(w, "cannot read script", http.StatusInternalServerError)
+		return
+	}
+	sourceHash := fmt.Sprintf("%x", sha256.Sum256(scriptData))
+
+	// The detail page requests this endpoint whenever it mounts. Serialize the
+	// cache lookup and generation so even concurrent page opens result in one
+	// model call per script version.
+	summaryMu.Lock()
+	defer summaryMu.Unlock()
+	var cached struct {
+		SourceHash string `json:"source_hash"`
+		Title      string `json:"title"`
+		Summary    string `json:"summary"`
+	}
+	if data, readErr := os.ReadFile(summaryPath(id)); readErr == nil && json.Unmarshal(data, &cached) == nil && cached.SourceHash == sourceHash && cached.Title != "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"title":   cached.Title,
+			"summary": cached.Summary,
+			"cached":  true,
+		})
+		return
+	}
 
 	// Run summarize script via Python
 	cmd := exec.Command("uv", "run", "python", "main.py", "summarize", sp)
@@ -694,6 +790,16 @@ func handleSummarize(w http.ResponseWriter, r *http.Request) {
 	}
 	if result == nil {
 		result = map[string]string{"title": "Untitled", "summary": ""}
+	}
+	cacheData, cacheErr := json.MarshalIndent(map[string]string{
+		"source_hash": sourceHash,
+		"title":       result["title"],
+		"summary":     result["summary"],
+	}, "", "  ")
+	if cacheErr != nil {
+		vlog("pipeline %s cannot encode summary cache: %v", id, cacheErr)
+	} else if err := os.WriteFile(summaryPath(id), cacheData, 0644); err != nil {
+		vlog("pipeline %s cannot save summary cache: %v", id, err)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -799,15 +905,18 @@ func handleListPipelines(w http.ResponseWriter, r *http.Request) {
 		if p == nil {
 			continue
 		}
+		previewGroups, previewCounts := pipelinePreviewGroups(p.ID)
 		list = append(list, map[string]any{
-			"pipeline_id": p.ID,
-			"name":        p.Name,
-			"status":      string(p.Status),
-			"step":        p.Step,
-			"error":       p.Error,
-			"created_at":  p.CreatedAt,
-			"updated_at":  p.UpdatedAt,
-			"duration":    p.Duration,
+			"pipeline_id":    p.ID,
+			"name":           p.Name,
+			"status":         string(p.Status),
+			"step":           p.Step,
+			"error":          p.Error,
+			"created_at":     p.CreatedAt,
+			"updated_at":     p.UpdatedAt,
+			"duration":       p.Duration,
+			"preview_groups": previewGroups,
+			"preview_counts": previewCounts,
 		})
 	}
 

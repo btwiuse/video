@@ -13,13 +13,19 @@ const navigateTo = (view, id = null) => {
   else { window.location.hash = '#'; }
 };
 
+const THEME_STORAGE_KEY = 'film-pipeline-theme';
+const getSavedTheme = () => {
+  try { return localStorage.getItem(THEME_STORAGE_KEY) === 'dark' ? 'dark' : 'light'; }
+  catch { return 'light'; }
+};
+
     function App() {
 const [pipelines, setPipelines] = useState([]);
 const [selected, setSelected] = useState(null);
 const [health, setHealth] = useState(null);
 const [currentView, setCurrentView] = useState('list');
 const [pipelineId, setPipelineId] = useState(null);
-const [theme, setTheme] = useState(() => { try { return localStorage.getItem('pipelineTheme') || 'wave'; } catch { return 'wave'; } });
+const [theme, setTheme] = useState(getSavedTheme);
 const pollRef = useRef(null);
 const currentViewRef = useRef(currentView);
 currentViewRef.current = currentView;
@@ -74,99 +80,53 @@ useEffect(() => {
 }, []);
 
 useEffect(() => {
-  document.body.className = `theme-${theme}`;
-  try { localStorage.setItem('pipelineTheme', theme); } catch {}
+  document.body.className = `theme-volc${theme === 'dark' ? ' theme-volc-dark' : ''}`;
+  try { localStorage.setItem(THEME_STORAGE_KEY, theme); } catch {}
 }, [theme]);
 
 return (
   <div className="min-h-screen flex flex-col">
-    <header className="bg-ink-900 border-b border-ink-700 px-6 py-4 flex items-center justify-between">
+    <header className="volc-header px-4 sm:px-7">
       <button onClick={() => navigateTo('list')} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-        <div className="w-9 h-9 bg-brass-500 rounded flex items-center justify-center text-ink-950 font-heading font-bold text-lg">F</div>
+        <div className="volc-logo">✦</div>
         <div>
-          <h1 className="font-heading text-lg font-semibold text-stone-100 leading-tight">Film Pipeline Studio</h1>
-          <p className="text-xs text-stone-500 leading-tight">AI 剧本到电影</p>
+          <h1 className="font-heading text-[15px] font-semibold text-stone-100 leading-tight">剧创工作台</h1>
+          <p className="text-[11px] text-stone-500 leading-tight">AI 剧本到视频</p>
         </div>
       </button>
       <div className="flex items-center gap-3">
-        <select value={theme} onChange={e => setTheme(e.target.value)}
-          className="text-xs bg-ink-800 text-stone-400 border border-ink-700 rounded px-2 py-1 focus:outline-none focus:border-brass-500 cursor-pointer">
-          <option value="wave">波纹</option>
-          <option value="carbon">碳纤维</option>
-          <option value="carbon-fibre">碳纤维纹</option>
-          <option value="stripes">斜纹</option>
-          <option value="diag-stripes">斜条纹</option>
-          <option value="v-stripes">竖纹</option>
-          <option value="h-stripes">横纹</option>
-          <option value="dots">波点</option>
-          <option value="checker">棋盘</option>
-          <option value="diag-checker">斜棋盘</option>
-          <option value="argyle">菱形</option>
-          <option value="half-rombos">半菱形</option>
-          <option value="stairs">阶梯</option>
-          <option value="arrows">箭头</option>
-          <option value="zigzag">之字形</option>
-          <option value="weave">编织</option>
-          <option value="seigaiha">青海波</option>
-          <option value="jp-cube">和风方块</option>
-          <option value="houndstooth">千鸟格</option>
-          <option value="tartan">苏格兰格</option>
-          <option value="madras">Madras 格</option>
-          <option value="bricks">砖墙</option>
-          <option value="hearts">爱心</option>
-          <option value="stars">星辰</option>
-          <option value="starry">星空</option>
-          <option value="marrakesh">马拉喀什</option>
-          <option value="rainbow">彩虹光斑</option>
-          <option value="waves">海浪</option>
-          <option value="yinyang">阴阳</option>
-          <option value="cross">十字</option>
-          <option value="cross-dots">十字波点</option>
-          <option value="shippo">七宝纹</option>
-          <option value="microbial">微生物垫</option>
-          <option value="brady">布雷迪</option>
-          <option value="upholstery">衬垫</option>
-          <option value="honeycomb">蜂巢</option>
-          <option value="pyramid">金字塔</option>
-          <option value="choco-weave">巧克力编织</option>
-          <option value="blueprint">蓝图网格</option>
-          <option value="lined">横线纸</option>
-          <option value="tablecloth">桌布</option>
-          <option value="cicada">蝉纹</option>
-          <option value="steps">阶梯花</option>
-          <option value="default">默认主题</option>
-        </select>
+        <span className="hidden sm:inline text-xs text-stone-500">项目工作台</span>
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${health ? 'bg-leaf-400' : 'bg-clay-500'}`} />
-          <span className="text-sm text-stone-400">{health ? '在线' : '离线'}</span>
+          <span className="text-xs text-stone-400">{health ? '服务正常' : '服务离线'}</span>
         </div>
+        <button type="button" onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}
+          aria-label={theme === 'dark' ? '切换至浅色模式' : '切换至暗色模式'} title={theme === 'dark' ? '切换至浅色模式' : '切换至暗色模式'}
+          className="theme-toggle nav-btn flex h-9 w-9 items-center justify-center rounded-lg border border-ink-700 bg-ink-900 text-base text-stone-400 hover:text-brass-500">
+          {theme === 'dark' ? '☀' : '☾'}
+        </button>
         <button onClick={() => navigateTo('create')}
-          className="nav-btn text-sm px-3 py-1.5 bg-brass-500 hover:bg-brass-400 text-ink-950 rounded font-medium transition-all">
-          新建 Pipeline
+          className="nav-btn volc-primary text-sm px-3.5 py-2 text-ink-950 rounded-lg font-medium transition-all">
+          + 创建项目
         </button>
       </div>
     </header>
 
-    <main className="flex-1 p-6 overflow-auto">
+    <main className="flex-1 px-4 py-5 sm:px-7 sm:py-7 overflow-auto">
       <ErrorBoundary>
         {currentView === 'create' && (
-          <div className="max-w-xl mx-auto">
+          <div className="max-w-2xl mx-auto">
             <button onClick={() => navigateTo('list')} className="nav-btn text-sm text-stone-400 hover:text-brass-400 mb-4 transition-colors">← 返回列表</button>
             <CreatePipeline onCreated={(id) => { selectPipeline(id); }} />
           </div>
         )}
 
         {currentView === 'list' && (
-          <div>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="font-heading text-lg font-semibold text-stone-100">Pipeline 列表</h2>
-            </div>
-            <PipelineList onSelect={selectPipeline} onCreateNew={() => navigateTo('create')} />
-          </div>
+          <PipelineList onSelect={selectPipeline} onCreateNew={() => navigateTo('create')} />
         )}
 
         {currentView === 'detail' && selected && (
-          <div className="max-w-4xl mx-auto">
+          <div className="max-w-6xl mx-auto">
             <button onClick={() => navigateTo('list')} className="nav-btn text-sm text-stone-400 hover:text-brass-400 mb-4 transition-colors">← 返回列表</button>
             <PipelineDetail pipeline={selected} onRefresh={refreshSelected} onBack={() => navigateTo('list')} />
           </div>
@@ -174,11 +134,10 @@ return (
       </ErrorBoundary>
     </main>
 
-    <footer className="bg-ink-900 border-t border-ink-700 px-6 py-4 text-center text-xs text-stone-500">
-      Film Pipeline Studio — AI Screenplay to Film Pipeline
+    <footer className="border-t border-ink-700 px-6 py-4 text-center text-xs text-stone-500 bg-ink-900/70">
+      剧创工作台 · AI 剧本到视频
     </footer>
     <Toaster />
   </div>
 );
     }
-

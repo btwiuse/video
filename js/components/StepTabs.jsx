@@ -2,7 +2,7 @@ function StepTabs({ currentStep, pipelineStatus, activeStep, onNavigate }) {
   const isDone = pipelineStatus === 'done';
   const current = isDone ? WORKFLOW_STEP_COUNT : currentStep;
   return (
-    <div className="flex gap-2 mb-6">
+    <div className="mb-6 grid grid-cols-2 gap-2 rounded-xl border border-ink-700 bg-ink-800/70 p-2 sm:grid-cols-4">
       {[1,2,3,4].map(n => {
         const completed = n <= current;
         const isNext = n === current + 1;
@@ -13,14 +13,14 @@ function StepTabs({ currentStep, pipelineStatus, activeStep, onNavigate }) {
             key={n}
             onClick={() => { if (available) onNavigate(n); }}
             disabled={!available}
-            className={`step-btn flex-1 py-3 px-2 rounded text-sm font-medium transition-all ${
+            className={`step-btn min-w-0 py-2.5 px-2.5 rounded-lg text-sm font-medium transition-all ${
               isActive
-                ? 'bg-brass-500 text-ink-950 ring-1 ring-brass-400 shadow-lg shadow-brass-500/10'
+                ? 'volc-primary text-ink-950 shadow-md shadow-brass-500/15'
                 : completed
-                  ? 'bg-brass-500/15 text-brass-400 hover:bg-brass-500/25'
+                  ? 'bg-brass-500/10 text-brass-600 hover:bg-brass-500/15'
                   : isNext
-                    ? 'bg-ink-800 text-stone-300 ring-1 ring-ink-600 hover:bg-ink-700'
-                    : 'bg-ink-800/60 text-stone-600 cursor-not-allowed'
+                    ? 'bg-ink-900 text-stone-300 border border-ink-600 hover:border-brass-400'
+                    : 'text-stone-500 cursor-not-allowed'
             }`}
           >
             <div className="font-bold leading-tight">{completed ? '✓' : n}</div>
