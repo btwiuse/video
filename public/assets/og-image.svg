@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
-  <title id="title">剧创工作台 · AI 剧本到视频</title>
+  <title id="title">Reelix Studio · AI 剧本到视频</title>
   <desc id="description">从剧本到成片的一站式 AI 视频创作工作台</desc>
   <defs>
     <linearGradient id="background" x1="70" y1="34" x2="1120" y2="620" gradientUnits="userSpaceOnUse">
@@ -25,7 +25,7 @@
   <g transform="translate(76 70)">
     <rect width="72" height="72" rx="21" fill="url(#brand)"/>
     <path d="M36 15c4 21 12 29 33 33-21 4-29 12-33 33-4-21-12-29-33-33 21-4 29-12 33-33Z" fill="#fff"/>
-    <text x="94" y="31" fill="#26243a" font-family="Inter, PingFang SC, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="700">剧创工作台</text>
+    <text x="94" y="31" fill="#26243a" font-family="Inter, PingFang SC, Noto Sans CJK SC, sans-serif" font-size="25" font-weight="700">Reelix Studio</text>
     <text x="94" y="58" fill="#77748c" font-family="Inter, PingFang SC, Noto Sans CJK SC, sans-serif" font-size="17">AI 剧本到视频</text>
   </g>
   <g transform="translate(76 223)">

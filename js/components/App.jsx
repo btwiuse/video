@@ -88,9 +88,9 @@ return (
   <div className="min-h-screen flex flex-col">
     <header className="volc-header px-4 sm:px-7">
       <button onClick={() => navigateTo('list')} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
-        <img src="/assets/favicon.svg" alt="剧创工作台" className="volc-logo" />
+        <img src="/assets/favicon.svg" alt="Reelix Studio" className="volc-logo" />
         <div>
-          <h1 className="font-heading text-[15px] font-semibold text-stone-100 leading-tight">剧创工作台</h1>
+          <h1 className="font-heading text-[15px] font-semibold text-stone-100 leading-tight">Reelix Studio</h1>
           <p className="text-[11px] text-stone-500 leading-tight">AI 剧本到视频</p>
         </div>
       </button>
@@ -135,7 +135,7 @@ return (
     </main>
 
     <footer className="border-t border-ink-700 px-6 py-4 text-center text-xs text-stone-500 bg-ink-900/70">
-      剧创工作台 · AI 剧本到视频
+      Reelix Studio · AI 剧本到视频
     </footer>
     <Toaster />
   </div>
