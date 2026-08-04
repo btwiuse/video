@@ -291,7 +291,7 @@ class StoryboardGenerator:
         characters: list[dict] = [None] * len(char_infos)
         if char_infos:
             logger.info("Phase 2: defining %d characters (parallel)...", len(char_infos))
-            with ThreadPoolExecutor(max_workers=5) as executor:
+            with ThreadPoolExecutor(max_workers=config.DEEPSEEK_MAX_CONCURRENCY) as executor:
                 futures = {}
                 for i, char_info in enumerate(char_infos):
                     future = executor.submit(
@@ -318,7 +318,7 @@ class StoryboardGenerator:
         props: list[dict] = [None] * len(prop_infos)
         if prop_infos:
             logger.info("Phase 3: defining %d props (parallel)...", len(prop_infos))
-            with ThreadPoolExecutor(max_workers=5) as executor:
+            with ThreadPoolExecutor(max_workers=config.DEEPSEEK_MAX_CONCURRENCY) as executor:
                 futures = {}
                 for i, prop_info in enumerate(prop_infos):
                     future = executor.submit(
@@ -346,7 +346,7 @@ class StoryboardGenerator:
         scenes: list[dict] = [None] * len(scene_infos)
         if scene_infos:
             logger.info("Phase 4: defining %d scenes (parallel)...", len(scene_infos))
-            with ThreadPoolExecutor(max_workers=5) as executor:
+            with ThreadPoolExecutor(max_workers=config.DEEPSEEK_MAX_CONCURRENCY) as executor:
                 futures = {}
                 for i, scene_info in enumerate(scene_infos):
                     future = executor.submit(
@@ -374,7 +374,7 @@ class StoryboardGenerator:
             # Compute per-scene shot budget from env
             total_shots_env = os.environ.get("TOTAL_SHOTS", "")
             max_per_scene_env = os.environ.get("MAX_SHOTS_PER_SCENE", "")
-            with ThreadPoolExecutor(max_workers=5) as executor:
+            with ThreadPoolExecutor(max_workers=config.DEEPSEEK_MAX_CONCURRENCY) as executor:
                 futures = {}
                 for i, scene_info in enumerate(scene_infos):
                     scene_info = dict(scene_info)  # copy so we don't mutate original
@@ -726,12 +726,50 @@ class StoryboardGenerator:
     # ========================================================================
 
     def _call_tool(self, system_prompt: str, user_prompt: str, tool_def: dict, debug_tag: str = "") -> dict:
-        """Make a tool-calling API request with streaming feedback, return parsed JSON."""
+        """Make a resilient streaming tool-call request and return its JSON object.
+
+        A successful HTTP stream does not guarantee a complete function-argument
+        payload.  In particular, concurrent requests for large scripts can
+        occasionally end with malformed or truncated arguments.  Retrying the
+        entire call is safer than trying to invent fields in an incomplete
+        character, scene, or shot definition.
+        """
         tool_name = tool_def["function"]["name"]
         tag = f" [{debug_tag}]" if debug_tag else ""
         logger.info("  -> %s%s", tool_name, tag)
         logger.debug("  System: %d chars, User: %d chars", len(system_prompt), len(user_prompt))
 
+        max_attempts = config.DEEPSEEK_TOOL_MAX_ATTEMPTS
+        last_error: Exception | None = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                return self._call_tool_once(
+                    system_prompt, user_prompt, tool_def, debug_tag, attempt,
+                )
+            except Exception as exc:
+                last_error = exc
+                if attempt == max_attempts:
+                    break
+                delay = config.DEEPSEEK_RETRY_BASE_DELAY_SEC * (2 ** (attempt - 1))
+                logger.warning(
+                    "  %s%s attempt %d/%d failed: %s; retrying in %.1fs",
+                    tool_name, tag, attempt, max_attempts, exc, delay,
+                )
+                if delay:
+                    time.sleep(delay)
+
+        assert last_error is not None  # max_attempts is always at least one
+        raise RuntimeError(
+            f"{tool_name}{tag} failed after {max_attempts} attempt(s): {last_error}"
+        ) from last_error
+
+    def _call_tool_once(
+        self, system_prompt: str, user_prompt: str, tool_def: dict,
+        debug_tag: str, attempt: int,
+    ) -> dict:
+        """Execute one streaming tool-call attempt and require a complete result."""
+        tool_name = tool_def["function"]["name"]
+        tag = f" [{debug_tag}]" if debug_tag else ""
         t0 = time.monotonic()
         try:
             stream = self.client.chat.completions.create(
@@ -741,6 +779,7 @@ class StoryboardGenerator:
                     {"role": "user", "content": user_prompt},
                 ],
                 tools=[tool_def],
+                tool_choice={"type": "function", "function": {"name": tool_name}},
                 temperature=0.7,
                 max_tokens=16384,
                 stream=True,
@@ -750,10 +789,13 @@ class StoryboardGenerator:
             logger.error("  API call failed to start", exc_info=True)
             raise
 
-        # Collect streaming chunks: reasoning to stderr, tool arguments silently
+        # Collect streaming chunks: reasoning to stderr, tool arguments silently.
+        # Function arguments are deltas. Keep them separated by tool-call index
+        # rather than blindly joining every tool call in the response.
         reasoning_parts: list[str] = []
         content_parts: list[str] = []
-        arguments_parts: list[str] = []
+        arguments_by_index: dict[int, list[str]] = {}
+        tool_names_by_index: dict[int, str] = {}
         chunk_count = 0
         last_log = t0
 
@@ -777,14 +819,22 @@ class StoryboardGenerator:
             # Tool call arguments
             if delta.tool_calls:
                 for tc in delta.tool_calls:
-                    if tc.function and tc.function.arguments:
-                        arguments_parts.append(tc.function.arguments)
+                    index = getattr(tc, "index", None)
+                    if index is None:
+                        index = 0
+                    function = getattr(tc, "function", None)
+                    name = getattr(function, "name", None) if function else None
+                    if name:
+                        tool_names_by_index[index] = name
+                    arguments = getattr(function, "arguments", None) if function else None
+                    if arguments:
+                        arguments_by_index.setdefault(index, []).append(arguments)
 
             # Progress every 8s
             now = time.monotonic()
             if now - last_log >= 8.0:
                 rc = sum(len(r) for r in reasoning_parts)
-                ac = sum(len(a) for a in arguments_parts)
+                ac = sum(len(a) for parts in arguments_by_index.values() for a in parts)
                 logger.info("  ... %s: %.0fs, %d chunks, args=%d chars%s",
                              debug_tag or tool_name, now - t0, chunk_count, ac,
                              f", reasoning={rc} chars" if rc else "")
@@ -795,35 +845,68 @@ class StoryboardGenerator:
             sys.stderr.flush()
 
         elapsed = time.monotonic() - t0
+        nonempty_calls = {
+            index: parts for index, parts in arguments_by_index.items() if parts
+        }
+        if len(nonempty_calls) != 1:
+            raise RuntimeError(
+                f"expected exactly one {tool_name} call, received {len(nonempty_calls)}"
+            )
+        tool_index, arguments_parts = next(iter(nonempty_calls.items()))
+        received_name = tool_names_by_index.get(tool_index)
+        if received_name and received_name != tool_name:
+            raise RuntimeError(
+                f"expected tool {tool_name}, received {received_name}"
+            )
         tool_args = "".join(arguments_parts)
 
         logger.info("  <- %s done in %.1fs: args=%d chars (%d chunks)%s",
                      tool_name, elapsed, len(tool_args), chunk_count, tag)
 
         if not tool_args:
-            logger.error("  No tool arguments received! Content: %s", "".join(content_parts)[:500])
-            raise RuntimeError(f"Tool {tool_def['function']['name']} returned no arguments")
+            raise RuntimeError(
+                f"tool returned no arguments (content: {''.join(content_parts)[:500]!r})"
+            )
 
-        # Save raw args for debugging
-        from pathlib import Path
+        # Save every raw payload. A retry must not overwrite the malformed
+        # payload that prompted it, since it is needed to diagnose providers.
         debug_dir = ensure_output_dir("_debug")
-        tag = f"_{debug_tag}" if debug_tag else ""
-        debug_file = debug_dir / f"{tool_def['function']['name']}{tag}_raw_args.json"
+        debug_suffix = f"_{debug_tag}" if debug_tag else ""
+        attempt_suffix = f"_attempt{attempt}" if config.DEEPSEEK_TOOL_MAX_ATTEMPTS > 1 else ""
+        debug_file = debug_dir / f"{tool_name}{debug_suffix}{attempt_suffix}_raw_args.json"
         try:
             debug_file.write_text(json.dumps(json.loads(tool_args), indent=2, ensure_ascii=False), encoding="utf-8")
         except json.JSONDecodeError:
             debug_file.write_text(tool_args, encoding="utf-8")
         logger.debug("  Raw args saved to %s", debug_file)
 
-        result = self._safe_json_parse(tool_args, tool_def["function"]["name"])
+        result = self._parse_complete_tool_arguments(tool_args)
         if result is None:
             logger.error("  Tool args (head 300): %s", tool_args[:300])
             logger.error("  Tool args (tail 300): %s", tool_args[-300:])
+            raise RuntimeError(f"malformed JSON arguments; raw saved to {debug_file}")
+
+        required = tool_def["function"].get("parameters", {}).get("required", [])
+        missing = [field for field in required if field not in result]
+        if missing:
             raise RuntimeError(
-                f"Failed to parse JSON from {tool_def['function']['name']}. "
-                f"Raw saved to {debug_file}"
+                f"tool arguments missing required fields {missing}; raw saved to {debug_file}"
             )
         return result
+
+    @staticmethod
+    def _parse_complete_tool_arguments(text: str) -> dict | None:
+        """Parse only a complete JSON object from a function-call payload.
+
+        `_safe_json_parse` is intentionally permissive for Phase 1's plain text
+        response. Tool arguments feed later generation directly, so accepting a
+        guessed closing quote/brace there silently corrupts the storyboard.
+        """
+        try:
+            parsed = json.loads(text.strip())
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
 
     @staticmethod
     def _safe_json_parse(text: str, tool_name: str = "") -> dict | None:

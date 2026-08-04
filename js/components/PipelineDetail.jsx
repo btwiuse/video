@@ -4,6 +4,10 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
   const [actionLoading, setActionLoading] = useState(false);
   const [summary, setSummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [editingMetadata, setEditingMetadata] = useState(false);
+  const [metadataSaving, setMetadataSaving] = useState(false);
+  const [metadataDraft, setMetadataDraft] = useState({ name: '', description: '' });
+  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [visualAssetsCompleted, setVisualAssetsCompleted] = useState(false);
   // Step 2 has its own ordered flow. Keep this state here because the bottom
   // navigation lives outside StepView.
@@ -79,6 +83,38 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
       ? 1
       : pipelineCurrentStep;
   const pid = pipeline.pipeline_id;
+
+  const openMetadataEditor = () => {
+    setMetadataDraft({
+      name: pipeline.name || '',
+      description: pipeline.description || summary?.summary || '',
+    });
+    setEditingMetadata(true);
+  };
+
+  const saveMetadata = async event => {
+    event.preventDefault();
+    const name = metadataDraft.name.trim();
+    if (!name) {
+      toast.error('项目标题不能为空');
+      return;
+    }
+    setMetadataSaving(true);
+    try {
+      const response = await api(`/pipelines/${pid}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name, description: metadataDraft.description.trim() }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      setEditingMetadata(false);
+      toast('项目标题和简介已保存');
+      await onRefresh();
+    } catch (error) {
+      toast.error(`保存失败：${error?.message || '请稍后重试'}`);
+    } finally {
+      setMetadataSaving(false);
+    }
+  };
   // Same availability check as StepTabs: a step is available if completed or isNext
   const stepAvailable = (n) => {
     if (pipeline.status === 'done') return n <= WORKFLOW_STEP_COUNT;
@@ -207,9 +243,9 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
         <div className="flex-1 min-w-0">
           <p className="mb-1 text-[11px] font-medium tracking-wide text-brass-500">AI VIDEO PROJECT</p>
           <h2 className="font-heading text-xl font-semibold text-stone-100 truncate" title={pipeline.name}>{pipeline.name || 'Untitled Pipeline'}</h2>
-          {summaryLoading && <p className="text-stone-400 text-xs mt-1">正在生成摘要...</p>}
-          {summary && summary.summary && (
-            <p className="text-stone-300 text-sm mt-1 leading-relaxed">{summary.summary}</p>
+          {summaryLoading && !pipeline.description && <p className="text-stone-400 text-xs mt-1">正在生成摘要...</p>}
+          {(pipeline.description || summary?.summary) && (
+            <p className="text-stone-300 text-sm mt-1 leading-relaxed">{pipeline.description || summary.summary}</p>
           )}
           <div className="flex items-center gap-3 mt-2">
             <StatusBadge status={pipeline.status} />
@@ -217,10 +253,19 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
             {pipeline.duration && <span className="text-stone-500 text-xs">运行时长: {formatDuration(pipeline.duration)}</span>}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={del} className="text-xs px-3 py-2 bg-ink-800 hover:bg-ink-700 text-clay-500 rounded-lg border border-ink-700 transition-colors">删除</button>
-        </div>
       </div>
+
+      {activeStep === 1 && <section className="mb-5 rounded-xl border border-ink-700 bg-ink-950/35 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><p className="text-xs font-semibold text-stone-200">项目标题与简介</p><p className="mt-1 text-xs text-stone-500">这些信息会显示在项目主页；简介可作为本次创作的备注。</p></div>
+          {!editingMetadata && <button type="button" onClick={openMetadataEditor} className="rounded-md border border-ink-600 px-2.5 py-1.5 text-xs font-medium text-stone-300 hover:border-brass-500 hover:text-brass-400">编辑</button>}
+        </div>
+        {editingMetadata ? <form onSubmit={saveMetadata} className="mt-4 space-y-3">
+          <label className="block"><span className="text-xs font-medium text-stone-300">标题</span><input autoFocus value={metadataDraft.name} maxLength={100} onChange={event => setMetadataDraft(draft => ({ ...draft, name: event.target.value }))} className="mt-1.5 w-full rounded-lg border border-ink-600 bg-ink-950 px-3 py-2 text-sm text-stone-100 outline-none focus:border-brass-500" /></label>
+          <label className="block"><span className="text-xs font-medium text-stone-300">简介</span><textarea value={metadataDraft.description} maxLength={500} rows={3} onChange={event => setMetadataDraft(draft => ({ ...draft, description: event.target.value }))} placeholder="用一句话描述本项目的故事、风格或创作目标" className="mt-1.5 w-full resize-y rounded-lg border border-ink-600 bg-ink-950 px-3 py-2 text-sm text-stone-100 outline-none focus:border-brass-500" /></label>
+          <div className="flex items-center gap-2"><button type="submit" disabled={metadataSaving} className="rounded-md bg-brass-500 px-3 py-1.5 text-xs font-semibold text-ink-950 hover:bg-brass-400 disabled:opacity-50">{metadataSaving ? '保存中…' : '保存'}</button><button type="button" onClick={() => setEditingMetadata(false)} className="rounded-md px-3 py-1.5 text-xs text-stone-400 hover:bg-ink-800 hover:text-stone-200">取消</button></div>
+        </form> : <div className="mt-3"><p className="text-sm font-medium text-stone-100">{pipeline.name || 'Untitled Pipeline'}</p><p className="mt-1 text-sm leading-relaxed text-stone-400">{pipeline.description || summary?.summary || '尚未填写简介'}</p></div>}
+      </section>}
 
       <StepTabs currentStep={currentStep} pipelineStatus={pipeline.status} activeStep={activeStep} onNavigate={navigateToStep} />
 
@@ -256,9 +301,11 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
       <LogViewer pipelineId={pid} />
       <ArtifactList pipelineId={pid} />
 
-      <div className="mt-8 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-stone-500">
-        <span>创建时间: {formatDateTime(pipeline.created_at)}</span>
-        <span>更新时间: {formatDateTime(pipeline.updated_at)}</span>
+      <div className="mt-8 flex flex-wrap items-center justify-between gap-x-5 gap-y-1 text-xs text-stone-500">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1"><span>创建时间: {formatDateTime(pipeline.created_at)}</span><span>更新时间: {formatDateTime(pipeline.updated_at)}</span></div>
+        <div className="relative"><button type="button" onClick={() => setProjectMenuOpen(open => !open)} aria-label="项目选项" aria-expanded={projectMenuOpen} title="项目选项" className="flex h-7 w-7 items-center justify-center rounded-md text-base leading-none text-stone-500 hover:bg-ink-800 hover:text-stone-200">…</button>
+          {projectMenuOpen && <div className="absolute bottom-full right-0 z-30 mb-2 min-w-28 overflow-hidden rounded-lg border border-ink-600 bg-ink-900 p-1 shadow-xl"><button type="button" onClick={del} className="w-full rounded-md px-2.5 py-2 text-left text-xs text-clay-400 hover:bg-clay-500/10">删除项目</button></div>}
+        </div>
       </div>
     </div>
   );

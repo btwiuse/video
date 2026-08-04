@@ -49,19 +49,20 @@ const (
 )
 
 type Pipeline struct {
-	ID         string
-	Name       string
-	ScriptFile string `json:"script_file"` // original uploaded filename
-	Status     PipelineStatus
-	Step       int // current step 0-5
-	Error      string
-	Cmd        *exec.Cmd          `json:"-"` // not serializable
-	Ctx        context.Context    `json:"-"` // not serializable
-	Cancel     context.CancelFunc `json:"-"` // not serializable
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	StartedAt  time.Time
-	Duration   string
+	ID          string
+	Name        string
+	Description string
+	ScriptFile  string `json:"script_file"` // original uploaded filename
+	Status      PipelineStatus
+	Step        int // current step 0-5
+	Error       string
+	Cmd         *exec.Cmd          `json:"-"` // not serializable
+	Ctx         context.Context    `json:"-"` // not serializable
+	Cancel      context.CancelFunc `json:"-"` // not serializable
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	StartedAt   time.Time
+	Duration    string
 }
 
 var (
@@ -552,12 +553,76 @@ func handleGetPipeline(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{
 		"pipeline_id": p.ID,
 		"name":        p.Name,
+		"description": p.Description,
 		"status":      string(p.Status),
 		"step":        p.Step,
 		"error":       p.Error,
 		"created_at":  p.CreatedAt,
 		"updated_at":  p.UpdatedAt,
 		"duration":    p.Duration,
+	})
+}
+
+func handleUpdatePipeline(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/pipelines/"), "/")
+	if id == "" || strings.Contains(id, "/") {
+		http.Error(w, "invalid pipeline id", http.StatusBadRequest)
+		return
+	}
+
+	var update struct {
+		Name        *string `json:"name"`
+		Description *string `json:"description"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if update.Name == nil && update.Description == nil {
+		http.Error(w, "provide name or description", http.StatusBadRequest)
+		return
+	}
+
+	mu.Lock()
+	p, exists := pipelines[id]
+	if !exists {
+		p = loadPipelineState(id)
+		if p != nil {
+			pipelines[id] = p
+			exists = true
+		}
+	}
+	if !exists {
+		mu.Unlock()
+		http.Error(w, "pipeline not found", http.StatusNotFound)
+		return
+	}
+	if update.Name != nil {
+		name := strings.TrimSpace(*update.Name)
+		if name == "" {
+			mu.Unlock()
+			http.Error(w, "name cannot be empty", http.StatusBadRequest)
+			return
+		}
+		p.Name = truncateRunes(name, 100)
+	}
+	if update.Description != nil {
+		p.Description = truncateRunes(strings.TrimSpace(*update.Description), 500)
+	}
+	savePipelineState(p)
+	mu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"pipeline_id": p.ID,
+		"name":        p.Name,
+		"description": p.Description,
+		"updated_at":  p.UpdatedAt,
 	})
 }
 
@@ -909,6 +974,7 @@ func handleListPipelines(w http.ResponseWriter, r *http.Request) {
 		list = append(list, map[string]any{
 			"pipeline_id":    p.ID,
 			"name":           p.Name,
+			"description":    p.Description,
 			"status":         string(p.Status),
 			"step":           p.Step,
 			"error":          p.Error,
@@ -1881,7 +1947,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 			allowedOrigin = origin
 		}
 		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -1959,6 +2025,8 @@ func main() {
 		}
 		if r.Method == http.MethodGet {
 			handleGetPipeline(w, r)
+		} else if r.Method == http.MethodPatch {
+			handleUpdatePipeline(w, r)
 		} else if r.Method == http.MethodDelete {
 			handleDeletePipeline(w, r)
 		} else if r.Method == http.MethodPost {

@@ -77,6 +77,9 @@ python main.py compose output/clip_manifest.json -s subtitles.srt -l look.cube
 DEEPSEEK_API_KEY=sk-xxx
 DEEPSEEK_MODEL=deepseek-chat                 # V3，快速
 DEEPSEEK_REASONING_MODEL=deepseek-reasoner   # R1，深度推理
+DEEPSEEK_MAX_CONCURRENCY=4                    # Step 1 并发请求数；接口不稳定时可调低
+DEEPSEEK_TOOL_MAX_ATTEMPTS=3                  # 工具参数 JSON 损坏/中断时的重试次数
+DEEPSEEK_RETRY_BASE_DELAY_SEC=1               # 指数退避的基础等待秒数
 
 # 图片生成（Step 2）
 IMAGE_PROVIDER=flux                          # flux / seedream / sdxl / comfyui / null

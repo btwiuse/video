@@ -30,6 +30,10 @@ function PipelineList({ onSelect, onCreateNew }) {
   const [sortBy, setSortBy] = useState('updated_at');
   const [sortDirection, setSortDirection] = useState('desc');
   const [deletingId, setDeletingId] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editingName, setEditingName] = useState('');
+  const [savingId, setSavingId] = useState(null);
+  const [menuId, setMenuId] = useState(null);
   const [columnWidths, setColumnWidths] = useState(null);
   const [resizing, setResizing] = useState(null);
   const tableHeaderRef = useRef(null);
@@ -146,6 +150,7 @@ function PipelineList({ onSelect, onCreateNew }) {
     const name = pipeline.name || pipeline.pipeline_id;
     if (!window.confirm(`确定删除项目「${name}」及其所有产物吗？\n此操作不可撤销。`)) return;
     setDeletingId(pipeline.pipeline_id);
+    setMenuId(null);
     try {
       const response = await api(`/pipelines/${pipeline.pipeline_id}`, { method: 'DELETE' });
       if (!response.ok) throw new Error(await response.text());
@@ -157,6 +162,65 @@ function PipelineList({ onSelect, onCreateNew }) {
       setDeletingId(null);
     }
   };
+
+  const startRename = (event, pipeline) => {
+    event.stopPropagation();
+    setMenuId(null);
+    setEditingId(pipeline.pipeline_id);
+    setEditingName(pipeline.name || '');
+  };
+
+  const saveRename = async (event, pipeline) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const name = editingName.trim();
+    if (!name) {
+      toast.error('项目标题不能为空');
+      return;
+    }
+    setSavingId(pipeline.pipeline_id);
+    try {
+      const response = await api(`/pipelines/${pipeline.pipeline_id}`, {
+        method: 'PATCH', body: JSON.stringify({ name }),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      const updated = await response.json();
+      setItems(current => current.map(item => item.pipeline_id === pipeline.pipeline_id
+        ? { ...item, name: updated.name, updated_at: updated.updated_at }
+        : item));
+      setEditingId(null);
+      toast('项目标题已保存');
+    } catch (error) {
+      toast.error(`保存失败：${error?.message || '请稍后重试'}`);
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const titleEditor = (pipeline, compact = false) => editingId === pipeline.pipeline_id ? (
+    <form onSubmit={event => saveRename(event, pipeline)} onClick={event => event.stopPropagation()} className={`flex min-w-0 items-center gap-1 ${compact ? '' : 'flex-1'}`}>
+      <input autoFocus value={editingName} maxLength={100} onChange={event => setEditingName(event.target.value)}
+        aria-label="项目标题" className="min-w-0 flex-1 rounded border border-brass-500 bg-ink-950 px-2 py-1 text-sm text-stone-100 outline-none" />
+      <button type="submit" disabled={savingId === pipeline.pipeline_id} className="shrink-0 rounded px-1.5 py-1 text-xs text-leaf-400 hover:bg-leaf-500/10 disabled:opacity-50">{savingId === pipeline.pipeline_id ? '…' : '✓'}</button>
+      <button type="button" onClick={event => { event.stopPropagation(); setEditingId(null); }} className="shrink-0 rounded px-1.5 py-1 text-xs text-stone-500 hover:bg-ink-800">×</button>
+    </form>
+  ) : (
+    <div className="flex min-w-0 items-center gap-1">
+      <span className="min-w-0 truncate text-stone-100 text-sm font-medium" title={pipeline.name}>{pipeline.name || pipeline.pipeline_id.slice(-8)}</span>
+      <button type="button" onClick={event => startRename(event, pipeline)} title="编辑项目标题" aria-label={`编辑项目标题 ${pipeline.name || pipeline.pipeline_id}`}
+        className="shrink-0 rounded px-1.5 py-1 text-xs text-stone-500 hover:bg-ink-800 hover:text-brass-400">✎</button>
+    </div>
+  );
+
+  const projectMenu = pipeline => <div className="relative shrink-0" onClick={event => event.stopPropagation()}>
+    <button type="button" onClick={() => setMenuId(current => current === pipeline.pipeline_id ? null : pipeline.pipeline_id)}
+      aria-label={`项目选项 ${pipeline.name || pipeline.pipeline_id}`} aria-expanded={menuId === pipeline.pipeline_id} title="项目选项"
+      className="flex h-7 w-7 items-center justify-center rounded-md text-base leading-none text-stone-500 hover:bg-ink-800 hover:text-stone-200">…</button>
+    {menuId === pipeline.pipeline_id && <div className="absolute bottom-full right-0 z-30 mb-2 min-w-28 overflow-hidden rounded-lg border border-ink-600 bg-ink-900 p-1 shadow-xl">
+      <button type="button" onClick={event => deletePipeline(event, pipeline)} disabled={deletingId === pipeline.pipeline_id}
+        className="w-full rounded-md px-2.5 py-2 text-left text-xs text-clay-400 hover:bg-clay-500/10 disabled:opacity-50">{deletingId === pipeline.pipeline_id ? '删除中…' : '删除项目'}</button>
+    </div>}
+  </div>;
 
   if (viewMode === 'grid') {
     return (
@@ -182,14 +246,9 @@ function PipelineList({ onSelect, onCreateNew }) {
             <div key={p.pipeline_id} onClick={() => onSelect(p.pipeline_id)}
               className="pipeline-card bg-ink-900 p-5 rounded-2xl border border-ink-700 cursor-pointer hover:border-brass-400/50 transition-all">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-stone-100 text-sm font-medium truncate" title={p.name}>{p.name || p.pipeline_id.slice(-8)}</span>
+                {titleEditor(p)}
                 <div className="ml-3 flex shrink-0 items-center gap-1.5">
                   <StatusBadge status={p.status} />
-                  <button type="button" onClick={event => deletePipeline(event, p)} disabled={deletingId === p.pipeline_id}
-                    title="删除项目" aria-label={`删除项目 ${p.name || p.pipeline_id}`}
-                    className="flex h-7 w-7 items-center justify-center rounded-md text-sm text-stone-500 hover:bg-clay-500/10 hover:text-clay-500 disabled:cursor-wait disabled:opacity-50">
-                    {deletingId === p.pipeline_id ? '…' : '⌫'}
-                  </button>
                 </div>
               </div>
               {!hasAnyPreview ? (
@@ -217,7 +276,7 @@ function PipelineList({ onSelect, onCreateNew }) {
               <div className="mt-4 w-full bg-ink-700 rounded-full h-1.5 overflow-hidden">
                 <div className="volc-primary h-full rounded-full transition-all duration-500" style={{ width: `${(workflowStep(p.step) / WORKFLOW_STEP_COUNT) * 100}%` }} />
               </div>
-              <div className="mt-3 text-xs text-stone-500">更新于 {formatDateTime(p.updated_at)}</div>
+              <div className="mt-3 flex items-center justify-between gap-2 text-xs text-stone-500"><span>更新于 {formatDateTime(p.updated_at)}</span>{projectMenu(p)}</div>
               {p.duration && <div className="mt-0.5 text-xs text-stone-500">运行时长: {formatDuration(p.duration)}</div>}
             </div>
             );
@@ -252,7 +311,7 @@ function PipelineList({ onSelect, onCreateNew }) {
         {sorted.map(p => (
           <div key={p.pipeline_id} onClick={() => onSelect(p.pipeline_id)}
             style={tableGridStyle} className="grid min-w-[1050px] gap-4 border-t border-ink-700 p-3 transition-colors hover:bg-ink-800/50 cursor-pointer">
-            <div className="min-w-0 truncate text-sm font-medium text-stone-100" title={p.name}>{p.name || p.pipeline_id.slice(-8)}</div>
+            <div className="flex min-w-0 items-center gap-1">{titleEditor(p, true)}{projectMenu(p)}</div>
             <div><StatusBadge status={p.status} /></div>
             <div className="min-w-0" title={pipelineProgressLabel(p)}>
               <div className="flex items-center gap-2">

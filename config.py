@@ -14,6 +14,17 @@ class Config:
     DEEPSEEK_REASONING_MODEL: str = os.getenv("DEEPSEEK_REASONING_MODEL", "deepseek-reasoner")  # R1
     DEEPSEEK_TIMEOUT: int = int(os.getenv("DEEPSEEK_TIMEOUT", "600"))  # seconds
     DEEPSEEK_USE_REASONING: bool = os.getenv("DEEPSEEK_USE_REASONING", "false").lower() == "true"
+    # Step 1 sends a request for each character/scene concurrently.  Keeping
+    # this modest avoids intermittent malformed streamed tool calls on long
+    # scripts when the upstream service is under load.
+    DEEPSEEK_MAX_CONCURRENCY: int = max(1, int(os.getenv("DEEPSEEK_MAX_CONCURRENCY", "4")))
+    # A tool-call response can be interrupted or contain malformed JSON even
+    # when the HTTP request itself succeeded. Retry the complete request in
+    # that case; never accept a repaired/truncated tool payload.
+    DEEPSEEK_TOOL_MAX_ATTEMPTS: int = max(1, int(os.getenv("DEEPSEEK_TOOL_MAX_ATTEMPTS", "3")))
+    DEEPSEEK_RETRY_BASE_DELAY_SEC: float = max(
+        0.0, float(os.getenv("DEEPSEEK_RETRY_BASE_DELAY_SEC", "1"))
+    )
 
     # Image generation — see src/step2_visual_assets.py for all providers
     IMAGE_PROVIDER: str = os.getenv("IMAGE_PROVIDER", "null")
