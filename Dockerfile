@@ -2,7 +2,7 @@ FROM golang:1.26-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum* ./
 COPY cmd/server/ cmd/server/
-RUN go build -o server cmd/server/main.go
+RUN go build -o server ./cmd/server
 
 FROM python:3.12-slim
 WORKDIR /app
