@@ -7,6 +7,7 @@ const getHashView = () => {
   if (hash === '/styles') return { view: 'styles', id: null };
   if (hash === '/auth') return { view: 'auth', id: null };
   if (hash === '/organizations') return { view: 'organizations', id: null };
+  if (hash === '/usage') return { view: 'usage', id: null };
   return { view: 'list', id: null };
 };
 
@@ -16,6 +17,7 @@ const navigateTo = (view, id = null) => {
   else if (view === 'styles') { window.location.hash = '#/styles'; }
   else if (view === 'auth') { window.location.hash = '#/auth'; }
   else if (view === 'organizations') { window.location.hash = '#/organizations'; }
+  else if (view === 'usage') { window.location.hash = '#/usage'; }
   else { window.location.hash = '#'; }
 };
 
@@ -59,7 +61,7 @@ useEffect(() => {
           res.json().then(data => { setSelected(data); setCurrentView('detail'); setPipelineId(id); });
         } else { navigateTo('list'); }
       });
-    } else if (v === 'create' || v === 'styles' || v === 'auth' || v === 'organizations') { setCurrentView(v); setPipelineId(null); setSelected(null); }
+    } else if (v === 'create' || v === 'styles' || v === 'auth' || v === 'organizations' || v === 'usage') { setCurrentView(v); setPipelineId(null); setSelected(null); }
     else { setCurrentView('list'); setPipelineId(null); setSelected(null); }
   };
   window.addEventListener('hashchange', onHashChange);
@@ -129,6 +131,10 @@ return (
           className="nav-btn hidden sm:inline-flex h-9 items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900 px-3 text-sm font-medium text-stone-300 hover:border-brass-500/40 hover:text-brass-500">
           <span aria-hidden="true">◫</span><span>组织</span>
         </button>}
+        {user && <button type="button" onClick={() => navigateTo('usage')} title="积分用量"
+          className="nav-btn hidden sm:inline-flex h-9 items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900 px-3 text-sm font-medium text-stone-300 hover:border-brass-500/40 hover:text-brass-500">
+          <span aria-hidden="true">◷</span><span>用量</span>
+        </button>}
         {user && <button type="button" onClick={() => navigateTo('styles')} title="风格预设"
           className="nav-btn hidden sm:inline-flex h-9 items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900 px-3 text-sm font-medium text-stone-300 hover:border-brass-500/40 hover:text-brass-500">
           <span aria-hidden="true">✦</span><span>风格预设</span>
@@ -153,6 +159,8 @@ return (
         {currentView === 'auth' && <AuthScreen onBack={() => navigateTo('list')} onAuthenticated={nextUser => { setUser(nextUser); navigateTo('list'); }} />}
 
         {currentView === 'organizations' && user && <Organizations onBack={() => navigateTo('list')} onOrganizationsChanged={() => {}} />}
+
+        {currentView === 'usage' && user && <Usage onBack={() => navigateTo('list')} />}
 
         {currentView === 'styles' && (
           <div className="max-w-6xl mx-auto">

@@ -46,11 +46,11 @@ function AssetPreview({ file, pipelineId, cacheBust, aspectClass, onOpen, label 
   );
 }
 
-function AssetToolbar({ onGenerate, onUpload, onDelete, disabled }) {
+function AssetToolbar({ onGenerate, onUpload, onDelete, disabled, credits = 0 }) {
   const uploadRef = useRef(null);
   return (
     <div className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-lg border border-ink-600/80 bg-ink-950/85 p-1 shadow-lg opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
-      <button type="button" title="AI 生成" onClick={onGenerate} disabled={disabled} className="w-7 h-7 rounded-md text-brass-400 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-40">✦</button>
+      <button type="button" title={`AI 生成 · ${credits} 积分`} onClick={onGenerate} disabled={disabled} className="w-7 h-7 rounded-md text-brass-400 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-40">✦</button>
       <button type="button" title="本地上传" onClick={() => uploadRef.current?.click()} disabled={disabled} className="w-7 h-7 rounded-md text-stone-300 hover:bg-ink-700 disabled:opacity-40">⇧</button>
       {onDelete && <button type="button" title="删除" onClick={onDelete} disabled={disabled} className="w-7 h-7 rounded-md text-clay-400 hover:bg-clay-500 hover:text-white disabled:opacity-40">⌫</button>}
       <input ref={uploadRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={event => { const file = event.target.files?.[0]; if (file) onUpload(file); event.target.value = ''; }} />
@@ -71,9 +71,9 @@ function ReferenceSelectionCard({ entity, kind, selected, pipelineId, cacheBust,
   </label>;
 }
 
-function StartFramePanel({ shot, frame, video, pipelineId, cacheBust, onOpen, onGenerate, onUpload, generating, generatingVideo, onGenerateVideo }) {
+function StartFramePanel({ shot, frame, video, pipelineId, cacheBust, onOpen, onGenerate, onUpload, generating, generatingVideo, onGenerateVideo, imageCredits, videoCredits }) {
   const startFrame = frame || { name: shot.startframe_file || `shots/${shot.full_shot_id}/${shot.full_shot_id}_startframe.jpg`, placeholder: true, shot_id: shot.full_shot_id };
-  return <section className="border-t border-ink-700 bg-ink-950/35 px-4 py-4"><div className="mb-3 flex items-center justify-between gap-3"><div><h5 className="text-xs font-semibold text-stone-200">镜头起始帧</h5><p className="mt-1 text-xs text-stone-500">此帧仅服务当前分镜，可用 AI 生成或本地上传。</p></div><button type="button" onClick={() => onGenerate(shot, startFrame)} disabled={generating} className="rounded-md bg-ink-800 px-2.5 py-1.5 text-xs font-medium text-stone-300 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-50">{generating ? '生成中…' : startFrame.placeholder ? '生成起始帧' : '重新生成起始帧'}</button></div><div className="group relative max-w-md overflow-hidden rounded-lg border border-ink-700"><AssetPreview file={startFrame} pipelineId={pipelineId} cacheBust={cacheBust} aspectClass="aspect-video" onOpen={onOpen} label={shot.title || shot.full_shot_id} /><AssetToolbar onGenerate={() => onGenerate(shot, startFrame)} onUpload={file => onUpload(shot, file)} disabled={generating} /></div><div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-ink-700 bg-ink-900/70 px-3 py-2.5"><div className="min-w-0 flex-1"><p className="text-xs font-medium text-stone-200">分镜视频</p><p className="mt-0.5 text-xs text-stone-500">{video ? '该分镜视频已生成，可单独重新生成。' : '使用当前分镜信息与视觉参考生成视频。'}</p></div><button type="button" onClick={() => onGenerateVideo(shot)} disabled={generatingVideo} className="rounded-md bg-brass-500 px-3 py-1.5 text-xs font-semibold text-ink-950 hover:bg-brass-400 disabled:opacity-50">{generatingVideo ? '视频生成中…' : video ? '重新生成分镜视频' : '生成分镜视频'}</button></div></section>;
+  return <section className="border-t border-ink-700 bg-ink-950/35 px-4 py-4"><div className="mb-3 flex items-center justify-between gap-3"><div><h5 className="text-xs font-semibold text-stone-200">镜头起始帧</h5><p className="mt-1 text-xs text-stone-500">此帧仅服务当前分镜，可用 AI 生成或本地上传。</p></div><button type="button" onClick={() => onGenerate(shot, startFrame)} disabled={generating} className="rounded-md bg-ink-800 px-2.5 py-1.5 text-xs font-medium text-stone-300 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-50">{generating ? '生成中…' : `${startFrame.placeholder ? '生成起始帧' : '重新生成起始帧'} · ${imageCredits} 积分`}</button></div><div className="group relative max-w-md overflow-hidden rounded-lg border border-ink-700"><AssetPreview file={startFrame} pipelineId={pipelineId} cacheBust={cacheBust} aspectClass="aspect-video" onOpen={onOpen} label={shot.title || shot.full_shot_id} /><AssetToolbar onGenerate={() => onGenerate(shot, startFrame)} onUpload={file => onUpload(shot, file)} disabled={generating} credits={imageCredits} /></div><div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-ink-700 bg-ink-900/70 px-3 py-2.5"><div className="min-w-0 flex-1"><p className="text-xs font-medium text-stone-200">分镜视频</p><p className="mt-0.5 text-xs text-stone-500">{video ? '该分镜视频已生成，可单独重新生成。' : '使用当前分镜信息与视觉参考生成视频。'}</p></div><button type="button" onClick={() => onGenerateVideo(shot)} disabled={generatingVideo} className="rounded-md bg-brass-500 px-3 py-1.5 text-xs font-semibold text-ink-950 hover:bg-brass-400 disabled:opacity-50">{generatingVideo ? '视频生成中…' : `${video ? '重新生成分镜视频' : '生成分镜视频'} · ${videoCredits} 积分`}</button></div></section>;
 }
 
 const SHOT_SKILL_GROUPS = [
@@ -139,11 +139,11 @@ function ShotSkillPanel({ shot, onOptimize, optimizing, disabled }) {
       {skillMenuOpen && <div className="absolute right-0 top-full z-20 mt-2 max-h-96 w-80 max-w-[calc(100vw-3rem)] overflow-y-auto rounded-lg border border-ink-600 bg-ink-900 p-2.5 shadow-2xl shadow-black/40"><div className="mb-3"><p className="text-xs font-medium text-stone-100">加载可选 Skill</p><p className="mt-0.5 text-[10px] text-stone-500">可自由组合；默认 Skill 始终参与。</p></div>{SHOT_SKILL_GROUPS.map((group, groupIndex) => <div key={group.label} className={groupIndex ? 'mt-3' : ''}><div className="flex items-center gap-2"><p className="text-[10px] font-semibold text-stone-400">{group.label}</p><span className="h-px flex-1 bg-ink-700"/></div><div className="mt-1 overflow-hidden rounded-md border border-ink-700 divide-y divide-ink-700">{group.skills.map(([id, label, description]) => <label key={id} className={'flex cursor-pointer items-center gap-2 px-2 py-1.5 transition-colors ' + (selectedSkills.includes(id) ? 'bg-brass-500/10' : 'hover:bg-ink-800/70')}><span className="min-w-0 flex-1"><span className={selectedSkills.includes(id) ? 'text-xs font-medium text-brass-400' : 'text-xs font-medium text-stone-300'}>{label}</span><span className="ml-1 text-[10px] leading-relaxed text-stone-500">· {description}</span></span><input type="checkbox" className="shrink-0 accent-brass-500" checked={selectedSkills.includes(id)} disabled={disabled || optimizing} onChange={() => toggleSkill(id)}/></label>)}</div></div>)}</div>}
     </div>
     {optimization.summary && <p className="rounded-md bg-leaf-500/10 px-2.5 py-2 text-xs leading-relaxed text-leaf-400">已应用：{optimization.summary}</p>}
-    <button type="button" onClick={() => onOptimize(shot, selectedSkills, customInstruction)} disabled={disabled || optimizing || !canOptimize} className="w-full rounded-md bg-brass-500 px-3 py-2 text-xs font-semibold text-ink-950 hover:bg-brass-400 disabled:cursor-not-allowed disabled:opacity-40">{optimizing ? '正在应用 Skill…' : '应用并优化分镜'}</button>
+    <button type="button" onClick={() => onOptimize(shot, selectedSkills, customInstruction)} disabled={disabled || optimizing || !canOptimize} className="w-full rounded-md bg-brass-500 px-3 py-2 text-xs font-semibold text-ink-950 hover:bg-brass-400 disabled:cursor-not-allowed disabled:opacity-40">{optimizing ? '正在应用 Skill…' : '应用并优化分镜 · 2 积分'}</button>
   </section>;
 }
 
-function StoryboardEditor({ storyboard, onChange, onSave, saving, onOptimizeSkills, optimizingSkills, startFrames, videos, pipelineId, cacheBust, onOpenStartFrame, onGenerateStartFrame, onUploadStartFrame, onGenerateShotVideo, regenerating, generatingVideos }) {
+function StoryboardEditor({ storyboard, onChange, onSave, saving, onOptimizeSkills, optimizingSkills, startFrames, videos, pipelineId, cacheBust, onOpenStartFrame, onGenerateStartFrame, onUploadStartFrame, onGenerateShotVideo, regenerating, generatingVideos, imageCredits, videoCredits }) {
   const shots = storyboard?.shots || [];
   const characters = storyboard?.characters || [];
   const scenes = storyboard?.scenes || [];
@@ -169,7 +169,7 @@ function StoryboardEditor({ storyboard, onChange, onSave, saving, onOptimizeSkil
           <div><span className="text-xs text-stone-400">场景道具</span><div className="mt-1.5 grid gap-1.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))' }}>{props.map(prop => <ReferenceSelectionCard key={prop.ref_id} entity={prop} kind="prop" selected={(shot.prop_refs || []).includes(prop.ref_id)} pipelineId={pipelineId} cacheBust={cacheBust} onChange={() => toggle(shot, 'prop_refs', prop.ref_id)}/>)}</div></div>
           <ShotSkillPanel shot={shot} onOptimize={onOptimizeSkills} optimizing={Boolean(optimizingSkills[shot.full_shot_id])} disabled={saving}/>
         </aside></div>
-      <StartFramePanel shot={shot} frame={startFrames[shot.full_shot_id]} video={videos[shot.full_shot_id]} pipelineId={pipelineId} cacheBust={cacheBust} onOpen={onOpenStartFrame} onGenerate={onGenerateStartFrame} onUpload={onUploadStartFrame} onGenerateVideo={onGenerateShotVideo} generating={regenerating['shot_' + shot.full_shot_id]} generatingVideo={generatingVideos[shot.full_shot_id]} />
+      <StartFramePanel shot={shot} frame={startFrames[shot.full_shot_id]} video={videos[shot.full_shot_id]} pipelineId={pipelineId} cacheBust={cacheBust} onOpen={onOpenStartFrame} onGenerate={onGenerateStartFrame} onUpload={onUploadStartFrame} onGenerateVideo={onGenerateShotVideo} generating={regenerating['shot_' + shot.full_shot_id]} generatingVideo={generatingVideos[shot.full_shot_id]} imageCredits={imageCredits} videoCredits={videoCredits} />
     </article>)}
   </div>;
 }
@@ -257,7 +257,7 @@ function Step1Progress({ progress }) {
 
 function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, onRefresh, visualAssetsCompletionKnown, onVisualAssetsCompletionChange,
                     assetTab: controlledAssetTab, onAssetTabChange, onAssetOverviewChange,
-                    maxShotsPerScene, setMaxShotsPerScene, totalShots, setTotalShots, totalDuration, setTotalDuration }) {
+                    maxShotsPerScene, setMaxShotsPerScene, totalShots, setTotalShots, totalDuration, setTotalDuration, stepCredits = 0, imageCredits = 0, videoCredits = 0 }) {
   const getCS = () => {
     if (pipeline.status === 'done') return WORKFLOW_STEP_COUNT;
     // A running step is in progress, not completed.  Keep this aligned with
@@ -579,11 +579,14 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
     if (!Object.keys(body).length) { setRegeneratingLightbox(false); return; }
     if (regenKey) setRegenerating(r => ({ ...r, [regenKey]: true }));
     try {
-      await api(`/pipelines/${pipelineId}/regenerate`, { method: 'POST', body: JSON.stringify(body) });
+      const response = await api(`/pipelines/${pipelineId}/regenerate`, { method: 'POST', body: JSON.stringify(body) });
+      if (!response.ok) throw new Error(await response.text());
+      const result = await response.json();
+      if (result.usage?.credits) toast(`已记录 ${result.usage.credits} 积分，本次暂不扣费`);
       setCacheBust(c => ({ ...c, [name]: Date.now() }));
       await refreshArtifacts();
       onRefresh?.();
-    } catch (_) {}
+    } catch (error) { toast.error(`生成失败：${error?.message || '请稍后重试'}`); }
     setRegeneratingLightbox(false);
     if (regenKey) setRegenerating(r => { const n = {...r}; delete n[regenKey]; return n; });
   };
@@ -597,6 +600,8 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
         method: 'POST', body: JSON.stringify(body),
       });
       if (!response.ok) throw new Error(await response.text());
+      const result = await response.json();
+      if (result.usage?.credits) toast(`已记录 ${result.usage.credits} 积分，本次暂不扣费`);
       setCacheBust(current => ({
         ...current,
         ...Object.fromEntries(files.filter(file => !file.placeholder).map(file => [file.name, Date.now()])),
@@ -727,7 +732,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
         ...current,
         shots: (current.shots || []).map(item => item.full_shot_id === shotId ? result.shot : item),
       } : current);
-      toast(`已应用 ${skillIds.length} 个技能并优化分镜 ${shotId}`);
+      toast(`已应用 ${skillIds.length} 个技能并优化分镜 ${shotId}${result.usage?.credits ? ` · 已记录 ${result.usage.credits} 积分` : ''}`);
       onRefresh?.();
     } catch (error) {
       toast.error(`应用技能失败：${error?.message || '请稍后重试'}`);
@@ -754,7 +759,8 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
     try {
       const response = await api(`/pipelines/${pipelineId}/videos/${encodeURIComponent(shotId)}/generate`, { method: 'POST' });
       if (!response.ok) throw new Error(await response.text());
-      toast(`已开始生成分镜视频 ${shotId}`);
+      const data = await response.json();
+      toast(`已开始生成分镜视频 ${shotId}${data.usage?.credits ? ` · 已记录 ${data.usage.credits} 积分` : ''}`);
       const checkProgress = async () => {
         let pipelineStatus = null;
         try {
@@ -784,6 +790,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
           <p className="text-xs text-stone-500 mt-1">
             {isStepDone ? '已完成' : isStepRunning ? (step === 1 ? step1RunningLabel : step === 2 && activeAssetStage ? `正在生成${activeAssetStage === 'characters' ? '角色肖像' : activeAssetStage === 'props' ? '道具' : '场景'}...` : step === 4 ? '正在合成最终影片...' : '正在生成...') : canGenerate ? '准备就绪' : '前置步骤尚未完成'}
           </p>
+          {stepCredits > 0 && <p className="mt-1 text-xs text-brass-500">本次操作将记录 {stepCredits} 积分，当前不扣费。</p>}
         </div>
         <div className="flex items-center gap-2">
           {isStepRunning && (
@@ -945,7 +952,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
                           <span className="absolute left-2 bottom-2 px-1.5 py-0.5 rounded bg-ink-950/75 text-[10px] text-stone-300 pointer-events-none">{['正面', '侧面', '全身'][index]}</span>
                         </div>
                       ))}
-                      <AssetToolbar onGenerate={() => regenerateAsset(regenKey, { characters: [character.ref_id] }, character.images)} onUpload={file => uploadAsset('characters', character.ref_id, file)} onDelete={() => deleteEntity('characters', character.ref_id)} disabled={isGenerating} />
+                      <AssetToolbar onGenerate={() => regenerateAsset(regenKey, { characters: [character.ref_id] }, character.images)} onUpload={file => uploadAsset('characters', character.ref_id, file)} onDelete={() => deleteEntity('characters', character.ref_id)} disabled={isGenerating} credits={imageCredits} />
                     </div>
                     <div className="p-3.5">
                       <div className="flex items-start gap-3">
@@ -956,7 +963,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
                       <div className="flex items-center gap-2 mt-3">
                         <button type="button" onClick={() => openLightbox(character.images[0].name)} className="text-xs text-stone-400 hover:text-stone-100 transition-colors">查看提示词</button>
                         <button type="button" onClick={() => regenerateAsset(regenKey, { characters: [character.ref_id] }, character.images)} disabled={isGenerating}
-                          className="ml-auto px-2.5 py-1.5 rounded-md text-xs font-medium bg-brass-500/15 text-brass-400 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-50 transition-colors">{isGenerating ? '生成中…' : complete ? '重新生成' : '生成角色'}</button>
+                          className="ml-auto px-2.5 py-1.5 rounded-md text-xs font-medium bg-brass-500/15 text-brass-400 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-50 transition-colors">{isGenerating ? '生成中…' : `${complete ? '重新生成' : '生成角色'} · ${imageCredits} 积分`}</button>
                       </div>
                     </div>
                   </article>
@@ -973,9 +980,9 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
                 const regenKey = 'prop_' + label;
                 return (
                   <article key={prop.name} className="group overflow-hidden rounded-xl border border-ink-700 bg-ink-900/80 hover:border-ink-600 transition-colors">
-                    <div className="relative"><AssetPreview file={prop} pipelineId={pipelineId} cacheBust={cacheBust} aspectClass="aspect-square" onOpen={openLightbox} label={prop.prop_name || label} /><AssetToolbar onGenerate={() => regenerateAsset(regenKey, { prop_images: [label] }, [prop])} onUpload={file => uploadAsset('props', label, file)} onDelete={() => deleteEntity('props', label)} disabled={regenerating[regenKey]} /></div>
+                    <div className="relative"><AssetPreview file={prop} pipelineId={pipelineId} cacheBust={cacheBust} aspectClass="aspect-square" onOpen={openLightbox} label={prop.prop_name || label} /><AssetToolbar onGenerate={() => regenerateAsset(regenKey, { prop_images: [label] }, [prop])} onUpload={file => uploadAsset('props', label, file)} onDelete={() => deleteEntity('props', label)} disabled={regenerating[regenKey]} credits={imageCredits} /></div>
                     <div className="p-3"><div className="flex items-center gap-2"><h4 className="min-w-0 flex-1 text-sm font-medium text-stone-200 truncate">{prop.prop_name || label}</h4><span className={'w-2 h-2 rounded-full ' + (regenerating[regenKey] ? 'bg-brass-400 animate-pulse' : prop.placeholder ? 'bg-stone-600' : assetErrors[regenKey] ? 'bg-clay-400' : 'bg-leaf-400')} /></div><p className="mt-1 text-xs text-stone-500 line-clamp-2">{prop.description || prop.narrative_function || prop.category || '道具设定'}</p>
-                      <div className="flex items-center mt-3"><button type="button" onClick={() => regenerateAsset(regenKey, { prop_images: [label] }, [prop])} disabled={regenerating[regenKey]} className="ml-auto px-2.5 py-1.5 rounded-md text-xs font-medium bg-brass-500/15 text-brass-400 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-50 transition-colors">{regenerating[regenKey] ? '生成中…' : prop.placeholder ? '生成道具' : '重新生成'}</button></div>
+                      <div className="flex items-center mt-3"><button type="button" onClick={() => regenerateAsset(regenKey, { prop_images: [label] }, [prop])} disabled={regenerating[regenKey]} className="ml-auto px-2.5 py-1.5 rounded-md text-xs font-medium bg-brass-500/15 text-brass-400 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-50 transition-colors">{regenerating[regenKey] ? '生成中…' : `${prop.placeholder ? '生成道具' : '重新生成'} · ${imageCredits} 积分`}</button></div>
                     </div>
                   </article>
                 );
@@ -993,10 +1000,10 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
                   <article key={scene.scene_id} className="group overflow-hidden rounded-xl border border-ink-700 bg-ink-900/80 hover:border-ink-600 transition-colors">
                     <div className="relative grid grid-cols-2 gap-px bg-ink-700">
                       {scene.images.map((image, index) => <div key={image.name} className="relative"><AssetPreview file={image} pipelineId={pipelineId} cacheBust={cacheBust} aspectClass="aspect-video" onOpen={openLightbox} label={scene.scene_id + ' ' + (index === 0 ? '全景' : '细节')} /><span className="absolute left-2 bottom-2 px-1.5 py-0.5 rounded bg-ink-950/75 text-[10px] text-stone-300 pointer-events-none">{index === 0 ? '全景' : '细节'}</span></div>)}
-                      <AssetToolbar onGenerate={() => regenerateAsset(regenKey, { scenes: [scene.scene_id] }, scene.images)} onUpload={file => uploadAsset('scenes', scene.scene_id, file)} onDelete={() => deleteEntity('scenes', scene.scene_id)} disabled={regenerating[regenKey]} />
+                      <AssetToolbar onGenerate={() => regenerateAsset(regenKey, { scenes: [scene.scene_id] }, scene.images)} onUpload={file => uploadAsset('scenes', scene.scene_id, file)} onDelete={() => deleteEntity('scenes', scene.scene_id)} disabled={regenerating[regenKey]} credits={imageCredits} />
                     </div>
                     <div className="p-3.5 flex items-center gap-3"><div className="min-w-0 flex-1"><h4 className="text-sm font-semibold text-stone-100">{scene.name || scene.scene_id}</h4><p className="mt-1 text-xs text-stone-500 line-clamp-2">{scene.description || (complete ? '场景参考已生成' : '等待生成')}</p></div>
-                      <button type="button" onClick={() => regenerateAsset(regenKey, { scenes: [scene.scene_id] }, scene.images)} disabled={regenerating[regenKey]} className="px-2.5 py-1.5 rounded-md text-xs font-medium bg-ink-800 text-stone-300 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-50 transition-colors">{regenerating[regenKey] ? '生成中…' : complete ? '重新生成' : '生成场景'}</button>
+                      <button type="button" onClick={() => regenerateAsset(regenKey, { scenes: [scene.scene_id] }, scene.images)} disabled={regenerating[regenKey]} className="px-2.5 py-1.5 rounded-md text-xs font-medium bg-ink-800 text-stone-300 hover:bg-brass-500 hover:text-ink-950 disabled:opacity-50 transition-colors">{regenerating[regenKey] ? '生成中…' : `${complete ? '重新生成' : '生成场景'} · ${imageCredits} 积分`}</button>
                     </div>
                   </article>
                 );
@@ -1034,7 +1041,7 @@ function StepView({ step, pipeline, onRun, actionLoading, pipelineId, onCancel, 
           {storyboardData && <StoryboardEditor storyboard={storyboardData} onChange={setStoryboardData} onSave={saveStoryboard} saving={savingStoryboard} onOptimizeSkills={optimizeShotSkills} optimizingSkills={optimizingSkills}
             startFrames={startFramesByShot} videos={videosByShot} pipelineId={pipelineId} cacheBust={cacheBust} onOpenStartFrame={openLightbox} regenerating={regenerating} generatingVideos={generatingVideos}
             onGenerateStartFrame={generateStartFrame}
-            onUploadStartFrame={(shot, file) => uploadAsset('shots', shot.full_shot_id, file)} onGenerateShotVideo={generateShotVideo} />}
+            onUploadStartFrame={(shot, file) => uploadAsset('shots', shot.full_shot_id, file)} onGenerateShotVideo={generateShotVideo} imageCredits={imageCredits} videoCredits={videoCredits} />}
           {videoFiles.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {videoFiles.map(f => (

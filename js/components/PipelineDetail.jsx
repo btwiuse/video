@@ -9,6 +9,8 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
   const [metadataDraft, setMetadataDraft] = useState({ name: '', description: '' });
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [visualAssetsCompleted, setVisualAssetsCompleted] = useState(false);
+  const [models, setModels] = useState({ image_models: [], video_models: [] });
+  const [modelSaving, setModelSaving] = useState(false);
   // Step 2 has its own ordered flow. Keep this state here because the bottom
   // navigation lives outside StepView.
   const [step2AssetTab, setStep2AssetTab] = useState('characters');
@@ -36,18 +38,13 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
   }, [maxShotsPerScene, totalShots, totalDuration]);
 
   useEffect(() => {
-    let cancelled = false;
     setSummary(null);
-    setSummaryLoading(true);
-    api(`/pipelines/${pipeline.pipeline_id}/summarize`)
-      .then(res => res.ok ? res.json() : Promise.resolve(null))
-      .then(data => {
-        if (!cancelled && data) setSummary(data);
-      })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setSummaryLoading(false); });
-    return () => { cancelled = true; };
+    setSummaryLoading(false);
   }, [pipeline.pipeline_id]);
+
+  useEffect(() => {
+    api('/models').then(res => res.ok ? res.json() : null).then(data => { if (data) setModels(data); }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     setVisualAssetsCompleted(false);
@@ -83,6 +80,30 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
       ? 1
       : pipelineCurrentStep;
   const pid = pipeline.pipeline_id;
+  const imageModel = pipeline.image_model || models.image_models[0];
+  const videoModel = pipeline.video_model || models.video_models[0];
+  const stepCredits = step => step === 1 ? 6 : step === 2 ? (imageModel?.credits_per_call || 0) * 10 : step === 3 ? (videoModel?.credits_per_call || 0) * 5 : 0;
+
+  const updateModel = async (field, value) => {
+    setModelSaving(true);
+    try {
+      const response = await api(`/pipelines/${pid}`, { method: 'PATCH', body: JSON.stringify({ [field]: value }) });
+      if (!response.ok) throw new Error(await response.text());
+      toast('模型已更新，后续生成将使用新模型');
+      await onRefresh();
+    } catch (error) { toast.error(`模型更新失败：${error?.message || '请稍后重试'}`); } finally { setModelSaving(false); }
+  };
+
+  const generateSummary = async () => {
+    setSummaryLoading(true);
+    try {
+      const response = await api(`/pipelines/${pid}/summarize`);
+      if (!response.ok) throw new Error(await response.text());
+      const data = await response.json();
+      setSummary(data);
+      if (data.usage?.credits) toast(`已记录 ${data.usage.credits} 积分，本次暂不扣费`);
+    } catch (error) { toast.error(`摘要生成失败：${error?.message || '请稍后重试'}`); } finally { setSummaryLoading(false); }
+  };
 
   const openMetadataEditor = () => {
     setMetadataDraft({
@@ -151,9 +172,12 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
     setActionLoading(true);
     try {
       const body = step === 1 ? { max_shots_per_scene: maxShotsPerScene, total_shots: totalShots, total_duration: totalDuration } : {};
-      await api(`/pipelines/${pid}/steps/${step}`, { method: 'POST', body: JSON.stringify(body) });
+      const response = await api(`/pipelines/${pid}/steps/${step}`, { method: 'POST', body: JSON.stringify(body) });
+      if (!response.ok) throw new Error(await response.text());
+      const data = await response.json();
+      if (data.usage?.credits) toast(`已记录 ${data.usage.credits} 积分，本阶段暂不扣费`);
       setTimeout(onRefresh, 1000);
-    } finally { setActionLoading(false); }
+    } catch (error) { toast.error(`启动失败：${error?.message || '请稍后重试'}`); } finally { setActionLoading(false); }
   };
 
   const cancelStep = async () => {
@@ -252,11 +276,16 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
             <div className="flex min-w-0 items-center gap-1"><h2 className="min-w-0 truncate font-heading text-xl font-semibold text-stone-100" title={pipeline.name}>{pipeline.name || 'Untitled Pipeline'}</h2>{activeStep === 1 && <button type="button" onClick={openMetadataEditor} title="编辑项目标题和简介" aria-label="编辑项目标题和简介" className="shrink-0 rounded px-1.5 py-1 text-sm text-stone-500 hover:bg-ink-800 hover:text-brass-400">✎</button>}</div>
             {summaryLoading && !pipeline.description && <p className="mt-1 text-xs text-stone-400">正在生成摘要...</p>}
             {(pipeline.description || summary?.summary) && <p className="mt-1 text-sm leading-relaxed text-stone-300">{pipeline.description || summary.summary}</p>}
+            {!pipeline.description && !summary && !summaryLoading && <button type="button" onClick={generateSummary} className="mt-2 text-xs font-medium text-brass-500 hover:text-brass-400">生成项目摘要 · 1 积分</button>}
           </>}
           <div className="flex items-center gap-3 mt-2">
             <StatusBadge status={pipeline.status} />
             <span className="text-stone-400 text-sm">{pipeline.status === 'running' ? `运行中 - 步骤 ${workflowStep(pipeline.step)}/${WORKFLOW_STEP_COUNT}` : currentStep > 0 ? `已完成 ${currentStep}/${WORKFLOW_STEP_COUNT}` : '未开始'}</span>
             {pipeline.duration && <span className="text-stone-500 text-xs">运行时长: {formatDuration(pipeline.duration)}</span>}
+          </div>
+          <div className="mt-3 grid max-w-2xl gap-2 sm:grid-cols-2">
+            <label className="text-xs text-stone-500">图片模型<select disabled={modelSaving} value={imageModel?.id || ''} onChange={event => updateModel('image_model_id', event.target.value)} className="style-input mt-1 text-xs">{models.image_models.map(model => <option key={model.id} value={model.id}>{model.name} · {model.credits_per_call} 积分/次</option>)}</select></label>
+            <label className="text-xs text-stone-500">视频模型<select disabled={modelSaving} value={videoModel?.id || ''} onChange={event => updateModel('video_model_id', event.target.value)} className="style-input mt-1 text-xs">{models.video_models.map(model => <option key={model.id} value={model.id}>{model.name} · {model.credits_per_call} 积分/镜头</option>)}</select></label>
           </div>
         </div>
       </div>
@@ -269,7 +298,7 @@ function PipelineDetail({ pipeline, onRefresh, onBack }) {
         </div>
       )}
 
-      <StepView step={activeStep} pipeline={pipeline} onRun={runStep} onCancel={cancelStep} onRefresh={onRefresh} visualAssetsCompletionKnown={visualAssetsReady} onVisualAssetsCompletionChange={setVisualAssetsCompleted} assetTab={step2AssetTab} onAssetTabChange={setStep2AssetTab} onAssetOverviewChange={updateStep2AssetOverview} actionLoading={actionLoading} pipelineId={pid}
+      <StepView step={activeStep} pipeline={pipeline} onRun={runStep} onCancel={cancelStep} onRefresh={onRefresh} visualAssetsCompletionKnown={visualAssetsReady} onVisualAssetsCompletionChange={setVisualAssetsCompleted} assetTab={step2AssetTab} onAssetTabChange={setStep2AssetTab} onAssetOverviewChange={updateStep2AssetOverview} actionLoading={actionLoading} pipelineId={pid} stepCredits={stepCredits(activeStep)} imageCredits={imageModel?.credits_per_call || 0} videoCredits={videoModel?.credits_per_call || 0}
   maxShotsPerScene={maxShotsPerScene} setMaxShotsPerScene={setMaxShotsPerScene}
   totalShots={totalShots} setTotalShots={setTotalShots}
   totalDuration={totalDuration} setTotalDuration={setTotalDuration} />

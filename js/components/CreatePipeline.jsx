@@ -6,6 +6,10 @@ function CreatePipeline({ onCreated }) {
   const [stylePresets, setStylePresets] = useState([]);
   const [selectedStyleId, setSelectedStyleId] = useState('');
   const [stylesLoading, setStylesLoading] = useState(true);
+  const [imageModels, setImageModels] = useState([]);
+  const [videoModels, setVideoModels] = useState([]);
+  const [imageModelId, setImageModelId] = useState('');
+  const [videoModelId, setVideoModelId] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef();
@@ -23,6 +27,18 @@ function CreatePipeline({ onCreated }) {
       })
       .catch(() => { if (active) setStylePresets([]); })
       .finally(() => { if (active) setStylesLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    api('/models').then(res => res.ok ? res.json() : Promise.reject(new Error('模型目录加载失败'))).then(data => {
+      if (!active) return;
+      const images = data.image_models || [];
+      const videos = data.video_models || [];
+      setImageModels(images); setVideoModels(videos);
+      setImageModelId(images[0]?.id || ''); setVideoModelId(videos[0]?.id || '');
+    }).catch(error => { if (active) setError(error.message); });
     return () => { active = false; };
   }, []);
 
@@ -54,6 +70,9 @@ function CreatePipeline({ onCreated }) {
         fd.append('script', blob, 'script.txt');
       }
       if (selectedStyleId) fd.append('style_preset_id', selectedStyleId);
+
+      if (imageModelId) fd.append('image_model_id', imageModelId);
+      if (videoModelId) fd.append('video_model_id', videoModelId);
       const organizationId = getActiveOrganizationId();
       if (organizationId) fd.append('organization_id', organizationId);
       const res = await fetch(`${API_BASE}/pipelines`, { method: 'POST', body: fd, credentials: 'same-origin' });
@@ -87,6 +106,10 @@ function CreatePipeline({ onCreated }) {
             </div>
             {selectedStyle && <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-stone-500"><span className="rounded-md bg-ink-800 px-2 py-1">图像 · {selectedStyle.image_style}</span><span className="rounded-md bg-ink-800 px-2 py-1">视频 · {selectedStyle.video_style}</span><span className="rounded-md bg-ink-800 px-2 py-1">{selectedStyle.aspect_ratio}</span></div>}
           </>}
+        </div>
+        <div className="grid gap-4 rounded-xl border border-ink-700 bg-ink-800/35 p-4 sm:grid-cols-2">
+          <div><label className="mb-1.5 block text-xs font-medium text-stone-300">图片模型</label><select value={imageModelId} onChange={event => setImageModelId(event.target.value)} className="style-input">{imageModels.map(model => <option key={model.id} value={model.id}>{model.name} · {model.credits_per_call} 积分/次</option>)}</select><p className="mt-1.5 text-xs text-stone-500">批量视觉素材固定记录 10 次模型调用。</p></div>
+          <div><label className="mb-1.5 block text-xs font-medium text-stone-300">视频模型</label><select value={videoModelId} onChange={event => setVideoModelId(event.target.value)} className="style-input">{videoModels.map(model => <option key={model.id} value={model.id}>{model.name} · {model.credits_per_call} 积分/镜头</option>)}</select><p className="mt-1.5 text-xs text-stone-500">批量视频固定记录 5 个镜头调用。</p></div>
         </div>
         <div>
           <label className="block text-sm text-stone-300 mb-1.5 font-medium">上传剧本文件</label>

@@ -67,7 +67,9 @@ type Pipeline struct {
 	OwnerID        string `json:"owner_id,omitempty"`
 	OrganizationID string `json:"organization_id,omitempty"`
 	// Empty visibility denotes a legacy public project. New projects are private.
-	Visibility string `json:"visibility,omitempty"`
+	Visibility   string `json:"visibility,omitempty"`
+	ImageModelID string `json:"image_model_id,omitempty"`
+	VideoModelID string `json:"video_model_id,omitempty"`
 }
 
 // StylePreset is a reusable visual direction. Resolution fields are persisted
@@ -228,6 +230,14 @@ func loadPipeline(id string) *Pipeline {
 	}
 	mu.Unlock()
 	return p
+}
+
+func recordPipelineUsage(r *http.Request, pipeline *Pipeline, operation, resourceID string, units int) (*UsageEntry, error) {
+	user := currentUser(r)
+	if user == nil || accounts == nil {
+		return nil, fmt.Errorf("authentication required")
+	}
+	return accounts.recordUsage(user, pipeline, operation, resourceID, units)
 }
 
 func stylePresetsKey() string {
@@ -559,7 +569,7 @@ func markVisualAssetsComplete(id string) {
 	vlog("pipeline %s visual assets complete", id)
 }
 
-func runPythonAsync(p *Pipeline, args []string, stepNum int, maxShotsPerScene, totalShots, totalDuration int) {
+func runPythonAsync(p *Pipeline, args []string, stepNum int, maxShotsPerScene, totalShots, totalDuration int, usageEntryID string) {
 	p.Ctx, p.Cancel = context.WithCancel(context.Background())
 	cmd := exec.CommandContext(p.Ctx, "uv", append([]string{"run", "python"}, args...)...)
 	cmd.Dir = "."
@@ -578,6 +588,17 @@ func runPythonAsync(p *Pipeline, args []string, stepNum int, maxShotsPerScene, t
 			vlog("pipeline %s cannot encode style preset: %v", p.ID, err)
 		} else {
 			env = append(env, fmt.Sprintf("STYLE_PRESET_JSON=%s", styleJSON))
+		}
+	}
+	if p.ImageModelID != "" {
+		imageModel := pipelineModel(p, "image")
+		env = append(env, fmt.Sprintf("IMAGE_PROVIDER=%s", imageModel.Provider))
+	}
+	if p.VideoModelID != "" {
+		videoModel := pipelineModel(p, "video")
+		env = append(env, fmt.Sprintf("VIDEO_PROVIDER=%s", videoModel.Provider))
+		if videoModel.ProviderModel != "" {
+			env = append(env, fmt.Sprintf("VIDEO_MODEL=%s", videoModel.ProviderModel))
 		}
 	}
 	if v := os.Getenv("PUBLIC_URL"); v != "" {
@@ -614,6 +635,13 @@ func runPythonAsync(p *Pipeline, args []string, stepNum int, maxShotsPerScene, t
 			defer logFile.Close()
 		}
 		err := cmd.Run()
+		usageStatus := "completed"
+		if err != nil {
+			usageStatus = "failed"
+		}
+		if accounts != nil {
+			accounts.completeUsage(usageEntryID, usageStatus)
+		}
 		mu.Lock()
 		defer mu.Unlock()
 		if p.Status == StatusCanceled {
@@ -870,6 +898,22 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stylePresetID := strings.TrimSpace(r.FormValue("style_preset_id"))
+	imageModelID := strings.TrimSpace(r.FormValue("image_model_id"))
+	videoModelID := strings.TrimSpace(r.FormValue("video_model_id"))
+	if imageModelID == "" {
+		imageModelID = defaultModel("image").ID
+	}
+	if videoModelID == "" {
+		videoModelID = defaultModel("video").ID
+	}
+	if _, ok := modelByID(imageModelID, "image"); !ok {
+		http.Error(w, "image model not found", http.StatusBadRequest)
+		return
+	}
+	if _, ok := modelByID(videoModelID, "video"); !ok {
+		http.Error(w, "video model not found", http.StatusBadRequest)
+		return
+	}
 	organizationID, err := currentScopeOrganization(r, strings.TrimSpace(r.FormValue("organization_id")))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
@@ -946,6 +990,8 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 		OwnerID:        user.ID,
 		OrganizationID: organizationID,
 		Visibility:     "private",
+		ImageModelID:   imageModelID,
+		VideoModelID:   videoModelID,
 	}
 	mu.Lock()
 	pipelines[id] = p
@@ -963,6 +1009,8 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 		"style_preset":    p.StylePreset,
 		"organization_id": p.OrganizationID,
 		"visibility":      p.Visibility,
+		"image_model":     pipelineModel(p, "image"),
+		"video_model":     pipelineModel(p, "video"),
 	})
 }
 
@@ -1006,16 +1054,20 @@ func handleGetPipeline(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"pipeline_id":  p.ID,
-		"name":         p.Name,
-		"description":  p.Description,
-		"status":       string(p.Status),
-		"step":         p.Step,
-		"error":        p.Error,
-		"created_at":   p.CreatedAt,
-		"updated_at":   p.UpdatedAt,
-		"duration":     p.Duration,
-		"style_preset": p.StylePreset,
+		"pipeline_id":     p.ID,
+		"name":            p.Name,
+		"description":     p.Description,
+		"status":          string(p.Status),
+		"step":            p.Step,
+		"error":           p.Error,
+		"created_at":      p.CreatedAt,
+		"updated_at":      p.UpdatedAt,
+		"duration":        p.Duration,
+		"style_preset":    p.StylePreset,
+		"organization_id": p.OrganizationID,
+		"visibility":      p.Visibility,
+		"image_model":     pipelineModel(p, "image"),
+		"video_model":     pipelineModel(p, "video"),
 	})
 }
 
@@ -1032,15 +1084,17 @@ func handleUpdatePipeline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var update struct {
-		Name        *string `json:"name"`
-		Description *string `json:"description"`
+		Name         *string `json:"name"`
+		Description  *string `json:"description"`
+		ImageModelID *string `json:"image_model_id"`
+		VideoModelID *string `json:"video_model_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	if update.Name == nil && update.Description == nil {
-		http.Error(w, "provide name or description", http.StatusBadRequest)
+	if update.Name == nil && update.Description == nil && update.ImageModelID == nil && update.VideoModelID == nil {
+		http.Error(w, "provide project metadata or models", http.StatusBadRequest)
 		return
 	}
 
@@ -1070,6 +1124,22 @@ func handleUpdatePipeline(w http.ResponseWriter, r *http.Request) {
 	if update.Description != nil {
 		p.Description = truncateRunes(strings.TrimSpace(*update.Description), 500)
 	}
+	if update.ImageModelID != nil {
+		if _, ok := modelByID(*update.ImageModelID, "image"); !ok {
+			mu.Unlock()
+			http.Error(w, "image model not found", http.StatusBadRequest)
+			return
+		}
+		p.ImageModelID = *update.ImageModelID
+	}
+	if update.VideoModelID != nil {
+		if _, ok := modelByID(*update.VideoModelID, "video"); !ok {
+			mu.Unlock()
+			http.Error(w, "video model not found", http.StatusBadRequest)
+			return
+		}
+		p.VideoModelID = *update.VideoModelID
+	}
 	savePipelineState(p)
 	mu.Unlock()
 
@@ -1079,6 +1149,8 @@ func handleUpdatePipeline(w http.ResponseWriter, r *http.Request) {
 		"name":        p.Name,
 		"description": p.Description,
 		"updated_at":  p.UpdatedAt,
+		"image_model": pipelineModel(p, "image"),
+		"video_model": pipelineModel(p, "video"),
 	})
 }
 
@@ -1208,7 +1280,17 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	runPythonAsync(p, args, step, maxShotsPerScene, totalShots, totalDuration)
+	operation := map[int]string{1: "storyboard", 2: "image_batch", 3: "video_batch"}[step]
+	usageEntry, err := recordPipelineUsage(r, p, operation, "", 1)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("cannot record usage: %v", err), http.StatusInternalServerError)
+		return
+	}
+	usageEntryID := ""
+	if usageEntry != nil {
+		usageEntryID = usageEntry.ID
+	}
+	runPythonAsync(p, args, step, maxShotsPerScene, totalShots, totalDuration, usageEntryID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -1216,6 +1298,7 @@ func handleStep(w http.ResponseWriter, r *http.Request) {
 		"pipeline_id": id,
 		"status":      string(StatusRunning),
 		"step":        step,
+		"usage":       usageEntry,
 	})
 }
 
@@ -1270,6 +1353,11 @@ func handleSummarize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	usageEntry, usageErr := recordPipelineUsage(r, p, "script_summary", "", 1)
+	if usageErr != nil {
+		http.Error(w, fmt.Sprintf("cannot record usage: %v", usageErr), http.StatusInternalServerError)
+		return
+	}
 	// Run summarize script via Python
 	cmd := exec.Command("uv", "run", "python", "main.py", "summarize", sp)
 	cmd.Dir = "."
@@ -1290,6 +1378,13 @@ func handleSummarize(w http.ResponseWriter, r *http.Request) {
 		cmd.Stderr = &buf
 	}
 	err = cmd.Run()
+	if usageEntry != nil && accounts != nil {
+		status := "completed"
+		if err != nil {
+			status = "failed"
+		}
+		accounts.completeUsage(usageEntry.ID, status)
+	}
 	out := buf.Bytes()
 	if err != nil {
 		vlog("pipeline %s summarize failed: %v output=%s", id, err, string(out))
@@ -1328,6 +1423,7 @@ func handleSummarize(w http.ResponseWriter, r *http.Request) {
 		"title":   result["title"],
 		"summary": result["summary"],
 		"cached":  false,
+		"usage":   usageEntry,
 	})
 }
 
@@ -1450,6 +1546,8 @@ func handleListPipelines(w http.ResponseWriter, r *http.Request) {
 			"style_preset":    p.StylePreset,
 			"organization_id": p.OrganizationID,
 			"visibility":      p.Visibility,
+			"image_model":     pipelineModel(p, "image"),
+			"video_model":     pipelineModel(p, "video"),
 			"preview_groups":  previewGroups,
 			"preview_counts":  previewCounts,
 		})
@@ -2022,6 +2120,17 @@ func handleRegenerateAsset(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "must specify at least one character, character_image, scene, scene_image, shot, or prop to regenerate", http.StatusBadRequest)
 		return
 	}
+	units := len(params.Characters) + len(params.CharacterImages) + len(params.Scenes) + len(params.SceneImages) + len(params.Shots) + len(params.PropImages)
+	p := loadPipeline(id)
+	if p == nil {
+		http.Error(w, "pipeline not found", http.StatusNotFound)
+		return
+	}
+	usageEntry, usageErr := recordPipelineUsage(r, p, "image_regenerate", "", units)
+	if usageErr != nil {
+		http.Error(w, fmt.Sprintf("cannot record usage: %v", usageErr), http.StatusInternalServerError)
+		return
+	}
 
 	// Build CLI args
 	args := []string{"run", "python", "main.py", "assets", filepath.Join(dir, "storyboard.json")}
@@ -2059,6 +2168,8 @@ func handleRegenerateAsset(w http.ResponseWriter, r *http.Request) {
 		fmt.Sprintf("OUTPUT_DIR=%s", outDir),
 		fmt.Sprintf("PIPELINE_ID=%s", id),
 	)
+	imageModel := pipelineModel(p, "image")
+	cmd.Env = append(cmd.Env, fmt.Sprintf("IMAGE_PROVIDER=%s", imageModel.Provider))
 	logFile, err := os.OpenFile(logPath(id), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	var buf bytes.Buffer
 	if err == nil {
@@ -2071,6 +2182,13 @@ func handleRegenerateAsset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = cmd.Run()
+	if usageEntry != nil && accounts != nil {
+		status := "completed"
+		if err != nil {
+			status = "failed"
+		}
+		accounts.completeUsage(usageEntry.ID, status)
+	}
 	out := strings.TrimSpace(buf.String())
 	if err != nil {
 		vlog("pipeline %s regenerate failed: %v output=%s", id, err, out)
@@ -2090,6 +2208,7 @@ func handleRegenerateAsset(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{
 		"status": "done",
 		"output": out,
+		"usage":  usageEntry,
 	})
 }
 
@@ -2125,10 +2244,19 @@ func handleGenerateShotVideo(w http.ResponseWriter, r *http.Request) {
 		"main.py", "videos", filepath.Join(dir, "storyboard.json"), filepath.Join(dir, "manifest.json"),
 		"--shot", shotID,
 	}
-	runPythonAsync(p, args, 3, 0, 0, 0)
+	usageEntry, usageErr := recordPipelineUsage(r, p, "video_shot", shotID, 1)
+	if usageErr != nil {
+		http.Error(w, fmt.Sprintf("cannot record usage: %v", usageErr), http.StatusInternalServerError)
+		return
+	}
+	usageEntryID := ""
+	if usageEntry != nil {
+		usageEntryID = usageEntry.ID
+	}
+	runPythonAsync(p, args, 3, 0, 0, 0, usageEntryID)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
-	json.NewEncoder(w).Encode(map[string]any{"status": "running", "shot_id": shotID})
+	json.NewEncoder(w).Encode(map[string]any{"status": "running", "shot_id": shotID, "usage": usageEntry})
 }
 
 func handleOptimizeShotSkills(w http.ResponseWriter, r *http.Request) {
@@ -2172,11 +2300,15 @@ func handleOptimizeShotSkills(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "select a Skill or enter a custom instruction", http.StatusBadRequest)
 		return
 	}
-
 	dir := outputDir(id)
 	storyboardPath := filepath.Join(dir, "storyboard.json")
 	if !fileExists(storyboardPath) {
 		http.Error(w, "missing storyboard.json (run step 1 first)", http.StatusConflict)
+		return
+	}
+	usageEntry, usageErr := recordPipelineUsage(r, p, "shot_optimize", shotID, 1)
+	if usageErr != nil {
+		http.Error(w, fmt.Sprintf("cannot record usage: %v", usageErr), http.StatusInternalServerError)
 		return
 	}
 
@@ -2212,10 +2344,16 @@ func handleOptimizeShotSkills(w http.ResponseWriter, r *http.Request) {
 
 	vlog("pipeline %s optimizing shot %s with Skills: %s", id, shotID, strings.Join(params.Skills, ", "))
 	if err := cmd.Run(); err != nil {
+		if usageEntry != nil && accounts != nil {
+			accounts.completeUsage(usageEntry.ID, "failed")
+		}
 		message := strings.TrimSpace(output.String())
 		vlog("pipeline %s Skill optimization failed: %v output=%s", id, err, message)
 		http.Error(w, fmt.Sprintf("Skill optimization failed: %v", err), http.StatusInternalServerError)
 		return
+	}
+	if usageEntry != nil && accounts != nil {
+		accounts.completeUsage(usageEntry.ID, "completed")
 	}
 	result := bytes.TrimSpace(output.Bytes())
 	if !json.Valid(result) {
@@ -2228,8 +2366,14 @@ func handleOptimizeShotSkills(w http.ResponseWriter, r *http.Request) {
 	p.UpdatedAt = time.Now()
 	savePipelineState(p)
 	mu.Unlock()
+	var response map[string]any
+	if err := json.Unmarshal(result, &response); err != nil {
+		http.Error(w, "Skill optimization returned invalid data", http.StatusInternalServerError)
+		return
+	}
+	response["usage"] = usageEntry
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(result)
+	json.NewEncoder(w).Encode(response)
 }
 
 func serveHome(w http.ResponseWriter, r *http.Request) {
@@ -2439,7 +2583,7 @@ func authorizePipelineRequest(w http.ResponseWriter, r *http.Request) bool {
 	}
 	// Public projects expose their project metadata and artifacts, but never
 	// execution logs. Every mutation requires private workspace access.
-	publicRead := r.Method == http.MethodGet && !strings.Contains(r.URL.Path, "/logs")
+	publicRead := r.Method == http.MethodGet && !strings.Contains(r.URL.Path, "/logs") && !strings.Contains(r.URL.Path, "/summarize")
 	if canAccessPipeline(pipeline, currentUser(r), !publicRead) {
 		return true
 	}
@@ -2469,6 +2613,8 @@ func main() {
 	mux.HandleFunc("/", serveHome)
 	mux.HandleFunc("/manifest.json", serveManifest)
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/models", handleModels)
+	mux.HandleFunc("/usage", handleUsage)
 	mux.HandleFunc("/auth/register", handleRegister(accounts))
 	mux.HandleFunc("/auth/login", handleLogin(accounts))
 	mux.HandleFunc("/auth/logout", handleLogout)

@@ -50,6 +50,7 @@ type authConfig struct {
 	Users         []User                   `yaml:"users"`
 	Organizations []Organization           `yaml:"organizations"`
 	Memberships   []OrganizationMembership `yaml:"memberships"`
+	Usage         []UsageEntry             `yaml:"usage"`
 }
 
 type authStore struct {
@@ -68,7 +69,7 @@ func loadAuthStore(path string) (*authStore, error) {
 		if err != nil {
 			return nil, err
 		}
-		store.config = authConfig{Version: 1, SessionSecret: secret, Users: []User{}, Organizations: []Organization{}, Memberships: []OrganizationMembership{}}
+		store.config = authConfig{Version: 1, SessionSecret: secret, Users: []User{}, Organizations: []Organization{}, Memberships: []OrganizationMembership{}, Usage: []UsageEntry{}}
 		if err := store.saveLocked(); err != nil {
 			return nil, err
 		}
