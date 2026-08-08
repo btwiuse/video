@@ -24,7 +24,7 @@ import httpx
 
 from config import config
 from src.prompts import assemble_video_prompt
-from src.utils import ensure_output_dir, save_json, load_json
+from src.utils import append_global_style_prompt, ensure_output_dir, save_json, load_json
 
 
 # ============================================================================
@@ -544,6 +544,7 @@ class VideoPipeline:
             prompt = assemble_video_prompt(shot) if shot.get("user_edited") else self._read_shot_md(shot_id)
             if not prompt:
                 prompt = assemble_video_prompt(shot)
+            prompt = append_global_style_prompt(prompt, "video")
 
             start_frame, ref_images = self._resolve_image_refs(
                 shot_id, char_ref_ids, prop_ref_ids, scene_id, transition, asset_manifest, i, shots,

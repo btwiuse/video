@@ -4,12 +4,14 @@ const getHashView = () => {
   const hash = window.location.hash.replace('#', '');
   if (hash.startsWith('/pipelines/')) return { view: 'detail', id: hash.split('/')[2] };
   if (hash === '/create') return { view: 'create', id: null };
+  if (hash === '/styles') return { view: 'styles', id: null };
   return { view: 'list', id: null };
 };
 
 const navigateTo = (view, id = null) => {
   if (view === 'detail' && id) { window.location.hash = `#/pipelines/${id}`; }
   else if (view === 'create') { window.location.hash = '#/create'; }
+  else if (view === 'styles') { window.location.hash = '#/styles'; }
   else { window.location.hash = '#'; }
 };
 
@@ -52,7 +54,7 @@ useEffect(() => {
           res.json().then(data => { setSelected(data); setCurrentView('detail'); setPipelineId(id); });
         } else { navigateTo('list'); }
       });
-    } else if (v === 'create') { setCurrentView('create'); setPipelineId(null); setSelected(null); }
+    } else if (v === 'create' || v === 'styles') { setCurrentView(v); setPipelineId(null); setSelected(null); }
     else { setCurrentView('list'); setPipelineId(null); setSelected(null); }
   };
   window.addEventListener('hashchange', onHashChange);
@@ -87,26 +89,30 @@ useEffect(() => {
 return (
   <div className="min-h-screen flex flex-col">
     <header className="volc-header px-4 sm:px-7">
-      <button onClick={() => navigateTo('list')} className="flex items-center gap-3 hover:opacity-80 transition-opacity">
+      <button onClick={() => navigateTo('list')} className="flex min-w-0 shrink-0 items-center gap-3 hover:opacity-80 transition-opacity">
         <img src="/assets/favicon.svg" alt="Reelix Studio" className="volc-logo" />
-        <div>
-          <h1 className="font-heading text-[15px] font-semibold text-stone-100 leading-tight">Reelix Studio</h1>
+        <div className="min-w-0">
+          <h1 className="whitespace-nowrap font-heading text-[15px] font-semibold text-stone-100 leading-tight">Reelix Studio</h1>
           <p className="text-[11px] text-stone-500 leading-tight">AI 剧本到视频</p>
         </div>
       </button>
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         <span className="hidden sm:inline text-xs text-stone-500">项目工作台</span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           <div className={`w-2 h-2 rounded-full ${health ? 'bg-leaf-400' : 'bg-clay-500'}`} />
-          <span className="text-xs text-stone-400">{health ? '服务正常' : '服务离线'}</span>
+          <span className="hidden text-xs text-stone-400 sm:inline">{health ? '服务正常' : '服务离线'}</span>
         </div>
         <button type="button" onClick={() => setTheme(current => current === 'dark' ? 'light' : 'dark')}
           aria-label={theme === 'dark' ? '切换至浅色模式' : '切换至暗色模式'} title={theme === 'dark' ? '切换至浅色模式' : '切换至暗色模式'}
           className="theme-toggle nav-btn flex h-9 w-9 items-center justify-center rounded-lg border border-ink-700 bg-ink-900 text-base text-stone-400 hover:text-brass-500">
           {theme === 'dark' ? '☀' : '☾'}
         </button>
+        <button type="button" onClick={() => navigateTo('styles')} title="全局风格"
+          className="nav-btn hidden sm:inline-flex h-9 items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900 px-3 text-sm font-medium text-stone-300 hover:border-brass-500/40 hover:text-brass-500">
+          <span aria-hidden="true">✦</span><span>风格预设</span>
+        </button>
         <button onClick={() => navigateTo('create')}
-          className="nav-btn volc-primary text-sm px-3.5 py-2 text-ink-950 rounded-lg font-medium transition-all">
+          className="nav-btn volc-primary h-9 whitespace-nowrap rounded-lg px-3 text-sm font-medium text-ink-950 transition-all sm:px-3.5">
           + 创建项目
         </button>
       </div>
@@ -118,6 +124,12 @@ return (
           <div className="max-w-2xl mx-auto">
             <button onClick={() => navigateTo('list')} className="nav-btn text-sm text-stone-400 hover:text-brass-400 mb-4 transition-colors">← 返回列表</button>
             <CreatePipeline onCreated={(id) => { selectPipeline(id); }} />
+          </div>
+        )}
+
+        {currentView === 'styles' && (
+          <div className="max-w-6xl mx-auto">
+            <StylePresets onCreateNew={() => navigateTo('create')} />
           </div>
         )}
 

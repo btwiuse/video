@@ -52,7 +52,8 @@ type Pipeline struct {
 	ID          string
 	Name        string
 	Description string
-	ScriptFile  string `json:"script_file"` // original uploaded filename
+	ScriptFile  string       `json:"script_file"` // original uploaded filename
+	StylePreset *StylePreset `json:"style_preset,omitempty"`
 	Status      PipelineStatus
 	Step        int // current step 0-5
 	Error       string
@@ -65,10 +66,29 @@ type Pipeline struct {
 	Duration    string
 }
 
+// StylePreset is a reusable visual direction. Resolution fields are persisted
+// for future provider support, but are not passed to generation commands yet.
+type StylePreset struct {
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	Description     string    `json:"description"`
+	ImageStyle      string    `json:"image_style"`
+	VideoStyle      string    `json:"video_style"`
+	ImagePrompt     string    `json:"image_prompt"`
+	VideoPrompt     string    `json:"video_prompt"`
+	AspectRatio     string    `json:"aspect_ratio"`
+	ImageResolution string    `json:"image_resolution"`
+	VideoResolution string    `json:"video_resolution"`
+	IsDefault       bool      `json:"is_default"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
 var (
 	pipelines = make(map[string]*Pipeline)
 	mu        sync.RWMutex
 	summaryMu sync.Mutex
+	stylesMu  sync.Mutex
 )
 
 // ============================================================================
@@ -134,6 +154,113 @@ func pipelineKey(id string) string {
 		base = "."
 	}
 	return filepath.Join(base, "output", id, "pipeline.json")
+}
+
+func stylePresetsKey() string {
+	base := os.Getenv("DATA_DIR")
+	if base == "" {
+		base = "."
+	}
+	return filepath.Join(base, "output", "style_presets.json")
+}
+
+func defaultStylePresets() []StylePreset {
+	now := time.Now()
+	return []StylePreset{
+		{ID: "cinematic-realism", Name: "电影写实", Description: "自然光影与克制的电影镜头语言", ImageStyle: "电影级写实", VideoStyle: "电影级写实", ImagePrompt: "电影级写实，自然光影，真实材质，细腻景深，专业电影摄影", VideoPrompt: "电影级写实，稳定自然的镜头运动，真实光影与材质，专业电影摄影", AspectRatio: "16:9", ImageResolution: "1024x1024", VideoResolution: "720p", IsDefault: true, CreatedAt: now, UpdatedAt: now},
+		{ID: "eastern-fantasy", Name: "东方奇幻", Description: "水墨意境与东方美术的奇幻叙事", ImageStyle: "东方奇幻", VideoStyle: "东方奇幻", ImagePrompt: "东方奇幻美术，水墨质感，飘逸布料，层叠山水，诗意光影", VideoPrompt: "东方奇幻电影感，飘逸运镜，水墨氛围，细腻环境动态", AspectRatio: "16:9", ImageResolution: "1024x1024", VideoResolution: "720p", CreatedAt: now, UpdatedAt: now},
+		{ID: "cyberpunk-noir", Name: "赛博黑色", Description: "霓虹雨夜、强反差与未来都市感", ImageStyle: "赛博朋克", VideoStyle: "赛博朋克", ImagePrompt: "赛博朋克黑色电影，霓虹反射，潮湿街道，强烈明暗对比，未来都市", VideoPrompt: "赛博朋克黑色电影，克制的镜头推进，霓虹反射与雨雾氛围", AspectRatio: "16:9", ImageResolution: "1024x1024", VideoResolution: "720p", CreatedAt: now, UpdatedAt: now},
+		{ID: "anime-drama", Name: "日系动画", Description: "清透色彩与情绪化的动画分镜", ImageStyle: "日系动画", VideoStyle: "日系动画", ImagePrompt: "高品质日系动画，清透色彩，细腻角色表情，电影分镜构图", VideoPrompt: "日系动画电影，富有情绪的镜头运动，细腻光影与角色动作", AspectRatio: "16:9", ImageResolution: "1024x1024", VideoResolution: "720p", CreatedAt: now, UpdatedAt: now},
+		{ID: "pixel-art", Name: "像素风", Description: "复古像素颗粒与游戏感分镜", ImageStyle: "像素风", VideoStyle: "像素风", ImagePrompt: "高品质像素艺术，清晰像素格，有限调色板，复古游戏氛围，精致场景细节", VideoPrompt: "高品质像素风动画，清晰像素格，逐帧游戏动画质感，稳定镜头运动", AspectRatio: "16:9", ImageResolution: "1024x1024", VideoResolution: "720p", CreatedAt: now, UpdatedAt: now},
+	}
+}
+
+func stylePresetsMigrationKey() string {
+	return stylePresetsKey() + ".v2"
+}
+
+func migratePixelStylePreset(presets []StylePreset) ([]StylePreset, bool) {
+	for _, preset := range presets {
+		if preset.ID == "pixel-art" {
+			return presets, false
+		}
+	}
+	for _, preset := range defaultStylePresets() {
+		if preset.ID == "pixel-art" {
+			return append(presets, preset), true
+		}
+	}
+	return presets, false
+}
+
+func loadStylePresets() ([]StylePreset, error) {
+	key := stylePresetsKey()
+	data, err := os.ReadFile(key)
+	if os.IsNotExist(err) {
+		presets := defaultStylePresets()
+		if err := saveStylePresets(presets); err != nil {
+			return nil, err
+		}
+		if err := os.WriteFile(stylePresetsMigrationKey(), []byte("pixel-art\n"), 0644); err != nil {
+			return nil, err
+		}
+		return presets, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var presets []StylePreset
+	if err := json.Unmarshal(data, &presets); err != nil {
+		return nil, err
+	}
+	if presets == nil {
+		presets = []StylePreset{}
+	}
+	if !fileExists(stylePresetsMigrationKey()) {
+		if updated, changed := migratePixelStylePreset(presets); changed {
+			presets = updated
+			if err := saveStylePresets(presets); err != nil {
+				return nil, err
+			}
+		}
+		if err := os.WriteFile(stylePresetsMigrationKey(), []byte("pixel-art\n"), 0644); err != nil {
+			return nil, err
+		}
+	}
+	return presets, nil
+}
+
+func saveStylePresets(presets []StylePreset) error {
+	key := stylePresetsKey()
+	if err := os.MkdirAll(filepath.Dir(key), 0755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(presets, "", "  ")
+	if err != nil {
+		return err
+	}
+	temporary := key + ".tmp"
+	if err := os.WriteFile(temporary, data, 0644); err != nil {
+		return err
+	}
+	return os.Rename(temporary, key)
+}
+
+func copyStylePreset(preset StylePreset) *StylePreset {
+	copy := preset
+	return &copy
+}
+
+func defaultStylePreset(presets []StylePreset) *StylePreset {
+	for _, preset := range presets {
+		if preset.IsDefault {
+			return copyStylePreset(preset)
+		}
+	}
+	if len(presets) > 0 {
+		return copyStylePreset(presets[0])
+	}
+	return nil
 }
 
 func savePipelineState(p *Pipeline) {
@@ -372,6 +499,13 @@ func runPythonAsync(p *Pipeline, args []string, stepNum int, maxShotsPerScene, t
 		fmt.Sprintf("OUTPUT_DIR=%s", outDir),
 		fmt.Sprintf("PIPELINE_ID=%s", p.ID),
 	)
+	if p.StylePreset != nil {
+		if styleJSON, err := json.Marshal(p.StylePreset); err != nil {
+			vlog("pipeline %s cannot encode style preset: %v", p.ID, err)
+		} else {
+			env = append(env, fmt.Sprintf("STYLE_PRESET_JSON=%s", styleJSON))
+		}
+	}
 	if v := os.Getenv("PUBLIC_URL"); v != "" {
 		env = append(env, fmt.Sprintf("PUBLIC_URL=%s", v))
 	}
@@ -443,6 +577,178 @@ func runPythonAsync(p *Pipeline, args []string, stepNum int, maxShotsPerScene, t
 // Handlers
 // ============================================================================
 
+func normalizeStylePreset(preset *StylePreset) {
+	preset.Name = truncateRunes(strings.TrimSpace(preset.Name), 60)
+	preset.Description = truncateRunes(strings.TrimSpace(preset.Description), 160)
+	preset.ImageStyle = truncateRunes(strings.TrimSpace(preset.ImageStyle), 60)
+	preset.VideoStyle = truncateRunes(strings.TrimSpace(preset.VideoStyle), 60)
+	preset.ImagePrompt = truncateRunes(strings.TrimSpace(preset.ImagePrompt), 1000)
+	preset.VideoPrompt = truncateRunes(strings.TrimSpace(preset.VideoPrompt), 1000)
+	preset.AspectRatio = truncateRunes(strings.TrimSpace(preset.AspectRatio), 20)
+	preset.ImageResolution = truncateRunes(strings.TrimSpace(preset.ImageResolution), 30)
+	preset.VideoResolution = truncateRunes(strings.TrimSpace(preset.VideoResolution), 30)
+}
+
+func handleStylePresets(w http.ResponseWriter, r *http.Request) {
+	stylesMu.Lock()
+	defer stylesMu.Unlock()
+	presets, err := loadStylePresets()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("cannot load style presets: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"presets": presets})
+	case http.MethodPost:
+		var preset StylePreset
+		if err := json.NewDecoder(r.Body).Decode(&preset); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		normalizeStylePreset(&preset)
+		if preset.Name == "" {
+			http.Error(w, "name cannot be empty", http.StatusBadRequest)
+			return
+		}
+		now := time.Now()
+		preset.ID = fmt.Sprintf("style-%d", now.UnixNano())
+		preset.CreatedAt = now
+		preset.UpdatedAt = now
+		if len(presets) == 0 || preset.IsDefault {
+			for i := range presets {
+				presets[i].IsDefault = false
+				presets[i].UpdatedAt = now
+			}
+			preset.IsDefault = true
+		}
+		presets = append(presets, preset)
+		if err := saveStylePresets(presets); err != nil {
+			http.Error(w, fmt.Sprintf("cannot save style preset: %v", err), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(preset)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func handleStylePreset(w http.ResponseWriter, r *http.Request) {
+	id := strings.Trim(strings.TrimPrefix(r.URL.Path, "/style-presets/"), "/")
+	if id == "" || strings.Contains(id, "/") {
+		http.Error(w, "invalid style preset id", http.StatusBadRequest)
+		return
+	}
+
+	stylesMu.Lock()
+	defer stylesMu.Unlock()
+	presets, err := loadStylePresets()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("cannot load style presets: %v", err), http.StatusInternalServerError)
+		return
+	}
+	index := -1
+	for i := range presets {
+		if presets[i].ID == id {
+			index = i
+			break
+		}
+	}
+	if index == -1 {
+		http.Error(w, "style preset not found", http.StatusNotFound)
+		return
+	}
+
+	switch r.Method {
+	case http.MethodPatch:
+		var update struct {
+			Name            *string `json:"name"`
+			Description     *string `json:"description"`
+			ImageStyle      *string `json:"image_style"`
+			VideoStyle      *string `json:"video_style"`
+			ImagePrompt     *string `json:"image_prompt"`
+			VideoPrompt     *string `json:"video_prompt"`
+			AspectRatio     *string `json:"aspect_ratio"`
+			ImageResolution *string `json:"image_resolution"`
+			VideoResolution *string `json:"video_resolution"`
+			IsDefault       *bool   `json:"is_default"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		preset := &presets[index]
+		if update.Name != nil {
+			preset.Name = *update.Name
+		}
+		if update.Description != nil {
+			preset.Description = *update.Description
+		}
+		if update.ImageStyle != nil {
+			preset.ImageStyle = *update.ImageStyle
+		}
+		if update.VideoStyle != nil {
+			preset.VideoStyle = *update.VideoStyle
+		}
+		if update.ImagePrompt != nil {
+			preset.ImagePrompt = *update.ImagePrompt
+		}
+		if update.VideoPrompt != nil {
+			preset.VideoPrompt = *update.VideoPrompt
+		}
+		if update.AspectRatio != nil {
+			preset.AspectRatio = *update.AspectRatio
+		}
+		if update.ImageResolution != nil {
+			preset.ImageResolution = *update.ImageResolution
+		}
+		if update.VideoResolution != nil {
+			preset.VideoResolution = *update.VideoResolution
+		}
+		normalizeStylePreset(preset)
+		if preset.Name == "" {
+			http.Error(w, "name cannot be empty", http.StatusBadRequest)
+			return
+		}
+		now := time.Now()
+		if update.IsDefault != nil && *update.IsDefault {
+			for i := range presets {
+				presets[i].IsDefault = i == index
+				presets[i].UpdatedAt = now
+			}
+		}
+		preset.UpdatedAt = now
+		if err := saveStylePresets(presets); err != nil {
+			http.Error(w, fmt.Sprintf("cannot save style preset: %v", err), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(*preset)
+	case http.MethodDelete:
+		if len(presets) == 1 {
+			http.Error(w, "at least one style preset is required", http.StatusConflict)
+			return
+		}
+		wasDefault := presets[index].IsDefault
+		presets = append(presets[:index], presets[index+1:]...)
+		if wasDefault {
+			presets[0].IsDefault = true
+			presets[0].UpdatedAt = time.Now()
+		}
+		if err := saveStylePresets(presets); err != nil {
+			http.Error(w, fmt.Sprintf("cannot save style presets: %v", err), http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -453,6 +759,29 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
 		http.Error(w, fmt.Sprintf("bad request: %v", err), http.StatusBadRequest)
 		return
+	}
+
+	stylePresetID := strings.TrimSpace(r.FormValue("style_preset_id"))
+	stylesMu.Lock()
+	presets, styleErr := loadStylePresets()
+	stylesMu.Unlock()
+	if styleErr != nil {
+		http.Error(w, fmt.Sprintf("cannot load style presets: %v", styleErr), http.StatusInternalServerError)
+		return
+	}
+	selectedStyle := defaultStylePreset(presets)
+	if stylePresetID != "" {
+		selectedStyle = nil
+		for _, preset := range presets {
+			if preset.ID == stylePresetID {
+				selectedStyle = copyStylePreset(preset)
+				break
+			}
+		}
+		if selectedStyle == nil {
+			http.Error(w, "style preset not found", http.StatusBadRequest)
+			return
+		}
 	}
 
 	file, header, err := r.FormFile("script")
@@ -487,13 +816,14 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p := &Pipeline{
-		ID:         id,
-		Name:       generatePipelineName(sp),
-		ScriptFile: filename,
-		Status:     StatusPending,
-		Step:       0,
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
+		ID:          id,
+		Name:        generatePipelineName(sp),
+		ScriptFile:  filename,
+		StylePreset: selectedStyle,
+		Status:      StatusPending,
+		Step:        0,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
 	}
 	mu.Lock()
 	pipelines[id] = p
@@ -505,9 +835,10 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]any{
-		"pipeline_id": id,
-		"name":        p.Name,
-		"status":      string(StatusPending),
+		"pipeline_id":  id,
+		"name":         p.Name,
+		"status":       string(StatusPending),
+		"style_preset": p.StylePreset,
 	})
 }
 
@@ -551,15 +882,16 @@ func handleGetPipeline(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"pipeline_id": p.ID,
-		"name":        p.Name,
-		"description": p.Description,
-		"status":      string(p.Status),
-		"step":        p.Step,
-		"error":       p.Error,
-		"created_at":  p.CreatedAt,
-		"updated_at":  p.UpdatedAt,
-		"duration":    p.Duration,
+		"pipeline_id":  p.ID,
+		"name":         p.Name,
+		"description":  p.Description,
+		"status":       string(p.Status),
+		"step":         p.Step,
+		"error":        p.Error,
+		"created_at":   p.CreatedAt,
+		"updated_at":   p.UpdatedAt,
+		"duration":     p.Duration,
+		"style_preset": p.StylePreset,
 	})
 }
 
@@ -981,6 +1313,7 @@ func handleListPipelines(w http.ResponseWriter, r *http.Request) {
 			"created_at":     p.CreatedAt,
 			"updated_at":     p.UpdatedAt,
 			"duration":       p.Duration,
+			"style_preset":   p.StylePreset,
 			"preview_groups": previewGroups,
 			"preview_counts": previewCounts,
 		})
@@ -1972,6 +2305,8 @@ func main() {
 	mux.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("js"))))
 	mux.Handle("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir("css"))))
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("public/assets"))))
+	mux.HandleFunc("/style-presets", handleStylePresets)
+	mux.HandleFunc("/style-presets/", handleStylePreset)
 	mux.HandleFunc("/pipelines", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			handleCreatePipeline(w, r)

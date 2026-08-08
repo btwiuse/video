@@ -57,3 +57,25 @@ def format_timestamp(seconds: float) -> str:
     m = int((seconds % 3600) // 60)
     s = seconds % 60
     return f"{h:02d}:{m:02d}:{s:06.3f}"
+
+
+def global_style_prompt(kind: str) -> str:
+    """Return the selected project's image or video style instruction."""
+    raw = os.environ.get("STYLE_PRESET_JSON", "")
+    if not raw:
+        return ""
+    try:
+        preset = json.loads(raw)
+    except json.JSONDecodeError:
+        return ""
+    key = "image_prompt" if kind == "image" else "video_prompt"
+    value = preset.get(key, "") if isinstance(preset, dict) else ""
+    return value.strip() if isinstance(value, str) else ""
+
+
+def append_global_style_prompt(prompt: str, kind: str) -> str:
+    """Keep a project-level style instruction attached to provider prompts."""
+    style = global_style_prompt(kind)
+    if not style:
+        return prompt
+    return f"{prompt}\n\n全局风格要求：{style}"

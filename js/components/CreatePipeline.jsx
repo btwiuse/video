@@ -3,9 +3,30 @@ const { useState, useEffect, useRef, useCallback, useMemo } = React;
 function CreatePipeline({ onCreated }) {
   const [scriptFile, setScriptFile] = useState(null);
   const [scriptText, setScriptText] = useState('');
+  const [stylePresets, setStylePresets] = useState([]);
+  const [selectedStyleId, setSelectedStyleId] = useState('');
+  const [stylesLoading, setStylesLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const fileRef = useRef();
+
+  useEffect(() => {
+    let active = true;
+    api('/style-presets')
+      .then(res => res.ok ? res.json() : Promise.reject(new Error('风格预设加载失败')))
+      .then(data => {
+        if (!active) return;
+        const presets = data.presets || [];
+        setStylePresets(presets);
+        const initial = presets.find(preset => preset.is_default) || presets[0];
+        setSelectedStyleId(initial?.id || '');
+      })
+      .catch(() => { if (active) setStylePresets([]); })
+      .finally(() => { if (active) setStylesLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const selectedStyle = stylePresets.find(preset => preset.id === selectedStyleId);
 
   const handleFile = (e) => {
     const f = e.target.files[0];
@@ -32,6 +53,7 @@ function CreatePipeline({ onCreated }) {
         const blob = new Blob([scriptText], { type: 'text/plain' });
         fd.append('script', blob, 'script.txt');
       }
+      if (selectedStyleId) fd.append('style_preset_id', selectedStyleId);
       const res = await fetch(`${API_BASE}/pipelines`, { method: 'POST', body: fd });
       if (!res.ok) { const txt = await res.text(); throw new Error(txt || `HTTP ${res.status}`); }
       const data = await res.json();
@@ -47,6 +69,23 @@ function CreatePipeline({ onCreated }) {
       <p className="mt-2 mb-7 text-sm text-stone-400">上传剧本，或直接粘贴内容后开始 AI 创作。</p>
       {error && <div className="bg-clay-500/10 border border-clay-500/30 text-clay-400 p-3 rounded text-sm mb-4">{error}</div>}
       <div className="space-y-5">
+        <div>
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <label className="block text-sm font-medium text-stone-300">选择风格预设</label>
+            <button type="button" onClick={() => { window.location.hash = '#/styles'; }} className="text-xs font-medium text-brass-600 hover:text-brass-500">管理预设</button>
+          </div>
+          {stylesLoading ? <div className="rounded-xl border border-ink-700 bg-ink-800/60 px-3 py-4 text-sm text-stone-500">正在加载风格预设...</div> : stylePresets.length === 0 ? <div className="rounded-xl border border-dashed border-ink-600 bg-ink-800/40 px-3 py-4 text-sm text-stone-500">暂无可用预设</div> : <>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {stylePresets.map(preset => <button key={preset.id} type="button" onClick={() => setSelectedStyleId(preset.id)}
+                className={'style-preset-picker text-left ' + (selectedStyleId === preset.id ? 'style-preset-picker-selected' : '')}>
+                <span className={`style-swatch ${presetTone(preset)}`} aria-hidden="true" />
+                <span className="min-w-0 flex-1"><span className="flex items-center gap-1.5"><span className="truncate text-sm font-medium text-stone-200">{preset.name}</span>{preset.is_default && <span className="rounded bg-leaf-500/10 px-1.5 py-0.5 text-[10px] font-medium text-leaf-500">默认</span>}</span><span className="mt-0.5 block truncate text-xs text-stone-500">{preset.description || preset.image_style}</span></span>
+                {selectedStyleId === preset.id && <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brass-500 text-xs font-bold text-ink-950">✓</span>}
+              </button>)}
+            </div>
+            {selectedStyle && <div className="mt-2 flex flex-wrap gap-1.5 text-xs text-stone-500"><span className="rounded-md bg-ink-800 px-2 py-1">图像 · {selectedStyle.image_style}</span><span className="rounded-md bg-ink-800 px-2 py-1">视频 · {selectedStyle.video_style}</span><span className="rounded-md bg-ink-800 px-2 py-1">{selectedStyle.aspect_ratio}</span></div>}
+          </>}
+        </div>
         <div>
           <label className="block text-sm text-stone-300 mb-1.5 font-medium">上传剧本文件</label>
           <input ref={fileRef} type="file" accept=".txt,.md" onChange={handleFile}

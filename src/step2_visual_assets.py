@@ -21,7 +21,7 @@ import httpx
 from config import config
 from src.im2_clean import apply_im2_clean, apply_im2_clean_to_prompts
 from src.prompts import get_image_template
-from src.utils import ensure_output_dir, save_json, load_json
+from src.utils import append_global_style_prompt, ensure_output_dir, save_json, load_json
 
 logger = logging.getLogger("step2")
 
@@ -648,6 +648,7 @@ class Step2Pipeline:
                 all_prompts.append((prompt, f"{ref_id}_{label_suffix}", "3:4"))
 
         all_prompts = apply_im2_clean_to_prompts(all_prompts, "character")
+        all_prompts = [(append_global_style_prompt(prompt, "image"), label, ratio) for prompt, label, ratio in all_prompts]
         char_results = await self.provider.generate_batch(all_prompts)
         char_map: dict[str, list[ImageResult]] = {}
         for i, r in enumerate(char_results):
@@ -673,6 +674,7 @@ class Step2Pipeline:
                 prop_prompts.append((prompt, f"{ref_id}_{label_suffix}", "1:1"))
 
         prop_prompts = apply_im2_clean_to_prompts(prop_prompts, "prop")
+        prop_prompts = [(append_global_style_prompt(prompt, "image"), label, ratio) for prompt, label, ratio in prop_prompts]
         prop_results = await self.provider.generate_batch(prop_prompts)
         prop_map: dict[str, list[ImageResult]] = {}
         for i, r in enumerate(prop_results):
@@ -700,7 +702,7 @@ class Step2Pipeline:
             ref_paths = self._collect_ref_paths(char_ids, prop_ids, char_map, prop_map)
 
             for label_suffix, prompt in prompts:
-                prompt = apply_im2_clean(prompt, "scene")
+                prompt = append_global_style_prompt(apply_im2_clean(prompt, "scene"), "image")
                 r = await self.provider.generate(prompt, "16:9", reference_images=ref_paths or None)
                 r.label = f"{sid}_{label_suffix}"
                 if r.status == "done" and r.path:

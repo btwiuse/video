@@ -24,7 +24,7 @@ from typing import Any
 from openai import OpenAI
 
 from config import config
-from src.utils import ensure_output_dir, save_json
+from src.utils import ensure_output_dir, global_style_prompt, save_json
 from src.skills import get_skill_manager
 
 logger = logging.getLogger("step1")
@@ -203,10 +203,22 @@ TOOL_CREATE_SHOT = {
 def _build_system_filmmaker() -> str:
     """Build the filmmaker system prompt with skill-injected knowledge."""
     film_knowledge = _load_film_grammar()
+    image_style_prompt = global_style_prompt("image")
+    video_style_prompt = global_style_prompt("video")
+    style_section = ""
+    if image_style_prompt or video_style_prompt:
+        style_section = f"""
+## 项目全局视觉风格
+图像风格：{image_style_prompt or video_style_prompt}
+视频风格：{video_style_prompt or image_style_prompt}
+
+所有角色、场景、道具、起始帧和视频 prompt 都必须贯彻此风格，同时保持剧本叙事与镜头连续性。
+"""
     return f"""你是一位资深电影导演和分镜师，精通视觉叙事和 AI 视频生成（Seedance 2.0）。
 
 ## 你的电影知识体系
 {film_knowledge}
+{style_section}
 
 ## 核心原则
 
