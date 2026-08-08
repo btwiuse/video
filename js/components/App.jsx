@@ -5,6 +5,8 @@ const getHashView = () => {
   if (hash.startsWith('/pipelines/')) return { view: 'detail', id: hash.split('/')[2] };
   if (hash === '/create') return { view: 'create', id: null };
   if (hash === '/styles') return { view: 'styles', id: null };
+  if (hash === '/auth') return { view: 'auth', id: null };
+  if (hash === '/organizations') return { view: 'organizations', id: null };
   return { view: 'list', id: null };
 };
 
@@ -12,6 +14,8 @@ const navigateTo = (view, id = null) => {
   if (view === 'detail' && id) { window.location.hash = `#/pipelines/${id}`; }
   else if (view === 'create') { window.location.hash = '#/create'; }
   else if (view === 'styles') { window.location.hash = '#/styles'; }
+  else if (view === 'auth') { window.location.hash = '#/auth'; }
+  else if (view === 'organizations') { window.location.hash = '#/organizations'; }
   else { window.location.hash = '#'; }
 };
 
@@ -28,6 +32,7 @@ const [health, setHealth] = useState(null);
 const [currentView, setCurrentView] = useState('list');
 const [pipelineId, setPipelineId] = useState(null);
 const [theme, setTheme] = useState(getSavedTheme);
+const [user, setUser] = useState(null);
 const pollRef = useRef(null);
 const currentViewRef = useRef(currentView);
 currentViewRef.current = currentView;
@@ -54,13 +59,26 @@ useEffect(() => {
           res.json().then(data => { setSelected(data); setCurrentView('detail'); setPipelineId(id); });
         } else { navigateTo('list'); }
       });
-    } else if (v === 'create' || v === 'styles') { setCurrentView(v); setPipelineId(null); setSelected(null); }
+    } else if (v === 'create' || v === 'styles' || v === 'auth' || v === 'organizations') { setCurrentView(v); setPipelineId(null); setSelected(null); }
     else { setCurrentView('list'); setPipelineId(null); setSelected(null); }
   };
   window.addEventListener('hashchange', onHashChange);
   onHashChange();
   return () => window.removeEventListener('hashchange', onHashChange);
 }, []);
+
+useEffect(() => {
+  api('/auth/me').then(async response => {
+    if (response.ok) setUser((await response.json()).user || null);
+  }).catch(() => setUser(null));
+}, []);
+
+const signOut = async () => {
+  await api('/auth/logout', { method: 'POST', body: '{}' });
+  setUser(null);
+  setActiveOrganizationId('');
+  navigateTo('list');
+};
 
 useEffect(() => {
   if (currentView !== 'detail' || !selected) return;
@@ -107,14 +125,19 @@ return (
           className="theme-toggle nav-btn flex h-9 w-9 items-center justify-center rounded-lg border border-ink-700 bg-ink-900 text-base text-stone-400 hover:text-brass-500">
           {theme === 'dark' ? '☀' : '☾'}
         </button>
-        <button type="button" onClick={() => navigateTo('styles')} title="全局风格"
+        {user && <button type="button" onClick={() => navigateTo('organizations')} title="组织"
+          className="nav-btn hidden sm:inline-flex h-9 items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900 px-3 text-sm font-medium text-stone-300 hover:border-brass-500/40 hover:text-brass-500">
+          <span aria-hidden="true">◫</span><span>组织</span>
+        </button>}
+        {user && <button type="button" onClick={() => navigateTo('styles')} title="风格预设"
           className="nav-btn hidden sm:inline-flex h-9 items-center gap-1.5 rounded-lg border border-ink-700 bg-ink-900 px-3 text-sm font-medium text-stone-300 hover:border-brass-500/40 hover:text-brass-500">
           <span aria-hidden="true">✦</span><span>风格预设</span>
         </button>
-        <button onClick={() => navigateTo('create')}
+        }
+        {user ? <><button onClick={() => navigateTo('create')}
           className="nav-btn volc-primary h-9 whitespace-nowrap rounded-lg px-3 text-sm font-medium text-ink-950 transition-all sm:px-3.5">
           + 创建项目
-        </button>
+        </button><button type="button" onClick={signOut} title={user.email} className="hidden sm:inline-flex h-9 items-center rounded-lg border border-ink-700 bg-ink-900 px-3 text-sm text-stone-300 hover:text-clay-400">退出</button></> : <button onClick={() => navigateTo('auth')} className="nav-btn volc-primary h-9 whitespace-nowrap rounded-lg px-3 text-sm font-medium text-ink-950 transition-all sm:px-3.5">登录</button>}
       </div>
     </header>
 
@@ -127,6 +150,10 @@ return (
           </div>
         )}
 
+        {currentView === 'auth' && <AuthScreen onBack={() => navigateTo('list')} onAuthenticated={nextUser => { setUser(nextUser); navigateTo('list'); }} />}
+
+        {currentView === 'organizations' && user && <Organizations onBack={() => navigateTo('list')} onOrganizationsChanged={() => {}} />}
+
         {currentView === 'styles' && (
           <div className="max-w-6xl mx-auto">
             <StylePresets onCreateNew={() => navigateTo('create')} />
@@ -134,7 +161,7 @@ return (
         )}
 
         {currentView === 'list' && (
-          <PipelineList onSelect={selectPipeline} onCreateNew={() => navigateTo('create')} />
+          <PipelineList key={user ? user.id : 'public'} onSelect={selectPipeline} onCreateNew={() => user ? navigateTo('create') : navigateTo('auth')} />
         )}
 
         {currentView === 'detail' && selected && (

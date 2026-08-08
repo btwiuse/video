@@ -85,7 +85,7 @@ function StylePresets({ onCreateNew }) {
     }
     setSaving(true);
     setError('');
-    const payload = { ...draft, name };
+    const payload = { ...draft, name, organization_id: selectedId ? draft.organization_id : getActiveOrganizationId() };
     try {
       const response = await api(selectedId ? `/style-presets/${selectedId}` : '/style-presets', {
         method: selectedId ? 'PATCH' : 'POST', body: JSON.stringify(payload),

@@ -47,9 +47,11 @@ temp-audio.m4a
 .claude
 .crush
 
-# Go
-server
-go.sum
+# Go build binary
+/server
+
+# Local user and organization state
+config.yaml
 
 # Build output
 tmp/

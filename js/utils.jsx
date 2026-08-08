@@ -13,6 +13,13 @@ const formatDateTime = (value) => {
 };
 
 const API_BASE = window.location.origin;
+const ACTIVE_ORGANIZATION_STORAGE_KEY = 'reelix-active-organization';
+const getActiveOrganizationId = () => {
+  try { return localStorage.getItem(ACTIVE_ORGANIZATION_STORAGE_KEY) || ''; } catch { return ''; }
+};
+const setActiveOrganizationId = id => {
+  try { if (id) localStorage.setItem(ACTIVE_ORGANIZATION_STORAGE_KEY, id); else localStorage.removeItem(ACTIVE_ORGANIZATION_STORAGE_KEY); } catch {}
+};
 const WORKFLOW_STEP_COUNT = 4;
 const workflowStep = step => Math.min(Number(step) || 0, WORKFLOW_STEP_COUNT);
 const STEP_NAMES = ["", "剧本分镜", "视觉素材", "视频生成", "后期合成"];
@@ -113,7 +120,7 @@ const fileCategory = (name) => {
 function api(url, opts = {}) {
   const isGet = !opts.method || opts.method === 'GET';
   const headers = isGet ? {} : { 'Content-Type': 'application/json', ...(opts.headers || {}) };
-  return fetch(`${API_BASE}${url}`, { ...opts, headers });
+  return fetch(`${API_BASE}${url}`, { ...opts, headers, credentials: 'same-origin' });
 }
 function artifactUrl(pipelineId, name, cb) {
   const enc = name.split('/').map(s => encodeURIComponent(s)).join('/');

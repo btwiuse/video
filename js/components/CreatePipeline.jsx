@@ -54,7 +54,9 @@ function CreatePipeline({ onCreated }) {
         fd.append('script', blob, 'script.txt');
       }
       if (selectedStyleId) fd.append('style_preset_id', selectedStyleId);
-      const res = await fetch(`${API_BASE}/pipelines`, { method: 'POST', body: fd });
+      const organizationId = getActiveOrganizationId();
+      if (organizationId) fd.append('organization_id', organizationId);
+      const res = await fetch(`${API_BASE}/pipelines`, { method: 'POST', body: fd, credentials: 'same-origin' });
       if (!res.ok) { const txt = await res.text(); throw new Error(txt || `HTTP ${res.status}`); }
       const data = await res.json();
       onCreated(data.pipeline_id);

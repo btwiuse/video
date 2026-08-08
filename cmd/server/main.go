@@ -49,21 +49,25 @@ const (
 )
 
 type Pipeline struct {
-	ID          string
-	Name        string
-	Description string
-	ScriptFile  string       `json:"script_file"` // original uploaded filename
-	StylePreset *StylePreset `json:"style_preset,omitempty"`
-	Status      PipelineStatus
-	Step        int // current step 0-5
-	Error       string
-	Cmd         *exec.Cmd          `json:"-"` // not serializable
-	Ctx         context.Context    `json:"-"` // not serializable
-	Cancel      context.CancelFunc `json:"-"` // not serializable
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	StartedAt   time.Time
-	Duration    string
+	ID             string
+	Name           string
+	Description    string
+	ScriptFile     string       `json:"script_file"` // original uploaded filename
+	StylePreset    *StylePreset `json:"style_preset,omitempty"`
+	Status         PipelineStatus
+	Step           int // current step 0-5
+	Error          string
+	Cmd            *exec.Cmd          `json:"-"` // not serializable
+	Ctx            context.Context    `json:"-"` // not serializable
+	Cancel         context.CancelFunc `json:"-"` // not serializable
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	StartedAt      time.Time
+	Duration       string
+	OwnerID        string `json:"owner_id,omitempty"`
+	OrganizationID string `json:"organization_id,omitempty"`
+	// Empty visibility denotes a legacy public project. New projects are private.
+	Visibility string `json:"visibility,omitempty"`
 }
 
 // StylePreset is a reusable visual direction. Resolution fields are persisted
@@ -82,6 +86,9 @@ type StylePreset struct {
 	IsDefault       bool      `json:"is_default"`
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
+	OwnerID         string    `json:"owner_id,omitempty"`
+	OrganizationID  string    `json:"organization_id,omitempty"`
+	Visibility      string    `json:"visibility,omitempty"`
 }
 
 var (
@@ -89,6 +96,7 @@ var (
 	mu        sync.RWMutex
 	summaryMu sync.Mutex
 	stylesMu  sync.Mutex
+	accounts  *authStore
 )
 
 // ============================================================================
@@ -154,6 +162,72 @@ func pipelineKey(id string) string {
 		base = "."
 	}
 	return filepath.Join(base, "output", id, "pipeline.json")
+}
+
+func pipelineIsPublic(p *Pipeline) bool {
+	return p.Visibility == "" || p.Visibility == "public"
+}
+
+func styleIsPublic(p StylePreset) bool {
+	return p.Visibility == "" || p.Visibility == "public"
+}
+
+func canAccessPipeline(p *Pipeline, user *User, write bool) bool {
+	if !write && pipelineIsPublic(p) {
+		return true
+	}
+	if user == nil {
+		return false
+	}
+	if p.OrganizationID != "" {
+		return accounts != nil && accounts.isOrganizationMember(user.ID, p.OrganizationID)
+	}
+	return p.OwnerID != "" && p.OwnerID == user.ID
+}
+
+func canAccessStyle(p StylePreset, user *User, write bool) bool {
+	if !write && styleIsPublic(p) {
+		return true
+	}
+	if user == nil {
+		return false
+	}
+	if p.OrganizationID != "" {
+		return accounts != nil && accounts.isOrganizationMember(user.ID, p.OrganizationID)
+	}
+	return p.OwnerID != "" && p.OwnerID == user.ID
+}
+
+func currentScopeOrganization(r *http.Request, organizationID string) (string, error) {
+	if organizationID == "" {
+		return "", nil
+	}
+	user := currentUser(r)
+	if user == nil || accounts == nil || !accounts.isOrganizationMember(user.ID, organizationID) {
+		return "", fmt.Errorf("organization is not available to the current user")
+	}
+	return organizationID, nil
+}
+
+func loadPipeline(id string) *Pipeline {
+	mu.RLock()
+	p := pipelines[id]
+	mu.RUnlock()
+	if p != nil {
+		return p
+	}
+	p = loadPipelineState(id)
+	if p == nil {
+		return nil
+	}
+	mu.Lock()
+	if existing := pipelines[id]; existing != nil {
+		p = existing
+	} else {
+		pipelines[id] = p
+	}
+	mu.Unlock()
+	return p
 }
 
 func stylePresetsKey() string {
@@ -600,9 +674,20 @@ func handleStylePresets(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
+		user := currentUser(r)
+		visible := make([]StylePreset, 0, len(presets))
+		for _, preset := range presets {
+			if canAccessStyle(preset, user, false) {
+				visible = append(visible, preset)
+			}
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"presets": presets})
+		json.NewEncoder(w).Encode(map[string]any{"presets": visible})
 	case http.MethodPost:
+		user := requireUser(w, r)
+		if user == nil {
+			return
+		}
 		var preset StylePreset
 		if err := json.NewDecoder(r.Body).Decode(&preset); err != nil {
 			http.Error(w, "invalid JSON body", http.StatusBadRequest)
@@ -613,14 +698,24 @@ func handleStylePresets(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "name cannot be empty", http.StatusBadRequest)
 			return
 		}
+		organizationID, err := currentScopeOrganization(r, preset.OrganizationID)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
 		now := time.Now()
 		preset.ID = fmt.Sprintf("style-%d", now.UnixNano())
+		preset.OwnerID = user.ID
+		preset.OrganizationID = organizationID
+		preset.Visibility = "private"
 		preset.CreatedAt = now
 		preset.UpdatedAt = now
 		if len(presets) == 0 || preset.IsDefault {
 			for i := range presets {
-				presets[i].IsDefault = false
-				presets[i].UpdatedAt = now
+				if presets[i].OwnerID == preset.OwnerID && presets[i].OrganizationID == preset.OrganizationID {
+					presets[i].IsDefault = false
+					presets[i].UpdatedAt = now
+				}
 			}
 			preset.IsDefault = true
 		}
@@ -660,6 +755,15 @@ func handleStylePreset(w http.ResponseWriter, r *http.Request) {
 	}
 	if index == -1 {
 		http.Error(w, "style preset not found", http.StatusNotFound)
+		return
+	}
+	user := currentUser(r)
+	if !canAccessStyle(presets[index], user, true) {
+		if user == nil {
+			http.Error(w, "authentication required", http.StatusUnauthorized)
+		} else {
+			http.Error(w, "style preset not found", http.StatusNotFound)
+		}
 		return
 	}
 
@@ -754,6 +858,10 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	user := requireUser(w, r)
+	if user == nil {
+		return
+	}
 
 	// Parse multipart form (max 10MB script)
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
@@ -762,6 +870,11 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	stylePresetID := strings.TrimSpace(r.FormValue("style_preset_id"))
+	organizationID, err := currentScopeOrganization(r, strings.TrimSpace(r.FormValue("organization_id")))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	stylesMu.Lock()
 	presets, styleErr := loadStylePresets()
 	stylesMu.Unlock()
@@ -769,10 +882,16 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("cannot load style presets: %v", styleErr), http.StatusInternalServerError)
 		return
 	}
-	selectedStyle := defaultStylePreset(presets)
+	visiblePresets := make([]StylePreset, 0, len(presets))
+	for _, preset := range presets {
+		if canAccessStyle(preset, user, false) {
+			visiblePresets = append(visiblePresets, preset)
+		}
+	}
+	selectedStyle := defaultStylePreset(visiblePresets)
 	if stylePresetID != "" {
 		selectedStyle = nil
-		for _, preset := range presets {
+		for _, preset := range visiblePresets {
 			if preset.ID == stylePresetID {
 				selectedStyle = copyStylePreset(preset)
 				break
@@ -816,14 +935,17 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p := &Pipeline{
-		ID:          id,
-		Name:        generatePipelineName(sp),
-		ScriptFile:  filename,
-		StylePreset: selectedStyle,
-		Status:      StatusPending,
-		Step:        0,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:             id,
+		Name:           generatePipelineName(sp),
+		ScriptFile:     filename,
+		StylePreset:    selectedStyle,
+		Status:         StatusPending,
+		Step:           0,
+		CreatedAt:      time.Now(),
+		UpdatedAt:      time.Now(),
+		OwnerID:        user.ID,
+		OrganizationID: organizationID,
+		Visibility:     "private",
 	}
 	mu.Lock()
 	pipelines[id] = p
@@ -835,10 +957,12 @@ func handleCreatePipeline(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]any{
-		"pipeline_id":  id,
-		"name":         p.Name,
-		"status":       string(StatusPending),
-		"style_preset": p.StylePreset,
+		"pipeline_id":     id,
+		"name":            p.Name,
+		"status":          string(StatusPending),
+		"style_preset":    p.StylePreset,
+		"organization_id": p.OrganizationID,
+		"visibility":      p.Visibility,
 	})
 }
 
@@ -1287,7 +1411,8 @@ func handleListPipelines(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var list []map[string]any
+	user := currentUser(r)
+	list := make([]map[string]any, 0)
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -1302,20 +1427,31 @@ func handleListPipelines(w http.ResponseWriter, r *http.Request) {
 		if p == nil {
 			continue
 		}
+		if user == nil {
+			if !pipelineIsPublic(p) {
+				continue
+			}
+		} else if pipelineIsPublic(p) || !canAccessPipeline(p, user, false) {
+			// Signed-in users see their private workspace only. Public projects
+			// remain available on the signed-out homepage.
+			continue
+		}
 		previewGroups, previewCounts := pipelinePreviewGroups(p.ID)
 		list = append(list, map[string]any{
-			"pipeline_id":    p.ID,
-			"name":           p.Name,
-			"description":    p.Description,
-			"status":         string(p.Status),
-			"step":           p.Step,
-			"error":          p.Error,
-			"created_at":     p.CreatedAt,
-			"updated_at":     p.UpdatedAt,
-			"duration":       p.Duration,
-			"style_preset":   p.StylePreset,
-			"preview_groups": previewGroups,
-			"preview_counts": previewCounts,
+			"pipeline_id":     p.ID,
+			"name":            p.Name,
+			"description":     p.Description,
+			"status":          string(p.Status),
+			"step":            p.Step,
+			"error":           p.Error,
+			"created_at":      p.CreatedAt,
+			"updated_at":      p.UpdatedAt,
+			"duration":        p.Duration,
+			"style_preset":    p.StylePreset,
+			"organization_id": p.OrganizationID,
+			"visibility":      p.Visibility,
+			"preview_groups":  previewGroups,
+			"preview_counts":  previewCounts,
 		})
 	}
 
@@ -2290,9 +2426,40 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+func authorizePipelineRequest(w http.ResponseWriter, r *http.Request) bool {
+	parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/pipelines/"), "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		http.Error(w, "missing pipeline id", http.StatusBadRequest)
+		return false
+	}
+	pipeline := loadPipeline(parts[0])
+	if pipeline == nil {
+		http.Error(w, "pipeline not found", http.StatusNotFound)
+		return false
+	}
+	// Public projects expose their project metadata and artifacts, but never
+	// execution logs. Every mutation requires private workspace access.
+	publicRead := r.Method == http.MethodGet && !strings.Contains(r.URL.Path, "/logs")
+	if canAccessPipeline(pipeline, currentUser(r), !publicRead) {
+		return true
+	}
+	if currentUser(r) == nil {
+		http.Error(w, "authentication required", http.StatusUnauthorized)
+	} else {
+		http.Error(w, "pipeline not found", http.StatusNotFound)
+	}
+	return false
+}
+
 func main() {
 	verbose = flag.Bool("v", false, "verbose logging")
+	authConfigPath := flag.String("config", "config.yaml", "path to user and organization config")
 	flag.Parse()
+	var err error
+	accounts, err = loadAuthStore(*authConfigPath)
+	if err != nil {
+		log.Fatalf("cannot load user config: %v", err)
+	}
 
 	mux := http.NewServeMux()
 	mime.AddExtensionType(".css", "text/css")
@@ -2302,6 +2469,12 @@ func main() {
 	mux.HandleFunc("/", serveHome)
 	mux.HandleFunc("/manifest.json", serveManifest)
 	mux.HandleFunc("/health", handleHealth)
+	mux.HandleFunc("/auth/register", handleRegister(accounts))
+	mux.HandleFunc("/auth/login", handleLogin(accounts))
+	mux.HandleFunc("/auth/logout", handleLogout)
+	mux.HandleFunc("/auth/me", handleMe)
+	mux.HandleFunc("/organizations", handleOrganizations(accounts))
+	mux.HandleFunc("/organizations/join", handleJoinOrganization(accounts))
 	mux.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("js"))))
 	mux.Handle("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir("css"))))
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("public/assets"))))
@@ -2317,6 +2490,9 @@ func main() {
 		}
 	})
 	mux.HandleFunc("/pipelines/", func(w http.ResponseWriter, r *http.Request) {
+		if !authorizePipelineRequest(w, r) {
+			return
+		}
 		path := r.URL.Path
 		if strings.HasSuffix(path, "/logs") || strings.Contains(path, "/logs/") {
 			handleLogs(w, r)
@@ -2387,5 +2563,5 @@ func main() {
 	}
 
 	log.Printf("server listening on %s (verbose=%v, output=%s)", addr, *verbose, outputDir(""))
-	log.Fatal(http.ListenAndServe(addr, corsMiddleware(mux)))
+	log.Fatal(http.ListenAndServe(addr, corsMiddleware(authMiddleware(accounts, mux))))
 }
