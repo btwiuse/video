@@ -341,9 +341,11 @@ class StepFunProvider(ImageProvider):
       - Prompt limited to 512 chars; longer prompts are silently truncated.
       - For step-image-edit-2, size format is "height x width" (not width x height).
       - RPM limit: 10. Internal rate limiter ensures ~6s between requests.
+
+    Base URL override: STEPFUN_BASE_URL env var (default https://api.stepfun.com).
     """
 
-    endpoint: str = "https://api.stepfun.com/v1/images/generations"
+    endpoint: str = f"{config.STEPFUN_BASE_URL.rstrip('/')}/v1/images/generations"
     default_model: str = "step-image-edit-2"
 
     # Global rate limiter: 1 request per 6s (10 RPM ceiling)

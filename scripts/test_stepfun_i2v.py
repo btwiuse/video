@@ -22,6 +22,7 @@ VIDEO_API_KEY = os.getenv("VIDEO_API_KEY", "")
 VIDEO_MODEL = os.getenv("VIDEO_MODEL", "doubao-seedance-2-0-fast-260128")
 STEPFUN_API_KEY = os.getenv("STEPFUN_API_KEY", "") or os.getenv("IMAGE_API_KEY", "")
 STEPFUN_MODEL = os.getenv("STEPFUN_MODEL", "step-image-edit-2")
+STEPFUN_BASE_URL = os.getenv("STEPFUN_BASE_URL", "https://api.stepfun.com")
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", "./output"))
 
 # Size for step-image-edit-2: "height x width" (note order!)
@@ -66,7 +67,7 @@ def main():
     }
 
     with httpx.Client(timeout=120) as client:
-        resp = client.post("https://api.stepfun.com/v1/images/generations", headers=headers, json=body)
+        resp = client.post(f"{STEPFUN_BASE_URL}/v1/images/generations", headers=headers, json=body)
         if resp.status_code != 200:
             print(f"StepFun error: HTTP {resp.status_code}: {resp.text[:500]}")
             sys.exit(1)

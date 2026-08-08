@@ -58,6 +58,7 @@ class Config:
 
     # StepFun image generation
     STEPFUN_MODEL: str = os.getenv("STEPFUN_MODEL", "step-image-edit-2")
+    STEPFUN_BASE_URL: str = os.getenv("STEPFUN_BASE_URL", "https://api.stepfun.com")
 
 
 config = Config()
