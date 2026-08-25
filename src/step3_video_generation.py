@@ -210,6 +210,13 @@ class TokenVokeProvider(VideoProvider):
                     # Some responses nest result_url deeper or use video_url
                     if not video_url:
                         video_url = data.get("video_url", "")
+                    if not video_url:
+                        # Tokease nests the url under content.video_url / output.video_url
+                        for key in ("content", "output"):
+                            nested = data.get(key)
+                            if isinstance(nested, dict) and nested.get("video_url"):
+                                video_url = nested["video_url"]
+                                break
                     # Download with retry on 403
                     dl = None
                     for dl_attempt in range(3):

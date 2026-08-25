@@ -8,7 +8,20 @@ from src.skills import get_skill_manager
 
 def assemble_video_prompt(shot: dict) -> str:
     """Assemble the positive video prompt from shot data fields."""
+    # The full video prompt (web editor's "视频提示词/镜头动作" field) is
+    # canonical when present; structured fields below are only its building
+    # blocks for older shots that lack it.
+    if shot.get("positive_prompt"):
+        prompt = shot["positive_prompt"]
+        if shot.get("continuity_note"):
+            prompt += " " + shot["continuity_note"]
+        return prompt.strip() + " 16:9, 1080p."
+
     parts = []
+
+    # Action beats from Step 1 (shots without a full positive_prompt)
+    if shot.get("action_description"):
+        parts.append(shot["action_description"])
 
     # Camera specs
     cam_parts = []
