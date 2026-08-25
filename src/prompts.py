@@ -27,7 +27,10 @@ def assemble_video_prompt(shot: dict) -> str:
 
     # Character references
     if shot.get("character_refs"):
-        parts.append("Character reference: " + shot["character_refs"])
+        refs = shot["character_refs"]
+        if isinstance(refs, list):
+            refs = ", ".join(str(r) for r in refs)
+        parts.append("Character reference: " + refs)
 
     # Continuity
     if shot.get("continuity_note"):
