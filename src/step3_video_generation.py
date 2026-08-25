@@ -275,6 +275,31 @@ class TokenVokeProvider(VideoProvider):
 
 
 # ============================================================================
+# Tokease Seedance (tokenvoke-compatible relay)
+# ============================================================================
+
+class TokeaseProvider(TokenVokeProvider):
+    """Tokease relay for Seedance 2.0 video generation.
+
+    API docs: https://www.tokease.cn/zh/docs/api/ai-model/videos
+
+    Uses the same async task flow and payload shape as TokenVoke:
+      1. POST /v1/video/generations -> {task_id, ...}
+      2. GET  /v1/video/generations/{task_id} -> poll until SUCCESS/FAILURE
+      3. Download video from data.result_url
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._base_url = config.TOKEASE_BASE_URL.rstrip("/")
+        self._headers["Authorization"] = f"Bearer {config.TOKEASE_API_KEY}"
+
+    @property
+    def name(self) -> str:
+        return f"Tokease Seedance ({self._model})"
+
+
+# ============================================================================
 # Seedance 2.0 (Volcengine Ark) — direct API fallback
 # ============================================================================
 
@@ -455,6 +480,7 @@ class NullVideoProvider(VideoProvider):
 
 _PROVIDER_REGISTRY: dict[str, type[VideoProvider]] = {
     "tokenvoke": TokenVokeProvider,
+    "tokease": TokeaseProvider,
     "seedance": SeedanceProvider,
     "null": NullVideoProvider,
 }

@@ -35,10 +35,23 @@ type UsageEntry struct {
 }
 
 var modelCatalog = []ModelDefinition{
+	// Default image model first (frontend preselects the first entry)
+	{ID: "step-image-edit-2", Kind: "image", Name: "Step Image Edit 2", Provider: "stepfun", CreditsPerCall: 6},
 	{ID: "seedream-5", Kind: "image", Name: "Seedream 5.0", Provider: "seedream", CreditsPerCall: 8},
 	{ID: "flux-1.1-pro", Kind: "image", Name: "Flux 1.1 Pro", Provider: "flux", CreditsPerCall: 12},
 	{ID: "flux-1.1-pro-ultra", Kind: "image", Name: "Flux 1.1 Pro Ultra", Provider: "flux-ultra", CreditsPerCall: 18},
-	{ID: "step-image-edit-2", Kind: "image", Name: "Step Image Edit 2", Provider: "stepfun", CreditsPerCall: 6},
+	// Default video model first (frontend preselects the first entry)
+	{ID: "tke-seedance-2-5-chaofen", Kind: "video", Name: "Seedance 2.5 Chaofen", Provider: "tokease", ProviderModel: "seedance2.5-chaofen", CreditsPerCall: 25},
+	{ID: "tke-seedance-2-0", Kind: "video", Name: "Seedance 2.0", Provider: "tokease", ProviderModel: "seedance 2.0", CreditsPerCall: 240},
+	{ID: "tke-seedance-2-0-chaofen", Kind: "video", Name: "Seedance 2.0 Chaofen", Provider: "tokease", ProviderModel: "seedance 2.0-chaofen", CreditsPerCall: 20},
+	{ID: "tke-seedance-2-0-fast", Kind: "video", Name: "Seedance 2.0 Fast", Provider: "tokease", ProviderModel: "seedance2.0-fast", CreditsPerCall: 30},
+	{ID: "tke-seedance-2-0-fast-kuanshen", Kind: "video", Name: "Seedance 2.0 Fast Kuanshen", Provider: "tokease", ProviderModel: "seedance2.0-fast-kuanshen", CreditsPerCall: 35},
+	{ID: "tke-seedance-2-0-huoshan", Kind: "video", Name: "Seedance 2.0 Huoshan", Provider: "tokease", ProviderModel: "seedance2.0-huoshan", CreditsPerCall: 240},
+	{ID: "tke-seedance-2-0-kuanshen", Kind: "video", Name: "Seedance 2.0 Kuanshen", Provider: "tokease", ProviderModel: "seedance2.0-kuanshen", CreditsPerCall: 40},
+	{ID: "tke-seedance-2-0-mini", Kind: "video", Name: "Seedance 2.0 Mini", Provider: "tokease", ProviderModel: "seedance2.0-mini", CreditsPerCall: 15},
+	{ID: "tke-seedance-2-0-mini-kuanshen", Kind: "video", Name: "Seedance 2.0 Mini Kuanshen", Provider: "tokease", ProviderModel: "seedance2.0-mini-kuanshen", CreditsPerCall: 25},
+	{ID: "tke-seedance-2-5", Kind: "video", Name: "Seedance 2.5", Provider: "tokease", ProviderModel: "seedance2.5", CreditsPerCall: 40},
+	{ID: "tke-seedance-2-5-huoshan", Kind: "video", Name: "Seedance 2.5 Huoshan", Provider: "tokease", ProviderModel: "seedance2.5-huoshan", CreditsPerCall: 40},
 	{ID: "seedance-2-fast", Kind: "video", Name: "Seedance 2.0 Fast", Provider: "tokenvoke", ProviderModel: "doubao-seedance-2-0-fast-260128", CreditsPerCall: 30},
 	{ID: "seedance-2-pro", Kind: "video", Name: "Seedance 2.0 Pro", Provider: "tokenvoke", ProviderModel: "doubao-seedance-2-0-pro-260215", CreditsPerCall: 50},
 }

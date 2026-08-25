@@ -38,6 +38,9 @@ class Config:
 
     # TokenVoke Seedance (https://tokenvoke.com/docs/seedance-video)
     TOKENVOKE_BASE_URL: str = os.getenv("TOKENVOKE_BASE_URL", "https://overseas.tokenvoke.com")
+    # Tokease Seedance (https://tokease.cn, tokenvoke-compatible API)
+    TOKEASE_BASE_URL: str = os.getenv("TOKEASE_BASE_URL", "https://tokease.cn")
+    TOKEASE_API_KEY: str = os.getenv("TOKEASE_API_KEY", "") or os.getenv("VIDEO_API_KEY", "")
     VIDEO_MODEL: str = os.getenv("VIDEO_MODEL", "doubao-seedance-2-0-fast-260128")
     TOKENVOKE_MAX_DURATION_SEC: int = int(os.getenv("TOKENVOKE_MAX_DURATION_SEC", "15"))
     TOKENVOKE_MAX_IMAGES: int = int(os.getenv("TOKENVOKE_MAX_IMAGES", "9"))
