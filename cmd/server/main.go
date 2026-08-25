@@ -248,6 +248,31 @@ func stylePresetsKey() string {
 	return filepath.Join(base, "output", "style_presets.json")
 }
 
+func defaultAuthConfigPath() string {
+	base := os.Getenv("DATA_DIR")
+	if base == "" {
+		base = "."
+	}
+	return filepath.Join(base, "output", "config.yaml")
+}
+
+// migrateLegacyAuthConfig copies a config.yaml left in the working directory
+// from before auth state moved under DATA_DIR/output.
+func migrateLegacyAuthConfig(target string) error {
+	legacy := filepath.Join(".", "config.yaml")
+	if _, err := os.Stat(target); err == nil {
+		return nil
+	}
+	data, err := os.ReadFile(legacy)
+	if err != nil {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		return err
+	}
+	return os.WriteFile(target, data, 0600)
+}
+
 func defaultStylePresets() []StylePreset {
 	now := time.Now()
 	return []StylePreset{
@@ -2597,10 +2622,17 @@ func authorizePipelineRequest(w http.ResponseWriter, r *http.Request) bool {
 
 func main() {
 	verbose = flag.Bool("v", false, "verbose logging")
-	authConfigPath := flag.String("config", "config.yaml", "path to user and organization config")
+	authConfigPath := flag.String("config", "", "path to user and organization config (default $DATA_DIR/output/config.yaml)")
 	flag.Parse()
+	authPath := *authConfigPath
+	if authPath == "" {
+		authPath = defaultAuthConfigPath()
+		if err := migrateLegacyAuthConfig(authPath); err != nil {
+			log.Printf("WARNING: cannot migrate legacy config.yaml: %v", err)
+		}
+	}
 	var err error
-	accounts, err = loadAuthStore(*authConfigPath)
+	accounts, err = loadAuthStore(authPath)
 	if err != nil {
 		log.Fatalf("cannot load user config: %v", err)
 	}
