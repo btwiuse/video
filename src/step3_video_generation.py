@@ -14,6 +14,7 @@ import asyncio
 import base64
 import logging
 import os
+import urllib.parse
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
@@ -335,11 +336,22 @@ class TokeaseProvider(TokenVokeProvider):
         return f"Tokease Seedance ({self._model})"
 
     def _local_to_public_url(self, path: str) -> str | None:
-        """Send images as base64 data URLs instead of public artifact URLs.
+        """Prefer a small public media URL; fall back to base64 data URL.
 
-        Artifact URLs require auth for private pipelines, so Tokease's
-        server cannot download them (resource download failed).
+        Artifact URLs require auth for private pipelines, so they are not
+        usable as reference images. The Go server serves media anonymously
+        under /media/{pipeline_id}/{rel}.
         """
+        if self._public_url and self._pipeline_id and path and os.path.isfile(path):
+            out_dir = ensure_output_dir()
+            try:
+                rel = os.path.relpath(path, str(out_dir))
+                if rel.startswith(".."):
+                    return None
+                quoted = urllib.parse.quote(rel)
+                return f"{self._public_url}/media/{self._pipeline_id}/{quoted}"
+            except Exception:
+                pass
         return self._file_to_data_url(path)
 
 

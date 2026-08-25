@@ -2425,6 +2425,62 @@ func serveManifest(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "public/manifest.json")
 }
 
+func handleMedia(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/media/")
+	rest = strings.TrimSuffix(rest, "/")
+	parts := strings.Split(rest, "/")
+	if len(parts) < 2 {
+		http.Error(w, "media not found", http.StatusNotFound)
+		return
+	}
+	pid, err := url.PathUnescape(parts[0])
+	if err != nil || pid == "" || pid != filepath.Base(pid) {
+		http.Error(w, "media not found", http.StatusNotFound)
+		return
+	}
+	nameParts := make([]string, 0, len(parts)-1)
+	for _, part := range parts[1:] {
+		decoded, err := url.PathUnescape(part)
+		if err != nil {
+			http.Error(w, "media not found", http.StatusNotFound)
+			return
+		}
+		nameParts = append(nameParts, decoded)
+	}
+	name := strings.Join(nameParts, "/")
+	if name == "" || strings.Contains(name, "..") {
+		http.Error(w, "media not found", http.StatusNotFound)
+		return
+	}
+	ext := strings.ToLower(filepath.Ext(name))
+	allowed := map[string]bool{
+		".jpg": true, ".jpeg": true, ".png": true, ".webp": true, ".gif": true,
+		".mp4": true, ".mov": true, ".webm": true,
+		".wav": true, ".mp3": true, ".m4a": true,
+	}
+	if !allowed[ext] {
+		http.Error(w, "media not found", http.StatusNotFound)
+		return
+	}
+	path := filepath.Join(outputDir(pid), name)
+	if !strings.HasPrefix(filepath.Clean(path), filepath.Clean(outputDir(pid))+string(filepath.Separator)) {
+		http.Error(w, "media not found", http.StatusNotFound)
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		http.Error(w, "media not found", http.StatusNotFound)
+		return
+	}
+	ct := mime.TypeByExtension(ext)
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", ct)
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Write(data)
+}
+
 func handleArtifacts(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/pipelines/")
 	id = strings.TrimSuffix(id, "/")
@@ -2656,6 +2712,7 @@ func main() {
 	mux.Handle("/js/", http.StripPrefix("/js/", http.FileServer(http.Dir("js"))))
 	mux.Handle("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir("css"))))
 	mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("public/assets"))))
+	mux.HandleFunc("/media/", handleMedia)
 	mux.HandleFunc("/style-presets", handleStylePresets)
 	mux.HandleFunc("/style-presets/", handleStylePreset)
 	mux.HandleFunc("/pipelines", func(w http.ResponseWriter, r *http.Request) {
