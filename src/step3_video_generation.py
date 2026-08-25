@@ -132,11 +132,16 @@ class TokenVokeProvider(VideoProvider):
             task_id = None
             last_error = ""
             for attempt in range(10):
-                resp = await client.post(
-                    f"{self._base_url}/v1/video/generations",
-                    headers=self._headers,
-                    json=body,
-                )
+                try:
+                    resp = await client.post(
+                        f"{self._base_url}/v1/video/generations",
+                        headers=self._headers,
+                        json=body,
+                    )
+                except httpx.HTTPError as e:
+                    last_error = f"Network error: {e}"
+                    await asyncio.sleep(2 ** attempt)
+                    continue
                 if resp.status_code == 200:
                     data = resp.json()
                     task_id = data.get("task_id") or data.get("id")
@@ -172,10 +177,20 @@ class TokenVokeProvider(VideoProvider):
                 await asyncio.sleep(5)
                 poll_elapsed += 5
                 logger.info("  poll %s: waiting %ds...", shot_id, poll_elapsed)
-                poll = await client.get(
-                    f"{self._base_url}/v1/video/generations/{task_id}",
-                    headers=self._headers,
-                )
+                try:
+                    poll = await client.get(
+                        f"{self._base_url}/v1/video/generations/{task_id}",
+                        headers=self._headers,
+                    )
+                except httpx.HTTPError as e:
+                    poll_failures += 1
+                    if poll_failures >= 10:
+                        return VideoResult(
+                            shot_id=shot_id, path=output_path, status="failed",
+                            error=f"Poll failed after 10 retries: {e}",
+                        )
+                    await asyncio.sleep(2 ** min(poll_failures, 6))
+                    continue
                 if poll.status_code == 403:
                     poll_failures += 1
                     if poll_failures >= 10:
@@ -183,6 +198,7 @@ class TokenVokeProvider(VideoProvider):
                             shot_id=shot_id, path=output_path, status="failed",
                             error="Poll failed after 10 retries (403)",
                         )
+                    await asyncio.sleep(2 ** min(poll_failures, 6))
                     continue
                 poll_failures = 0
                 if poll.status_code != 200:
@@ -220,7 +236,11 @@ class TokenVokeProvider(VideoProvider):
                     # Download with retry on 403
                     dl = None
                     for dl_attempt in range(3):
-                        dl = await client.get(video_url)
+                        try:
+                            dl = await client.get(video_url)
+                        except httpx.HTTPError as e:
+                            await asyncio.sleep(2 ** dl_attempt)
+                            continue
                         if dl.status_code == 403:
                             await asyncio.sleep(2 ** dl_attempt)
                             continue
@@ -228,7 +248,7 @@ class TokenVokeProvider(VideoProvider):
                     if dl is None or dl.status_code == 403:
                         return VideoResult(
                             shot_id=shot_id, path=output_path, status="failed",
-                            error="Download failed after 3 retries (403)",
+                            error="Download failed after 3 retries (403 or network error)",
                         )
                     if dl.status_code != 200:
                         return VideoResult(
