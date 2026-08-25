@@ -193,8 +193,17 @@ class TokenVokeProvider(VideoProvider):
 
                 result = poll.json()
                 # TokenVoke poll response: {code:"success", data:{status, progress, result_url?, ...}}
-                data = result.get("data", result) if result.get("code") == "success" else result
+                data = result.get("data") or result
+                if result.get("code") and result.get("code") != "success":
+                    data = result
                 status = (data.get("status") or "").upper()
+
+                if not status and (result.get("code") or result.get("message") or result.get("error")):
+                    # Relay-level failure (e.g. fail_to_fetch_task): no task status to poll
+                    return VideoResult(
+                        shot_id=shot_id, path=output_path, status="failed",
+                        error=f"Task error: {result.get('code', '')} {result.get('message') or result.get('error') or ''}"[:500],
+                    )
 
                 if status in ("SUCCESS", "COMPLETED"):
                     video_url = data.get("result_url", "")
@@ -297,6 +306,14 @@ class TokeaseProvider(TokenVokeProvider):
     @property
     def name(self) -> str:
         return f"Tokease Seedance ({self._model})"
+
+    def _local_to_public_url(self, path: str) -> str | None:
+        """Send images as base64 data URLs instead of public artifact URLs.
+
+        Artifact URLs require auth for private pipelines, so Tokease's
+        server cannot download them (resource download failed).
+        """
+        return self._file_to_data_url(path)
 
 
 # ============================================================================
